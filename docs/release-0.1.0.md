@@ -22,7 +22,8 @@
 | 框架预算 | 通过：3330 行、15 组原语、0 unsafe |
 | 文档链接 | 已检查的 69 个本地链接有效 |
 | 浏览器与生产部署 | 本次未执行，未改业务交互 |
-| GitHub Linux CI / Trusted Publisher | 配置已写，尚待远端执行验收 |
+| GitHub Linux CI | 通过，首次远端 verify job 成功；见下方工作流链接 |
+| npm Trusted Publisher 自动发布 | 工作流已写，网站侧逐包授权及实际自动发包尚未执行 |
 | npm 注册表安装 | 通过；普通 pnpm create 入口创建新项目、安装、构建、check 和 gen --check 均通过，未设置 file/link 覆盖 |
 
 本机最初 Docker 未运行，启动 Docker Desktop 后才执行数据库回归。此次没有改动内核业务逻辑。
@@ -39,3 +40,5 @@
 - 已在仓库外运行 `pnpm create @yss123/cage-app@0.1.0 application`，完成安装、构建与声明检查；没有使用本地源码或 tarball 覆盖。
 
 npm 入口：[创建工具](https://www.npmjs.com/package/@yss123/create-cage-app)、[CLI](https://www.npmjs.com/package/@yss123/cage-cli)、[内核](https://www.npmjs.com/package/@yss123/cage-kernel)。
+
+远端验证：[首次 GitHub Linux CI](https://github.com/shunshunyue/cage/actions/runs/41000338864) 已成功。后续收尾提交仅修改文档，使用 `[skip ci]` 避免重复执行同一轮数据库回归。

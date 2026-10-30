@@ -25,7 +25,7 @@ pnpm dev
 
 ## 本地运行
 
-要求 Node.js 22+、pnpm 10、Docker Desktop（Linux 容器）。开发库使用 PostgreSQL 18 持久卷，测试使用独立容器。
+要求 Node.js 24+、pnpm 10、Docker Desktop（Linux 容器）。开发库使用 PostgreSQL 18 持久卷，测试使用独立容器。
 
 ```powershell
 pnpm install
@@ -48,7 +48,7 @@ pnpm --filter @app/purchase-admin dev
 
 ## 从模板创建
 
-包发布前，可以直接使用当前源码框架：
+维护框架或试用尚未发布的本地修改时，可以直接使用当前源码框架：
 
 ```powershell
 node packages/cli/bin/cage.js create ../my-purchase-app --framework-path F:/cage
