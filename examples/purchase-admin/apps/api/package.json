@@ -1,0 +1,16 @@
+{
+  "name": "@app/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/main.js",
+    "worker": "node dist/worker.js"
+  },
+  "dependencies": {
+    "@app/domain": "workspace:*",
+    "@yss123/cage-http": "workspace:*",
+    "@yss123/cage-connectors": "workspace:*"
+  }
+}

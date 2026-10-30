@@ -1,0 +1,26 @@
+{
+  "name": "cage-monorepo",
+  "private": true,
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/shunshunyue/cage.git" },
+  "type": "module",
+  "packageManager": "pnpm@10.14.0",
+  "scripts": {
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:docker": "pnpm --filter @app/purchase-admin db:up && node --env-file=examples/purchase-admin/.env scripts/test-docker.mjs",
+    "example:verify": "pnpm --filter @app/purchase-admin verify",
+    "release:version": "node scripts/release-version.mjs",
+    "release:pack": "node scripts/release-pack.mjs",
+    "release:smoke": "node scripts/release-smoke.mjs",
+    "release:prepare": "turbo run build --filter=./packages/* && pnpm --filter @app/purchase-admin exec cage sync && pnpm --filter @app/purchase-admin gen && node scripts/sync-template.mjs && node scripts/build-error-docs.mjs && pnpm build && pnpm release:pack"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "prettier": "^3.9.10",
+    "turbo": "^2.5.6",
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.12"
+  }
+}

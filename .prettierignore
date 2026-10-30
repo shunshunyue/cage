@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.cage/
+generated/
+**/packages/contracts/src/
+templates/
+packages/cli/templates/
+*.md
+db/migrations/

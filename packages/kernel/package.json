@@ -1,0 +1,61 @@
+{
+  "name": "@yss123/cage-kernel",
+  "version": "0.1.0",
+  "description": "笼子内核：声明原语、写入流水线、范围组合子、读侧、worker 运行时",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./worker": {
+      "types": "./dist/worker/index.d.ts",
+      "default": "./dist/worker/index.js"
+    },
+    "./brands": {
+      "types": "./dist/brands.d.ts",
+      "default": "./dist/brands.js"
+    },
+    "./db": {
+      "types": "./dist/db/index.d.ts",
+      "default": "./dist/db/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "cron-parser": "^5.3.1",
+    "kysely": "^0.28.5",
+    "pg": "^8.16.3",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.5",
+    "fast-check": "^4.3.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shunshunyue/cage.git",
+    "directory": "packages/kernel"
+  },
+  "homepage": "https://github.com/shunshunyue/cage#readme",
+  "bugs": {
+    "url": "https://github.com/shunshunyue/cage/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

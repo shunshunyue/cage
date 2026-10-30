@@ -1,0 +1,17 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "build": { "dependsOn": ["^build"], "outputs": ["dist/**"] },
+    "@yss123/cage-cli#build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", "graph-ui/**", "templates/**", "managed/**"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/templates/app/**", "$TURBO_ROOT$/docs/errors/**"]
+    },
+    "typecheck": { "dependsOn": ["^build"] },
+    "test": {
+      "dependsOn": ["build"],
+      "cache": false,
+      "passThroughEnv": ["CAGE_TEST_DATABASE_URL"]
+    }
+  }
+}

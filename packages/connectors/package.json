@@ -1,0 +1,43 @@
+{
+  "name": "@yss123/cage-connectors",
+  "version": "0.1.0",
+  "description": "第三方连接器原语与运行时",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@yss123/cage-kernel": "workspace:*",
+    "zod": "^4.1.5",
+    "kysely": "^0.28.5"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shunshunyue/cage.git",
+    "directory": "packages/connectors"
+  },
+  "homepage": "https://github.com/shunshunyue/cage#readme",
+  "bugs": {
+    "url": "https://github.com/shunshunyue/cage/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "name": "@yss123/cage-cli",
+  "version": "0.1.0",
+  "description": "cage 命令行：gen、check、impact、test、verify、budget、sync、upgrade、dev、migrate",
+  "type": "module",
+  "bin": {
+    "cage": "./bin/cage.js",
+    "create-cage-app": "./bin/create-cage-app.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "bin",
+    "graph-ui",
+    "templates",
+    "managed"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p ui/tsconfig.json && node scripts/build-graph.mjs && node scripts/copy-assets.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p ui/tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@yss123/cage-kernel": "workspace:*",
+    "@yss123/cage-lint": "workspace:*",
+    "@yss123/cage-testkit": "workspace:*",
+    "dependency-cruiser": "^17.0.1",
+    "eslint": "^9.35.0",
+    "pg": "^8.16.3",
+    "ts-morph": "^26.0.0",
+    "tsx": "^4.20.5",
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.12",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.5"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shunshunyue/cage.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/shunshunyue/cage#readme",
+  "bugs": {
+    "url": "https://github.com/shunshunyue/cage/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

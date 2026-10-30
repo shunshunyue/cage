@@ -1,0 +1,69 @@
+# 框架自身的 CI，同时允许其他仓库通过 workflow_call 复用。
+# 所有业务门禁由 cage verify 实现，流水线只装配环境及归档报告。
+name: Cage verification
+on:
+  push:
+  pull_request:
+  workflow_call:
+    inputs:
+      project-directory:
+        type: string
+        default: examples/purchase-admin
+        required: false
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: cage_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      CAGE_TEST_DATABASE_URL: postgres://postgres:cage_ci@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test
+      - name: Verify application
+        working-directory: ${{ inputs.project-directory || 'examples/purchase-admin' }}
+        run: pnpm cage verify
+      # SHA 通过环境变量传入，不将 PR 内容插值为 shell 代码。
+      # 摘要保存在 Actions 检查页，不要求写 PR 评论的权限。
+      - name: Pull request impact
+        if: github.event_name == 'pull_request'
+        working-directory: ${{ inputs.project-directory || 'examples/purchase-admin' }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          pnpm cage impact --base "$BASE_SHA" --format md --out .cage/impact.md
+          cat .cage/impact.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Framework budget
+        run: node packages/cli/bin/cage.js budget
+      - name: Dependency audit
+        run: pnpm audit --audit-level high
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cage-verification
+          include-hidden-files: true
+          path: |
+            **/.cage/verify.json
+            **/.cage/test-results.json
+            **/.cage/impact.md
+            **/generated/diagrams/

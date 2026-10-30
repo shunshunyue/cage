@@ -1,0 +1,58 @@
+# 首版由维护者完成 npm 登录后手动发布。各包配置 Trusted Publisher 后，
+# 后续版本在已有 v* 标签上手动运行此流程；源码 push 不会自动发布 npm。
+name: Publish npm packages
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cage-npm-release
+  cancel-in-progress: false
+jobs:
+  verify:
+    uses: ./.github/workflows/verify.yml
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+      - name: Require a matching release tag
+        # 用环境变量读取 Git ref，不把用户可控文本插入 shell 命令。
+        run: |
+          node --input-type=module -e "import fs from 'node:fs'; const {version}=JSON.parse(fs.readFileSync('packages/cli/package.json','utf8')); if(process.env.GITHUB_REF !== 'refs/tags/v'+version) throw new Error('请选择与 CLI 版本相同的 v 标签执行发布');"
+      - run: npm install --global npm@11
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm release:prepare
+      - run: pnpm release:smoke
+      - name: Publish checked tarballs using npm trusted publishing
+        # pnpm pack 已将 workspace 依赖转换为实际版本；npm 只上传检查过的包。
+        # npm 11 使用 GitHub OIDC，无需把长期写入 token 保存在仓库中。
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import {execFileSync} from 'node:child_process';
+          const {version}=JSON.parse(fs.readFileSync('packages/cli/package.json','utf8'));
+          const release=JSON.parse(fs.readFileSync('.cage/releases/'+version+'/manifest.json','utf8'));
+          const tag=version.includes('-') ? 'next' : 'latest';
+          for(const pkg of release.packages) {
+            execFileSync('npm',['publish',pkg.file,'--access','public','--provenance','--tag',tag],{stdio:'inherit'});
+          }
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: npm-release-artifacts
+          include-hidden-files: true
+          path: .cage/releases/

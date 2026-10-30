@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.cage/
+generated/
+.turbo/
+*.log
+*.tgz
+pnpm-publish-summary.json
+.pgdata/
+.env
+.env.*
+!.env.example
+# CLI 分发副本由 build 从 templates/app 和 docs/errors 生成。
+packages/cli/templates/
+packages/cli/managed/
+packages/cli/graph-ui/

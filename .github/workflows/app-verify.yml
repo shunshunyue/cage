@@ -1,0 +1,56 @@
+# 业务仓库在框架发布后通过 owner/repo/.github/workflows/app-verify.yml@版本引用。
+name: Reusable Cage application verification
+on:
+  workflow_call:
+    inputs:
+      project-directory:
+        type: string
+        default: .
+        required: false
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: cage_ci
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      CAGE_TEST_DATABASE_URL: postgres://postgres:cage_ci@localhost:5432/postgres
+    defaults:
+      run:
+        working-directory: ${{ inputs.project-directory }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:app
+      - run: pnpm cage verify
+      - name: Pull request impact
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          pnpm cage impact --base "$BASE_SHA" --format md --out .cage/impact.md
+          cat .cage/impact.md >> "$GITHUB_STEP_SUMMARY"
+      - run: pnpm audit --prod --audit-level high
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cage-report
+          include-hidden-files: true
+          path: |
+            **/.cage/verify.json
+            **/.cage/test-results.json
+            **/.cage/impact.md

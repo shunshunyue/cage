@@ -1,0 +1,50 @@
+{
+  "name": "@yss123/cage-lint",
+  "version": "0.1.0",
+  "description": "dependency-cruiser 规则与 ESLint 插件",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./dependency-cruiser.cjs": "./dependency-cruiser.cjs"
+  },
+  "files": [
+    "dist",
+    "dependency-cruiser.cjs"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@typescript-eslint/parser": "^8.42.0"
+  },
+  "peerDependencies": {
+    "eslint": "^9.0.0"
+  },
+  "devDependencies": {
+    "eslint": "^9.35.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shunshunyue/cage.git",
+    "directory": "packages/lint"
+  },
+  "homepage": "https://github.com/shunshunyue/cage#readme",
+  "bugs": {
+    "url": "https://github.com/shunshunyue/cage/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

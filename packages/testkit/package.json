@@ -1,0 +1,66 @@
+{
+  "name": "@yss123/cage-testkit",
+  "version": "0.1.0",
+  "description": "派生测试运行器、fake 仓储、测试数据库",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./global-setup": {
+      "types": "./dist/global-setup.d.ts",
+      "default": "./dist/global-setup.js"
+    },
+    "./pg": {
+      "types": "./dist/pg.d.ts",
+      "default": "./dist/pg.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "embedded-postgres": "18.3.0-beta.16",
+    "fast-check": "^4.3.0",
+    "kysely": "^0.28.5",
+    "pg": "^8.16.3",
+    "zod": "^4.1.5"
+  },
+  "peerDependencies": {
+    "@yss123/cage-kernel": "workspace:*"
+  },
+  "devDependencies": {
+    "@yss123/cage-kernel": "workspace:*",
+    "@types/pg": "^8.15.5",
+    "@yss123/cage-admin": "workspace:*",
+    "vitest": "^4.1.12",
+    "@yss123/cage-http": "workspace:*",
+    "@yss123/cage-approval": "workspace:*",
+    "@yss123/cage-connectors": "workspace:*"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shunshunyue/cage.git",
+    "directory": "packages/testkit"
+  },
+  "homepage": "https://github.com/shunshunyue/cage#readme",
+  "bugs": {
+    "url": "https://github.com/shunshunyue/cage/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

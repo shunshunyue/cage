@@ -1,0 +1,10 @@
+# 迁移校验和按文件内容计算；各平台统一 LF，避免换行差异造成历史迁移误报。
+* text=auto eol=lf
+*.sql text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf

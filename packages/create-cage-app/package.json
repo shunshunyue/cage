@@ -1,0 +1,32 @@
+{
+  "name": "@yss123/create-cage-app",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "从 Cage 薄壳模板创建中后台项目",
+  "bin": {
+    "create-cage-app": "bin/create-cage-app.js"
+  },
+  "files": [
+    "bin"
+  ],
+  "dependencies": {
+    "@yss123/cage-cli": "workspace:*"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shunshunyue/cage.git",
+    "directory": "packages/create-cage-app"
+  },
+  "homepage": "https://github.com/shunshunyue/cage#readme",
+  "bugs": {
+    "url": "https://github.com/shunshunyue/cage/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

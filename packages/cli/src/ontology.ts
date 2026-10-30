@@ -1,0 +1,401 @@
+// 抽取器：把声明变成一张本体图（节点 + 边），写到 .cage/ontology.json。规则检查、影响分析、测试生成都读这张图。
+import { createHash } from 'node:crypto';
+import { snake, stableStringify, type AnyAggregate, type Fields, type Registry } from '@yss123/cage-kernel';
+import { z } from 'zod';
+import type { DeclSite } from './static-check.js';
+
+export type NodeKind =
+  | 'aggregate'
+  | 'field'
+  | 'state'
+  | 'command'
+  | 'event'
+  | 'reaction'
+  | 'query'
+  | 'approval'
+  | 'route'
+  | 'job'
+  | 'connector'
+  | 'outbound'
+  | 'inbound'
+  | 'capability';
+
+export interface OntNode {
+  kind: NodeKind;
+  id: string;
+  /** 内容哈希：声明变化时哈希变化 */
+  hash: string;
+  file?: string;
+  line?: number;
+  attrs: Record<string, unknown>;
+}
+
+export type EdgeKind =
+  | 'transition'
+  | 'reads'
+  | 'emits'
+  | 'uses'
+  | 'triggers'
+  | 'targets'
+  | 'queries'
+  | 'refs'
+  | 'calls'
+  | 'binds'
+  | 'field';
+
+export interface OntEdge {
+  kind: EdgeKind;
+  from: string;
+  to: string;
+  via?: string;
+  alias?: string;
+  acquires?: string;
+  releases?: string;
+  /** uses 边的来源说明：约束、事件载荷、路由条件、出站映射、查询 */
+  as?: string;
+}
+
+export interface Ontology {
+  version: 1;
+  nodes: OntNode[];
+  edges: OntEdge[];
+  unsafeCount: number;
+}
+
+const h = (v: unknown) => createHash('sha256').update(stableStringify(v)).digest('hex').slice(0, 12);
+
+function jsonSchema(s: z.ZodType): unknown {
+  try {
+    return z.toJSONSchema(s, { unrepresentable: 'any', io: 'input' });
+  } catch {
+    return null;
+  }
+}
+
+function fieldAttrs(f: any) {
+  return {
+    kind: f.kind,
+    sql: f.sql,
+    optional: f.isOptional,
+    sensitive: f.sensitiveKind ?? null,
+    ref: f.ref ?? null,
+    unique: !!f.isUnique,
+    hidden: !!f.isHidden,
+    description: f.description ?? null,
+    values: f.values ?? null,
+    shape: f.shape
+      ? Object.fromEntries(
+          Object.entries(f.shape).map(([k, sf]: [string, any]) => [
+            k,
+            { kind: sf.kind, optional: sf.isOptional },
+          ]),
+        )
+      : null,
+  };
+}
+
+export function extract(reg: Registry, sites: DeclSite[] = [], unsafeCount = 0): Ontology {
+  const nodes: OntNode[] = [];
+  const edges: OntEdge[] = [];
+  const siteOf = new Map(sites.map((s) => [s.exportName, s]));
+  const where = (v: object) => {
+    const n = reg.nameOf(v);
+    const s = n ? siteOf.get(n) : undefined;
+    return s ? { file: s.file, line: s.line } : {};
+  };
+  const textHash = (v: object) => {
+    const n = reg.nameOf(v);
+    const s = n ? siteOf.get(n) : undefined;
+    // Git 的 autocrlf 会改变检出文件的换行。源码哈希统一换行，避免没有业务改动
+    // 却把整张命令图都报成变化；字符串字面量的转义内容仍保留原样。
+    return s ? h(s.text.replace(/\r\n/g, '\n')) : null;
+  };
+  const push = (
+    kind: NodeKind,
+    id: string,
+    attrs: Record<string, unknown>,
+    at: { file?: string; line?: number } = {},
+  ) => nodes.push({ kind, id, hash: h({ kind, id, attrs }), ...at, attrs });
+
+  const aggOfField = new Map<string, AnyAggregate>();
+  for (const a of reg.aggregates) {
+    push(
+      'aggregate',
+      a.name,
+      {
+        table: `${a.table.schema}.${a.table.name}`,
+        scope: { dept: a.scope.deptField ?? null, owner: a.scope.ownerField ?? null },
+        invariants: Object.keys(a.invariants),
+        invariantSrc: Object.fromEntries(Object.entries(a.invariants).map(([k, fn]) => [k, h(String(fn))])),
+        description: a.description ?? null,
+        defaultStates: a.states.values.join() === 'active,deleted',
+      },
+      where(a),
+    );
+    for (const [k, f] of Object.entries(a.fields as Fields)) {
+      push('field', `${a.name}.${k}`, fieldAttrs(f));
+      edges.push({ kind: 'field', from: a.name, to: `${a.name}.${k}` });
+      aggOfField.set(`${a.name}.${k}`, a);
+      if (f.ref) edges.push({ kind: 'refs', from: `${a.name}.${k}`, to: f.ref });
+    }
+    for (const s of a.states.values) {
+      push('state', `${a.name}.${s}`, {
+        terminal: a.states.terminal.includes(s),
+        initial: a.states.initial === s,
+      });
+    }
+    push('capability', `${a.name}.read`, { kind: 'read' });
+    push('capability', `${a.name}.export`, { kind: 'export' });
+  }
+
+  for (const e of reg.events) {
+    push(
+      'event',
+      e.name,
+      { fields: Object.fromEntries(Object.entries(e.fields as Fields).map(([k, f]) => [k, fieldAttrs(f)])) },
+      where(e),
+    );
+  }
+
+  for (const c of reg.commands) {
+    const { cmd, capability } = c;
+    const agg = cmd.agg.name;
+    push(
+      'command',
+      capability,
+      {
+        from: cmd.from,
+        to: cmd.to,
+        invokedBy: cmd.invokedBy,
+        input: jsonSchema(cmd.input),
+        reads: Object.fromEntries(Object.entries(cmd.reads).map(([k, a]) => [k, a.name])),
+        emits: cmd.emits.map((e) => e.event.name),
+        customEmit: cmd.emits.filter((e) => e.map).map((e) => e.event.name),
+        constraints: cmd.constraints.map((k) => k.name),
+        src: textHash(cmd) ?? h(String(cmd.handler)),
+        domainCodes: sites.find((s) => s.exportName === c.exportName)?.domainCodes ?? [],
+        public: cmd.public,
+      },
+      where(cmd),
+    );
+    const froms = cmd.from === 'new' ? ['[new]'] : (cmd.from as string[]);
+    for (const f of froms) {
+      edges.push({
+        kind: 'transition',
+        from: f === '[new]' ? `${agg}.[new]` : `${agg}.${f}`,
+        // to: null 是各允许起始状态上的自环，不能生成名为 null 的虚假状态。
+        to: `${agg}.${cmd.to ?? f}`,
+        via: capability,
+      });
+    }
+    for (const [alias, a] of Object.entries(cmd.reads))
+      edges.push({ kind: 'reads', from: capability, to: a.name, alias });
+    for (const spec of cmd.emits) {
+      edges.push({ kind: 'emits', from: capability, to: spec.event.name });
+      // 事件载荷用到了聚合的哪些字段（默认映射按同名字段）
+      if (!spec.map) {
+        for (const k of Object.keys(spec.event.fields)) {
+          if (k in cmd.agg.fields)
+            edges.push({ kind: 'uses', from: spec.event.name, to: `${agg}.${k}`, as: '事件载荷' });
+        }
+      }
+    }
+    for (const k of cmd.constraints) {
+      for (const f of k.fields ?? [])
+        edges.push({ kind: 'uses', from: capability, to: `${agg}.${f}`, as: `约束 ${k.name}` });
+    }
+  }
+
+  for (const { r, name } of reg.reactions) {
+    push(
+      'reaction',
+      name,
+      {
+        tx: r.tx,
+        acquires: r.acquires ?? null,
+        releases: r.releases ?? null,
+        event: r.event.name,
+        command: reg.capabilityOf(r.command),
+        src: h(String(r.map)),
+      },
+      where(r),
+    );
+    edges.push({ kind: 'triggers', from: r.event.name, to: name });
+    edges.push({
+      kind: 'targets',
+      from: name,
+      to: reg.capabilityOf(r.command),
+      acquires: r.acquires,
+      releases: r.releases,
+    });
+  }
+
+  for (const q of reg.queries) {
+    push(
+      'query',
+      q.name,
+      {
+        reads: q.reads.map((a) => a.name),
+        sql: q.sql ? h(q.sql) : null,
+        build: q.build ? h(String(q.build)) : null,
+        input: jsonSchema(q.input),
+        sqlText: q.sql ?? null,
+      },
+      where(q),
+    );
+    for (const a of q.reads) {
+      edges.push({ kind: 'queries', from: q.name, to: a.name });
+      const text = (q.sql ?? String(q.build ?? '')).toLowerCase();
+      for (const k of Object.keys(a.fields)) {
+        if (new RegExp(`\\b(${snake(k)}|${k.toLowerCase()})\\b`).test(text))
+          edges.push({ kind: 'uses', from: q.name, to: `${a.name}.${k}`, as: '查询' });
+      }
+    }
+  }
+
+  for (const { a, name } of reg.approvals) {
+    push(
+      'approval',
+      name,
+      {
+        process: a.process,
+        aggregate: a.agg.name,
+        start: a.start.name,
+        routable: a.routable,
+        onApproved: reg.capabilityOf(a.onApproved),
+        onRejected: reg.capabilityOf(a.onRejected),
+        cancelOn: a.cancelOn.map((e) => e.name),
+      },
+      where(a),
+    );
+    edges.push({ kind: 'triggers', from: a.start.name, to: name });
+    edges.push({ kind: 'binds', from: name, to: reg.capabilityOf(a.onApproved) });
+    edges.push({ kind: 'binds', from: name, to: reg.capabilityOf(a.onRejected) });
+    for (const f of a.routable)
+      edges.push({ kind: 'uses', from: name, to: `${a.agg.name}.${f}`, as: '可路由字段' });
+  }
+
+  for (const j of reg.jobs) {
+    push(
+      'job',
+      j.name,
+      {
+        cron: j.cron,
+        reads: j.reads.map((a) => a.name),
+        calls: j.calls.map((c) => reg.capabilityOf(c)),
+        src: h(String(j.run)),
+      },
+      where(j),
+    );
+    for (const a of j.reads) edges.push({ kind: 'queries', from: j.name, to: a.name });
+    for (const c of j.calls) edges.push({ kind: 'calls', from: j.name, to: reg.capabilityOf(c) });
+  }
+
+  for (const e of reg.extensions) {
+    const v = e.value;
+    if (e.kind === 'ROUTE') {
+      const binding = reg.approvalByProcess(v.process);
+      push(
+        'route',
+        `route:${v.process}`,
+        { process: v.process, nodes: v.nodes },
+        { ...(siteOf.get(e.name) ? { file: siteOf.get(e.name)!.file, line: siteOf.get(e.name)!.line } : {}) },
+      );
+      if (binding) {
+        edges.push({ kind: 'binds', from: `route:${v.process}`, to: binding.name });
+        for (const f of v.fieldsUsed as string[])
+          edges.push({
+            kind: 'uses',
+            from: `route:${v.process}`,
+            to: `${binding.a.agg.name}.${f}`,
+            as: '路由条件',
+          });
+      }
+    } else if (e.kind === 'CONNECTOR') {
+      push(
+        'connector',
+        `connector:${v.name}`,
+        {
+          hosts: v.hosts,
+          secret: v.secret ?? null,
+          operations: Object.fromEntries(
+            Object.entries(v.operations).map(([k, o]: [string, any]) => [
+              k,
+              {
+                effect: o.effect,
+                method: o.method,
+                path: o.path,
+                request: jsonSchema(o.request),
+                response: jsonSchema(o.response),
+              },
+            ]),
+          ),
+        },
+        siteOf.get(e.name) ? { file: siteOf.get(e.name)!.file, line: siteOf.get(e.name)!.line } : {},
+      );
+    } else if (e.kind === 'OUTBOUND') {
+      const id = e.name;
+      push(
+        'outbound',
+        id,
+        {
+          event: v.event.name,
+          connector: v.op.connector.name,
+          operation: v.op.name,
+          onSuccess: v.onSuccess ? reg.capabilityOf(v.onSuccess.command) : null,
+          src: h(String(v.map)),
+        },
+        siteOf.get(e.name) ? { file: siteOf.get(e.name)!.file, line: siteOf.get(e.name)!.line } : {},
+      );
+      edges.push({ kind: 'triggers', from: v.event.name, to: id });
+      edges.push({ kind: 'targets', from: id, to: `connector:${v.op.connector.name}` });
+      if (v.onSuccess) edges.push({ kind: 'targets', from: id, to: reg.capabilityOf(v.onSuccess.command) });
+      // 出站映射用到的事件字段 → 这些字段在聚合里的同名字段
+      const emitters = reg.commands.filter((c) => c.cmd.emits.some((s) => s.event === v.event));
+      for (const f of (v.fields as string[]) ?? []) {
+        for (const c of emitters)
+          if (f in c.cmd.agg.fields)
+            edges.push({ kind: 'uses', from: id, to: `${c.cmd.agg.name}.${f}`, as: '出站映射' });
+      }
+    } else if (e.kind === 'INBOUND') {
+      const id = e.name;
+      push(
+        'inbound',
+        id,
+        {
+          connector: v.connector.name,
+          event: v.event,
+          command: reg.capabilityOf(v.command),
+          payload: jsonSchema(v.payload),
+        },
+        siteOf.get(e.name) ? { file: siteOf.get(e.name)!.file, line: siteOf.get(e.name)!.line } : {},
+      );
+      edges.push({ kind: 'targets', from: id, to: reg.capabilityOf(v.command) });
+    }
+  }
+
+  nodes.sort((a, b) => a.id.localeCompare(b.id) || a.kind.localeCompare(b.kind));
+  return { version: 1, nodes, edges, unsafeCount };
+}
+
+export interface NodeDiff {
+  added: OntNode[];
+  removed: OntNode[];
+  changed: { before: OntNode; after: OntNode }[];
+}
+
+export function diffOntology(base: Ontology, head: Ontology): NodeDiff {
+  const key = (n: OntNode) => `${n.kind}:${n.id}`;
+  const b = new Map(base.nodes.map((n) => [key(n), n]));
+  const hd = new Map(head.nodes.map((n) => [key(n), n]));
+  const out: NodeDiff = { added: [], removed: [], changed: [] };
+  for (const [k, n] of hd) {
+    const old = b.get(k);
+    if (!old) out.added.push(n);
+    else if (old.hash !== n.hash) out.changed.push({ before: old, after: n });
+  }
+  for (const [k, n] of b) if (!hd.has(k)) out.removed.push(n);
+  return out;
+}
+
+export const nodeById = (g: Ontology) => new Map(g.nodes.map((n) => [n.id, n]));
