@@ -35,7 +35,7 @@
 - npm 已确认账号邮箱和 2FA 有效；十个包的 dry-run 全部通过。
 - 十个 `0.1.0` 包全部公开发布，逐包查询注册表均返回 200。
 - 首轮批量命令在第二个包的浏览器认证轮询阶段遇到 404；改为账号持有人在可见终端逐次认证后，剩余九包发布命令返回 0。npm 对新包有短暂处理时间，已等到十个包全部可下载后再验证。
-- GitHub 上传尚未成功：直连超时，本机代理曾拒绝连接；代理可用时，原保存的 GitHub 凭证又被拒绝。没有把本地提交误报为远端已上传。
+- GitHub `main` 已上传成功。HTTPS 直连、代理及旧凭证曾阻断上传，最终使用 Windows 系统 OpenSSH，经 `ssh.github.com:443` 验证为 `shunshunyue` 并完成推送；origin 的 HTTPS 地址保留。
 - 已在仓库外运行 `pnpm create @yss123/cage-app@0.1.0 application`，完成安装、构建与声明检查；没有使用本地源码或 tarball 覆盖。
 
 npm 入口：[创建工具](https://www.npmjs.com/package/@yss123/create-cage-app)、[CLI](https://www.npmjs.com/package/@yss123/cage-cli)、[内核](https://www.npmjs.com/package/@yss123/cage-kernel)。

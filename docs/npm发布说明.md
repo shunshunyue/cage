@@ -127,6 +127,14 @@ git -c http.proxy=http://127.0.0.1:7897 push -u origin main
 
 只有这台机器的代理仍运行时才使用该地址；不要把它写进 CI 配置或当作所有使用者的默认代理。
 
+本机还已验证可以通过 GitHub 的 SSH 443 端口认证为 `shunshunyue`。HTTPS 不通时，可针对这一次推送使用同仓库的 SSH 地址，不修改 origin 的 HTTPS 配置：
+
+```powershell
+git -c core.sshCommand=C:/Windows/System32/OpenSSH/ssh.exe -c remote.origin.pushurl=ssh://git@ssh.github.com:443/shunshunyue/cage.git push -u origin main
+```
+
+这条 Windows 命令显式使用系统 OpenSSH，本机 Git 自带的 SSH 曾无法解析域名；它依赖本机已经配置且获 GitHub 授权的 SSH 身份，不是所有新机器都能直接使用。标签同理，将末尾 `main` 换成 `v0.1.0`。
+
 ## 7. 首版手动发到 npm
 
 确认账号、版本、构建和检查结果后，预览发布：
