@@ -1,4 +1,4 @@
-# 0.1.0 发布准备记录
+# 0.1.0 发布记录
 
 日期：2026-10-30；npm 账号 `yss123`；仓库 <https://github.com/shunshunyue/cage>；许可证 MIT。
 
@@ -23,7 +23,7 @@
 | 文档链接 | 已检查的 69 个本地链接有效 |
 | 浏览器与生产部署 | 本次未执行，未改业务交互 |
 | GitHub Linux CI / Trusted Publisher | 配置已写，尚待远端执行验收 |
-| npm 注册表安装 | 需实际发布后验证，tarball 验证不替代注册表验证 |
+| npm 注册表安装 | 通过；普通 pnpm create 入口创建新项目、安装、构建、check 和 gen --check 均通过，未设置 file/link 覆盖 |
 
 本机最初 Docker 未运行，启动 Docker Desktop 后才执行数据库回归。此次没有改动内核业务逻辑。
 
@@ -33,7 +33,9 @@
 
 - 本地源码已提交，初始发布准备提交为 `8ca6883`。
 - npm 已确认账号邮箱和 2FA 有效；十个包的 dry-run 全部通过。
-- `@yss123/cage-client@0.1.0` 已发布，注册表查询返回 200。
-- 其余九个包尚未发布；首轮批量命令在第二个包的浏览器认证轮询阶段遇到 404。已改为账号持有人可直接操作的终端完成后续认证。
+- 十个 `0.1.0` 包全部公开发布，逐包查询注册表均返回 200。
+- 首轮批量命令在第二个包的浏览器认证轮询阶段遇到 404；改为账号持有人在可见终端逐次认证后，剩余九包发布命令返回 0。npm 对新包有短暂处理时间，已等到十个包全部可下载后再验证。
 - GitHub 上传尚未成功：直连超时，本机代理曾拒绝连接；代理可用时，原保存的 GitHub 凭证又被拒绝。没有把本地提交误报为远端已上传。
-- 以上为本次核对时的进度，尚不能使用完整 npm 脚手架链路；全部包发布后还需做注册表安装验证。
+- 已在仓库外运行 `pnpm create @yss123/cage-app@0.1.0 application`，完成安装、构建与声明检查；没有使用本地源码或 tarball 覆盖。
+
+npm 入口：[创建工具](https://www.npmjs.com/package/@yss123/create-cage-app)、[CLI](https://www.npmjs.com/package/@yss123/cage-cli)、[内核](https://www.npmjs.com/package/@yss123/cage-kernel)。

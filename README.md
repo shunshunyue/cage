@@ -6,6 +6,23 @@
 
 **维护者发布：** [npm 发包步骤](docs/npm发布说明.md)。源码仓库为 <https://github.com/shunshunyue/cage>，npm 包使用 `@yss123/cage-*`，创建工具为 `@yss123/create-cage-app`，许可证为 [MIT](LICENSE)。
 
+## 通过 npm 创建项目
+
+`0.1.0` 已发布，Node.js 24、pnpm 10 环境可直接运行：
+
+```powershell
+pnpm create @yss123/cage-app@0.1.0 my-app
+cd my-app
+pnpm install
+pnpm build:app
+pnpm exec cage db setup
+pnpm exec cage db up
+pnpm exec cage db init
+pnpm dev
+```
+
+数据库步骤要求 Docker Desktop 已运行；同时运行多个项目时，先按[使用说明](docs/使用说明.md#9-从模板创建独立项目)设置独立端口。业务项目只依赖 npm 包，不需要框架源码目录。
+
 ## 本地运行
 
 要求 Node.js 22+、pnpm 10、Docker Desktop（Linux 容器）。开发库使用 PostgreSQL 18 持久卷，测试使用独立容器。
@@ -46,7 +63,7 @@ pnpm exec cage db init
 pnpm dev
 ```
 
-发布后使用 `pnpm create @yss123/cage-app my-app`，生成的项目统一依赖 `@yss123/cage-*` 版本，不复制框架源码。
+使用已发布包可直接运行 `pnpm create @yss123/cage-app my-app`，生成的项目统一依赖 `@yss123/cage-*` 版本，不复制框架源码。
 
 端口配置和首次初始化步骤见[使用说明第 9 节](docs/使用说明.md#9-从模板创建独立项目)。日常启动无需运行整套测试；需要验收时，在框架根目录运行 `pnpm test:docker`、`pnpm example:verify`。
 
