@@ -17,6 +17,9 @@ import {
   type Position,
 } from './model.js';
 import { explainEdge } from './relations.js';
+import { searchGraphNodes as rankGraphNodes } from '../src/graph-search.js';
+import { businessBlocks, businessConstraintLabel, businessJourneys } from '../src/graph-business.js';
+import { renderBusiness, disposeBusiness, sourcePreview } from './business.js';
 import {
   tableCards,
   tableOwner,
@@ -48,7 +51,7 @@ let selectedEdge: ViewEdge | null = null;
 let emphasizeSelection = false;
 let aggregate: string | null = null;
 let focus: string | null = null;
-let mode: 'structure' | 'business' | 'all' = 'structure';
+let mode: 'structure' | 'business' | 'all' = 'business';
 let cards: TableCard[] = [];
 let visibleCards: TableCard[] = [];
 let searchTarget: string | null = null;
@@ -92,6 +95,46 @@ function vector<K extends keyof SVGElementTagNameMap>(
 }
 const byKey = (key: string) => model.nodes.find((n) => n.key === key)!;
 const displayName = (node: ViewNode) => nodeLabel(node, snapshot.presentation.labels);
+
+function address(patch: Record<string, string | null>, replace = false) {
+  const url = new URL(location.href);
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null) url.searchParams.delete(key);
+    else url.searchParams.set(key, value);
+  }
+  if (url.href !== location.href) history[replace ? 'replaceState' : 'pushState'](null, '', url);
+}
+
+function navigateBusiness(patch: Record<string, string | null>) {
+  const previousScene = element('business-view').dataset.scene;
+  mode = 'business';
+  selectedEdge = null;
+  address({ view: 'business', node: null, object: null, ...patch });
+  renderFilters();
+  renderGraph();
+  if (previousScene !== element('business-view').dataset.scene)
+    element('explorer').scrollIntoView({ block: 'start' });
+  if (patch.step && matchMedia('(max-width: 800px)').matches)
+    element('business-view').querySelector('.business-detail')?.scrollIntoView({ block: 'start' });
+}
+
+function restoreAddress() {
+  const params = new URLSearchParams(location.search);
+  const view = params.get('view');
+  mode = view === 'structure' || view === 'all' ? view : 'business';
+  const node = params.get('node');
+  if (node && byKey(node)) selected = node;
+  if (mode === 'structure' && selected)
+    selected =
+      tableOwner(cards, selected)?.node.key ?? cards.find((card) => !isSystem(card.node))?.node.key ?? null;
+  const object = params.get('object');
+  aggregate = model.nodes.some((n) => n.kind === 'aggregate' && n.id === object) ? object : null;
+  showSystem = params.get('system') === '1';
+  if (selected && mode !== 'business') showSystem ||= isSystem(byKey(selected));
+  focus = null;
+  selectedEdge = null;
+  enabled = new Set(mode === 'all' ? Object.keys(kinds) : businessKinds);
+}
 // 中文字符约占两个半角字宽，不能沿用英文按字符数截断，否则标题会溢出卡片。
 function shortName(text: string, width = 23): string {
   let result = '',
@@ -142,6 +185,7 @@ async function load(refresh = false) {
         model.nodes.filter((n) => n.kind === 'command' && n.id.startsWith(`${a.id}.`)).length;
       selected = aggregates.sort((a, b) => commands(b) - commands(a))[0]?.key ?? model.nodes[0]?.key ?? null;
     }
+    if (!refresh) restoreAddress();
     renderSummary();
     renderFilters();
     renderGraph();
@@ -184,14 +228,23 @@ function renderSummary() {
   element('show-findings').hidden = !snapshot.findings.length;
   const time = new Date(snapshot.generatedAt).toLocaleTimeString('zh-CN', { hour12: false });
   element('updated').textContent = `最近抽取 ${time}`;
+  const health = element('business-health');
+  health.replaceChildren(html('span', '', `${element('health').textContent} · 最近抽取 ${time}`));
+  if (snapshot.findings.length) {
+    const findings = html('button', 'text-button', '查看声明问题 ↗');
+    findings.onclick = () => element<HTMLDialogElement>('findings-dialog').showModal();
+    health.append(findings);
+  }
 }
 
 function renderFilters() {
-  element('types-heading').hidden = mode === 'structure';
-  element('type-filters').hidden = mode === 'structure';
+  element('types-heading').hidden = mode !== 'all';
+  element('type-filters').hidden = mode !== 'all';
   element('structure-note').hidden = mode !== 'structure';
   const aggregates = model.nodes.filter((n) => n.kind === 'aggregate' && (showSystem || !isSystem(n)));
-  element('aggregate-total').textContent = String(aggregates.length);
+  const blocks = businessBlocks(model, snapshot.presentation.labels, showSystem);
+  element('objects-heading-label').textContent = mode === 'business' ? '业务板块' : '业务对象';
+  element('aggregate-total').textContent = String(mode === 'business' ? blocks.length : aggregates.length);
   const list = element('aggregate-list');
   list.replaceChildren();
   const addAggregate = (id: string | null, label: string, count: number) => {
@@ -201,14 +254,41 @@ function renderFilters() {
     button.onclick = () => {
       aggregate = id;
       focus = null;
+      address({ view: mode, object: id });
       renderFilters();
       renderGraph();
     };
     list.append(button);
   };
-  addAggregate(null, '全部业务', aggregates.length);
-  for (const a of aggregates)
-    addAggregate(a.id, displayName(a), model.nodes.filter((n) => n.id.startsWith(`${a.id}.`)).length);
+  if (mode === 'business') {
+    const selectedBlock = new URLSearchParams(location.search).get('block');
+    for (const block of [{ id: null, title: '全部业务', count: blocks.length }, ...blocks.map(b => ({ id: b.id, title: b.title, count: businessJourneys(b, model).length }))]) {
+      const button = html('a', `aggregate-button${selectedBlock === block.id ? ' active' : ''}`);
+      const url = new URL(location.href);
+      for (const key of ['flow', 'step', 'source', 'tab', 'node', 'object']) url.searchParams.delete(key);
+      url.searchParams.set('view', 'business');
+      if (block.id) url.searchParams.set('block', block.id);
+      else url.searchParams.delete('block');
+      button.href = url.pathname + url.search;
+      button.append(
+        html('span', '', block.id ? '◇' : '⊞'),
+        html('span', '', block.title),
+        html('b', '', String(block.count)),
+      );
+      button.onclick = (event) => {
+        if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        navigateBusiness({ block: block.id, flow: null, step: null, tab: null, source: null });
+        element('sidebar').classList.remove('open');
+        element('toggle-sidebar').setAttribute('aria-expanded', 'false');
+      };
+      list.append(button);
+    }
+  } else {
+    addAggregate(null, '全部业务', aggregates.length);
+    for (const a of aggregates)
+      addAggregate(a.id, displayName(a), model.nodes.filter((n) => n.id.startsWith(`${a.id}.`)).length);
+  }
   const filters = element('type-filters');
   filters.replaceChildren();
   for (const [kind, meta] of Object.entries(kinds)) {
@@ -253,6 +333,46 @@ function aggregateNodes(id: string): Set<string> {
 }
 
 function renderGraph(resetLayout = true) {
+  const business = mode === 'business';
+  element('explorer').classList.toggle('business-mode', business);
+  element('main').classList.toggle('business-page', business);
+  element('business-view').hidden = !business;
+  element('page-title').textContent = business ? '业务地图' : '本体图谱';
+  element('page-description').textContent = business
+    ? '先理解业务，再沿流程找到实现。'
+    : '从声明出发，看见业务如何连接。';
+  element('metric-first-label').textContent = business ? '业务板块' : '业务对象';
+  element('metric-second-label').textContent = business ? '业务流程' : '声明节点';
+  element('metric-third-label').textContent = business ? '业务对象' : '声明关系';
+  const blocks = businessBlocks(model, snapshot.presentation.labels, showSystem);
+  element('metric-aggregates').textContent = String(business ? blocks.length : cards.length);
+  element('metric-nodes').textContent = String(
+    business ? new Set(blocks.flatMap((b) => businessJourneys(b, model).map((n) => n.key))).size : snapshot.graph.nodes.length,
+  );
+  element('metric-edges').textContent = String(
+    business ? blocks.flatMap((b) => b.objects).length : snapshot.graph.edges.length,
+  );
+  if (business) {
+    renderBusiness(element('business-view'), model, snapshot, {
+      showSystem,
+      navigate: navigateBusiness,
+      inspect: (key, view) => {
+        mode = view;
+        enabled = new Set(Object.keys(kinds));
+        selected = key;
+        selectedEdge = null;
+        focus = null;
+        aggregate = view === 'structure' ? byKey(key).id : null;
+        showSystem ||= isSystem(byKey(key));
+        address({ view, node: key, object: aggregate, system: showSystem ? '1' : null });
+        renderFilters();
+        renderGraph();
+        renderInspector();
+      },
+    });
+    return;
+  }
+  disposeBusiness(element('business-view'));
   searchTarget = null;
   const scope = aggregate ? aggregateNodes(aggregate) : null;
   const focused = focus ? neighborhood(model, focus) : null;
@@ -409,7 +529,7 @@ function renderGraph(resetLayout = true) {
     ).length;
     element('canvas-status').textContent =
       `${visibleEdges.length} 条对象引用${hiddenRefs ? ` · ${hiddenRefs} 条指向隐藏对象` : ''}`;
-    element('edge-legend').textContent = '↗ 字段引用　＊ 必填　卡片展示声明字段';
+    element('edge-legend').textContent = '↗ 外键引用　⇄ 集合关系（非主表列）　＊ 必填';
   } else {
     element('edge-legend').replaceChildren(
       html('span', 'legend-line'),
@@ -478,7 +598,7 @@ function renderTable(card: TableCard) {
       transform: `translate(0,${TABLE_HEADER + index * TABLE_ROW})`,
       role: 'button',
       tabindex: 0,
-      'aria-label': `字段 ${name} ${field.id}，${fieldType(field)}${field.attrs.optional ? '，可选' : '，必填'}`,
+      'aria-label': `字段 ${name} ${field.id}，${fieldType(field)}${field.attrs.virtual ? '，集合关系，不占主表列' : field.attrs.optional ? '，可选' : '，必填'}`,
     });
     row.append(
       vector('rect', { width: TABLE_WIDTH, height: TABLE_ROW, class: index % 2 ? 'alternate' : '' }),
@@ -487,11 +607,12 @@ function renderTable(card: TableCard) {
       vector(
         'text',
         { x: 14, y: 24, class: field.attrs.ref ? 'field-ref' : 'field-dot' },
-        field.attrs.ref ? '↗' : '·',
+        field.attrs.virtual ? '⇄' : field.attrs.ref ? '↗' : '·',
       ),
     );
     row.append(vector('text', { x: 34, y: 24, class: 'field-code' }, shortName(code, 16)));
-    if (!field.attrs.optional) row.append(vector('text', { x: 150, y: 24, class: 'field-required' }, '*'));
+    if (!field.attrs.optional && !field.attrs.virtual)
+      row.append(vector('text', { x: 150, y: 24, class: 'field-required' }, '*'));
     row.append(
       vector('text', { x: 166, y: 24, class: 'field-name' }, shortName(name, 14)),
       vector(
@@ -504,7 +625,7 @@ function renderTable(card: TableCard) {
       vector(
         'title',
         {},
-        `${name} · ${field.id}\n${fieldType(field)}${field.attrs.optional ? ' · 可选' : ' · 必填'}${field.attrs.ref ? ` · 引用 ${named(field.attrs.ref, 'aggregate')}` : ''}`,
+        `${name} · ${field.id}\n${fieldType(field)}${field.attrs.virtual ? ' · 集合关系，不占主表列' : field.attrs.optional ? ' · 可选' : ' · 必填'}${field.attrs.ref ? ` · 关联 ${named(field.attrs.ref, 'aggregate')}` : ''}`,
       ),
     );
     row.onclick = (event) => {
@@ -626,13 +747,38 @@ function highlight() {
   }
 }
 function selectNode(key: string, reveal = false) {
+  if (mode === 'business') {
+    const node = byKey(key);
+    const processKey = node.kind === 'stage' ? `process:${node.attrs.process}` : key;
+    const blocks = businessBlocks(model, snapshot.presentation.labels, showSystem || isSystem(byKey(key)));
+    const block = blocks.find(
+      (b) => b.objects.some((n) => n.key === key) || b.flows.some((n) => n.key === key) || b.processes.some(n => n.key === processKey),
+    );
+    if (block) {
+      showSystem ||= block.system;
+      navigateBusiness({
+        block: block.id,
+        flow: node.kind === 'aggregate' ? (businessJourneys(block, model).some(n => n.key === key) ? key : null) : processKey,
+        step: node.kind === 'stage' ? key : null,
+        branches: node.kind === 'stage' ? '1' : null,
+        tab: null,
+        source: null,
+        system: showSystem ? '1' : null,
+      });
+      return;
+    }
+    mode = 'all';
+    enabled = new Set(Object.keys(kinds));
+    renderFilters();
+    renderGraph();
+  }
   searchTarget = null;
   selectedEdge = null;
   selected = key;
   emphasizeSelection = true;
   if (mode === 'structure' && !tableOwner(cards, key)) {
-    mode = ['state', 'capability', 'entry'].includes(byKey(key).kind) ? 'all' : 'business';
-    enabled = new Set(mode === 'all' ? Object.keys(kinds) : businessKinds);
+    mode = 'all';
+    enabled = new Set(Object.keys(kinds));
     aggregate = null;
     focus = null;
     renderFilters();
@@ -650,6 +796,7 @@ function selectNode(key: string, reveal = false) {
   }
   highlight();
   renderInspector();
+  address({ view: mode, node: key, object: aggregate, system: showSystem ? '1' : null });
   if (reveal && mode === 'structure') {
     searchTarget = key;
     requestAnimationFrame(centerSearchResult);
@@ -755,6 +902,7 @@ function renderEdgeInspector(panel: HTMLElement, edge: ViewEdge) {
 }
 
 function renderInspector() {
+  if (mode === 'business') return;
   const panel = element('inspector');
   panel.replaceChildren();
   if (selectedEdge) {
@@ -830,6 +978,32 @@ function renderInspector() {
   };
   actions.append(focusButton, copy);
   panel.append(actions);
+  // 把当前节点交给编程工具时交付可追溯的文字，而不是让 AI 猜截图中的连线。
+  // 入口与 CLI 使用同一上下文构建器，复制失败明确报告，保留原来的节点详情。
+  const handoff = html('section', 'context-handoff');
+  const contextButton = html('button', 'button secondary', '⌘ 复制 AI 上下文');
+  const contextHint = html(
+    'p',
+    '',
+    '包含业务链路、连接原因、源码位置和验证候选。基于当前图谱，改代码后先重新抽取。',
+  );
+  contextButton.onclick = async () => {
+    contextButton.disabled = true;
+    contextButton.textContent = '正在整理上下文…';
+    try {
+      const response = await fetch(`/api/context?node=${encodeURIComponent(node.key)}&format=md`);
+      if (!response.ok) throw new Error((await response.json()).error);
+      await navigator.clipboard.writeText(await response.text());
+      contextButton.textContent = '✓ 已复制，粘贴给编程工具';
+    } catch (error) {
+      contextButton.textContent = '⌘ 复制 AI 上下文';
+      notify(`上下文复制失败：${(error as Error).message}`);
+    } finally {
+      contextButton.disabled = false;
+    }
+  };
+  handoff.append(contextButton, contextHint);
+  panel.append(handoff);
   const section = (title: string, count?: number) => {
     const div = html('section', 'detail-section'),
       h = html('h3', '', title);
@@ -883,6 +1057,9 @@ function renderInspector() {
     for (const [key, label] of Object.entries({
       event: '事件',
       command: '调用命令',
+      tx: '事务边界',
+      order: '同事件执行顺序',
+      collection: '有界集合',
       process: '审批流程',
       cron: '调度表达式',
       connector: '连接器',
@@ -890,6 +1067,11 @@ function renderInspector() {
       sensitive: '敏感类型',
       kind: '字段类型',
       ref: '引用对象',
+      mappedBy: '对方外键',
+      through: '自动中间表',
+      virtual: '不占主表列',
+      readOnly: '只读关联',
+        filePolicy: '文件限制',
       optional: '可选字段',
       acquires: '获取资源',
       releases: '释放资源',
@@ -916,6 +1098,7 @@ function renderInspector() {
         node.kind === 'entry' ? '由新建命令的迁移关系推导。' : '来自框架包，当前项目未记录源码位置。',
       ),
     );
+  source.append(sourcePreview(node.key, false));
   const relations = model.edges.filter((e) => e.from === node.key || e.to === node.key);
   const relationSection = section('关联关系', relations.length);
   if (relations.length) relationSection.append(html('p', 'source-note', '点击一项，查看连接原因与用途。'));
@@ -948,6 +1131,11 @@ function renderInspector() {
 /** 把会直接影响阅读理解的属性值翻译为业务名称；SQL 表名、cron 和折叠的
  * 原始元数据仍保持技术原文，方便开发者核对实现。 */
 function detailValue(key: string, value: unknown): string {
+  if (key === 'collection') {
+    const collection = value as { maxItems: number; orderBy: string };
+    return `最多 ${collection.maxItems} 项，按 ${collection.orderBy} 排序；串行执行，失败遵循事务边界`;
+  }
+  if (key === 'tx') return value === 'same' ? '与触发命令共同提交或回滚' : '异步 outbox';
   if (typeof value === 'boolean') return value ? '是' : '否';
   if (key === 'event' || key === 'command') return named(value, key);
   if (key === 'ref') return named(value, 'aggregate');
@@ -969,6 +1157,8 @@ function detailValue(key: string, value: unknown): string {
     boolean: '布尔值',
     id: '唯一标识',
     ref: '关联引用',
+    hasMany: '一对多（反查）',
+    manyToMany: '多对多（自动中间表）',
     list: '列表',
     json: '结构化数据',
     date: '日期',
@@ -982,21 +1172,12 @@ function detailValue(key: string, value: unknown): string {
 }
 
 function constraintLabel(name: string, aggregateId: string): string {
-  const ceiling = /^ceiling\((.+)\)$/.exec(name);
-  if (ceiling) return `${named(`${aggregateId}.${ceiling[1]}`, 'field')}不超过审批额度`;
-  const sod = /^sod\.notSameAs\((.+)\)$/.exec(name);
-  if (sod) return `审批人与${named(`${aggregateId}.${sod[1]}`, 'field')}不同`;
-  const builtins: Record<string, string> = {
-    stepUp: '需要二次认证',
-    knownCapability: '能力点必须已声明',
-    noEscalation: '不能授予超出自身的能力',
-    noWiderScope: '不能授予超出自身的数据范围',
-    noEscalationViaRoles: '不能通过分配角色提权',
-  };
-  return builtins[name] ?? name;
+  return businessConstraintLabel(name, aggregateId, snapshot.presentation.labels);
 }
 
 const descriptions: Record<NodeKind | 'entry', string> = {
+  process: '引用真实业务声明的完整流程，区分人工下一步、自动触发和等待。',
+  stage: '业务流程中的一个阶段，可展开查看规则、业务对象与实现代码。',
   aggregate: '统一管理字段、状态、业务操作和数据范围的业务对象。',
   command: '受权限和状态约束的业务写入入口。',
   event: '命令产生的领域事件，用于连接后续业务协作。',
@@ -1032,12 +1213,33 @@ function searchNodes() {
   results.replaceChildren();
   results.hidden = !query;
   if (!query) return;
-  const matches = model.nodes.filter((n) => matchesNode(n, query, snapshot.presentation.labels));
-  for (const n of matches.slice(0, 30)) {
+  const matches = rankGraphNodes(model, query, snapshot.presentation.labels, {
+    descriptions: snapshot.presentation.descriptions,
+  });
+  const matchingBlocks = businessBlocks(model, snapshot.presentation.labels, showSystem).filter(
+    (block) => block.title.toLowerCase().includes(query) || block.id.toLowerCase().includes(query),
+  );
+  for (const block of matchingBlocks.slice(0, 5)) {
+    const button = html('button', 'search-result');
+    const names = html('span', 'search-names');
+    names.append(html('strong', '', block.title), html('span', '', `${businessJourneys(block, model).length} 个业务流程`));
+    button.append(html('small', '', '业务板块'), names);
+    button.onclick = () => {
+      navigateBusiness({ block: block.id, flow: null, step: null, tab: null, source: null });
+      results.hidden = true;
+      element<HTMLInputElement>('search').value = '';
+    };
+    results.append(button);
+  }
+  for (const hit of matches.slice(0, 30)) {
+    const n = byKey(hit.key);
     const button = html('button', 'search-result');
     const names = html('span', 'search-names');
     names.append(html('strong', '', displayName(n)), html('span', '', n.id));
     button.append(html('small', '', kinds[n.kind].label), names);
+    button.title = hit.matches
+      .map((match) => `${match.field}：${match.value}（命中 ${match.terms.join('、')}）`)
+      .join('\n');
     button.onclick = () => {
       selectNode(n.key, true);
       results.hidden = true;
@@ -1045,7 +1247,8 @@ function searchNodes() {
     };
     results.append(button);
   }
-  if (!matches.length) results.append(html('div', 'search-empty', '没有匹配的声明，试试命令名或字段名。'));
+  if (!matches.length && !matchingBlocks.length)
+    results.append(html('div', 'search-empty', '没有匹配的业务，试试业务名称、操作或代码标识。'));
 }
 
 function applyCamera() {
@@ -1152,7 +1355,7 @@ svg.addEventListener(
   { passive: false },
 );
 new ResizeObserver(() => {
-  if (snapshot) {
+  if (snapshot && mode !== 'business') {
     if (mode === 'structure') {
       positions = layoutTables(visibleCards, visibleEdges, svg.clientWidth < 680 ? 1 : 2);
       updatePositions();
@@ -1162,11 +1365,22 @@ new ResizeObserver(() => {
 }).observe(svg);
 
 function resetView() {
-  mode = 'structure';
+  mode = 'business';
   aggregate = null;
   focus = null;
   showSystem = false;
   enabled = new Set(businessKinds);
+  address({
+    view: 'business',
+    block: null,
+    flow: null,
+    step: null,
+    tab: null,
+    source: null,
+    node: null,
+    object: null,
+    system: null,
+  });
   renderFilters();
   renderGraph();
 }
@@ -1184,6 +1398,7 @@ element<HTMLInputElement>('system-toggle').onchange = (event) => {
   showSystem = (event.target as HTMLInputElement).checked;
   aggregate = null;
   focus = null;
+  address({ system: showSystem ? '1' : null });
   renderFilters();
   renderGraph();
 };
@@ -1196,10 +1411,22 @@ document.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((button) => 
     if (mode === 'structure' && selected)
       selected =
         tableOwner(cards, selected)?.node.key ?? cards.find((card) => !isSystem(card.node))?.node.key ?? null;
+    address({
+      view: mode,
+      node: mode === 'business' ? null : selected,
+      object: mode === 'business' ? null : aggregate,
+    });
     renderFilters();
     renderGraph();
     renderInspector();
   };
+});
+window.addEventListener('popstate', () => {
+  if (!snapshot) return;
+  restoreAddress();
+  renderFilters();
+  renderGraph();
+  renderInspector();
 });
 element('refresh').onclick = () => void load(true);
 element('search').addEventListener('input', searchNodes);

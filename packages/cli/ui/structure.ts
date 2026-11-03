@@ -12,7 +12,8 @@ export interface TableCard {
 }
 
 /** 对象卡片展示声明字段，而不是猜测完整数据库结构。系统自动添加的列不在
- * 抽取结果中，因此这里不补造 id、主键、外键约束或一对多基数。
+ * 抽取结果中，因此这里不补造 id 或主键。集合关系也留在 fields 中展示，
+ * 用类型和虚拟关系标记区分物理列，基数来自抽取器明确记录的声明。
  * 字段仍保留原节点身份，搜索、点击和关系解释都能回到同一份声明。 */
 export function tableCards(model: GraphModel): TableCard[] {
   return model.nodes
@@ -80,6 +81,10 @@ export function fieldType(field: ViewNode): string {
     boolean: '布尔',
     id: '标识',
     ref: '引用',
+    hasMany: '一对多',
+    manyToMany: '多对多',
+    file: '文件',
+    files: '多文件',
     list: '列表',
     json: 'JSON',
     date: '日期',

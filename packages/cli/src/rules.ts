@@ -1,5 +1,6 @@
 // 图规则：每条规则是一个函数，输入本体图，输出带错误码和修复方法的问题列表。
 import type { Finding } from './findings.js';
+import { checkBusinessProcesses } from './process-rules.js';
 import type { OntEdge, OntNode, Ontology } from './ontology.js';
 
 const at = (n?: OntNode) => (n?.file ? `${n.file}:${n.line ?? 1}` : undefined);
@@ -263,6 +264,7 @@ export function checkEventCompat(base: Ontology, head: Ontology): Finding[] {
 
 export function runRules(g: Ontology, base?: Ontology | null): Finding[] {
   return [
+    ...checkBusinessProcesses(g),
     ...checkOrg(g),
     ...checkStates(g),
     ...checkPairing(g),

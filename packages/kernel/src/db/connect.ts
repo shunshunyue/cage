@@ -23,9 +23,15 @@ export interface DbHandle {
 
 export function connect(
   url: string,
-  opts: { max?: number; onConnect?: (c: pg.PoolClient) => Promise<void>; applicationName?: string } = {},
+  opts: { max?: number; onConnect?: (c: pg.PoolClient) => Promise<void>; applicationName?: string; connectionTimeoutMs?: number; statementTimeoutMs?: number; idleTransactionTimeoutMs?: number } = {},
 ): DbHandle {
-  const pool = new pg.Pool({ connectionString: url, max: opts.max ?? 10, types: types as any, application_name: opts.applicationName ?? 'cage' });
+  // 池耗尽和遗留事务都必须有界；加大连接池不能修复持有连接再等待同池连接的循环。
+  const pool = new pg.Pool({
+    connectionString: url, max: opts.max ?? 10, types: types as any, application_name: opts.applicationName ?? 'cage',
+    connectionTimeoutMillis: opts.connectionTimeoutMs ?? 5_000,
+    statement_timeout: opts.statementTimeoutMs ?? 30_000,
+    idle_in_transaction_session_timeout: opts.idleTransactionTimeoutMs ?? 30_000,
+  });
   if (opts.onConnect) pool.on('connect', (c) => void opts.onConnect!(c));
   const db = new Kysely<any>({ dialect: new PostgresDialect({ pool }) });
   return {
@@ -39,7 +45,7 @@ export function connect(
 
 /** 单独的长连接（LISTEN、咨询锁用），不进连接池 */
 export async function dedicatedClient(url: string, applicationName = 'cage-listener'): Promise<pg.Client> {
-  const c = new pg.Client({ connectionString: url, types: types as any, application_name: applicationName });
+  const c = new pg.Client({ connectionString: url, types: types as any, application_name: applicationName, connectionTimeoutMillis: 5_000, statement_timeout: 30_000 });
   await c.connect();
   return c;
 }

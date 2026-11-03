@@ -3,7 +3,8 @@
 import { createServer } from '@yss123/cage-http';
 import * as domain from '@app/domain';
 
-const server = createServer({ domain, webDir: process.env.WEB_DIR, title: 'Cage 采购工作台' });
+// 默认不接受转发头；部署在代理后时，仅在这里填写实际可信代理的地址或网段。
+const server = createServer({ domain, webDir: process.env.WEB_DIR, title: 'Cage 采购工作台', trustProxy: false });
 await server.listen();
 // 退出时释放数据库池及 LISTEN 连接，部署滚动替换时不会留下旧连接。
 process.once('SIGINT', () => void server.close());

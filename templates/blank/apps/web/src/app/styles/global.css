@@ -1,0 +1,601 @@
+/* 空白工作台以留白、细线和深绿建立层次；这里不包含演示统计或客户业务样式。 */
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+
+:root {
+  font-family: 'DM Sans', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  color: #202e29;
+  background: #f7f8f4;
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  --green: #173e35;
+  --muted: #77817b;
+  --line: #e2e7df;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  min-width: 1024px;
+}
+button,
+input {
+  font: inherit;
+}
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+a {
+  color: inherit;
+  text-decoration: none;
+}
+button,
+.primary {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+button:focus-visible,
+a:focus-visible {
+  outline: 3px solid #91bca2;
+  outline-offset: 4px;
+}
+button {
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease;
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  font-size: 27px;
+  font-weight: 700;
+  letter-spacing: -1.5px;
+}
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 34px;
+  background: #c5d4ae;
+  border-radius: 7px 7px 7px 0;
+  font-size: 0;
+}
+.brand-mark::after {
+  content: '';
+  width: 13px;
+  height: 15px;
+  border: 2px solid #173e35;
+  border-right-color: transparent;
+  border-radius: 50%;
+}
+.brand-dot {
+  color: #8db798;
+}
+.eyebrow {
+  margin: 0 0 18px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 2.5px;
+}
+.muted {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.8;
+}
+.primary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 36px;
+  min-height: 48px;
+  padding: 0 20px;
+  border: 1px solid var(--green);
+  border-radius: 5px;
+  background: var(--green);
+  color: #fff;
+  font-size: 14px;
+}
+.primary:hover {
+  background: #255447;
+}
+.primary span {
+  font-size: 19px;
+}
+.error {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid #edd6cc;
+  border-radius: 4px;
+  background: #fff5ef;
+  color: #a04829;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.status-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #94b999;
+}
+
+/* 登录页用安静的品牌叙述与表单分栏，账号密码不预填，也不在页面展示初始化凭证。 */
+.login-layout {
+  display: grid;
+  grid-template-columns: 49% 51%;
+  min-height: 100vh;
+}
+.login-story {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  padding: 48px 64px 34px;
+  background: var(--green);
+  color: #f1f3e9;
+}
+.login-story::after {
+  content: '';
+  position: absolute;
+  width: 520px;
+  height: 520px;
+  right: -300px;
+  bottom: -310px;
+  border: 1px solid #466253;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 70px #ffffff03,
+    0 0 0 140px #ffffff03;
+  pointer-events: none;
+}
+.story-copy {
+  margin: auto 0;
+  padding: 70px 0 90px;
+}
+.story-copy .eyebrow {
+  color: #afc3a5;
+}
+.story-copy h1 {
+  margin: 0 0 30px;
+  font-size: clamp(38px, 3.6vw, 62px);
+  line-height: 1.5;
+  font-weight: 500;
+  letter-spacing: -2px;
+}
+.story-copy h1 span {
+  color: #b5ce92;
+}
+.story-description {
+  margin: 0;
+  color: #bdcbbf;
+  font-size: 15px;
+  line-height: 2;
+}
+.story-foot {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #bfccbf;
+  font-size: 11px;
+}
+.edition {
+  margin-left: auto;
+  font-size: 9px;
+  letter-spacing: 1.8px;
+}
+.login-panel {
+  position: relative;
+  display: grid;
+  place-items: center;
+  padding: 60px;
+  background: #fafbf7;
+}
+.login-form-wrap {
+  width: 100%;
+  max-width: 350px;
+}
+.section-number {
+  color: #82907f;
+  font-size: 10px;
+  letter-spacing: 2px;
+}
+.login-form-wrap h2 {
+  margin: 24px 0 10px;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -1px;
+}
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 35px;
+}
+.login-form label {
+  margin-top: 9px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.login-form input {
+  width: 100%;
+  height: 48px;
+  padding: 0 14px;
+  border: 1px solid #dce2d9;
+  border-radius: 5px;
+  outline: none;
+  background: #fff;
+  color: #20352c;
+  font-size: 14px;
+}
+.login-form input:focus {
+  border-color: #638c72;
+  box-shadow: 0 0 0 3px #638c7215;
+}
+.login-form input::placeholder {
+  color: #a2aba1;
+}
+.login-form .primary {
+  margin-top: 17px;
+}
+.login-note {
+  margin-top: 22px;
+  color: #8d978c;
+  font-size: 11px;
+  line-height: 1.7;
+}
+.panel-foot {
+  position: absolute;
+  bottom: 34px;
+  color: #9ba398;
+  font-size: 11px;
+  letter-spacing: 2px;
+}
+
+/* 登录后的空状态只说明业务尚未添加；管理员入口由当前账号真实能力决定。 */
+.workspace {
+  display: flex;
+  min-height: 100vh;
+}
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 232px;
+  flex-shrink: 0;
+  padding: 30px 20px 24px;
+  background: var(--green);
+  color: #e8eee4;
+}
+.sidebar .brand {
+  margin: 0 14px 60px;
+}
+.sidebar-label {
+  margin: 0 14px 14px;
+  color: #90a99a;
+  font-size: 10px;
+  letter-spacing: 2px;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 8px;
+  padding: 13px 14px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: #c8d5c8;
+  font-size: 13px;
+}
+.nav-item.active,
+.nav-item:hover {
+  border-color: #4c6d5d;
+  background: #ffffff09;
+  color: #f3f6ed;
+}
+.nav-item > span:first-child {
+  font-size: 18px;
+}
+.nav-arrow {
+  margin-left: auto;
+  color: #91b28f;
+}
+.sidebar-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: auto 14px 0;
+  padding-top: 40px;
+  color: #93ad99;
+  font-size: 10px;
+}
+.workspace-body {
+  flex: 1;
+  min-width: 0;
+}
+.topbar {
+  height: 78px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 30px;
+  padding: 0 42px;
+  border-bottom: 1px solid var(--line);
+  background: #fcfdf9;
+  color: #7d887d;
+  font-size: 12px;
+}
+.topbar strong {
+  color: #344a3d;
+  font-weight: 500;
+}
+.breadcrumb-divider {
+  margin: 0 15px;
+  color: #bcc5b8;
+}
+.account {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  color: #4a5a4c;
+}
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #dce4d5;
+  border-radius: 50%;
+  background: #eaf0e3;
+  font-size: 11px;
+}
+.text-button {
+  padding: 5px 0 5px 20px;
+  border: 0;
+  border-left: 1px solid var(--line);
+  margin-left: 9px;
+  background: transparent;
+  color: #7a867a;
+  font-size: 11px;
+}
+.text-button:hover {
+  color: var(--green);
+}
+.workspace-content {
+  max-width: 1450px;
+  margin: 0 auto;
+  padding: 48px 42px 24px;
+}
+.page-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 33px;
+}
+.page-heading .eyebrow {
+  margin-bottom: 12px;
+  color: #7f8d77;
+  font-size: 10px;
+}
+.page-heading h1 {
+  margin: 0;
+  font-size: 29px;
+  letter-spacing: -1px;
+  font-weight: 600;
+}
+.page-heading .muted {
+  margin: 10px 0 0;
+  font-size: 12px;
+}
+.project-tag {
+  align-self: flex-start;
+  margin-top: 23px;
+  padding: 7px 12px;
+  border: 1px solid #dce4d5;
+  border-radius: 3px;
+  background: #f1f5eb;
+  color: #64755a;
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 470px;
+  padding: 55px 30px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fdfefb;
+  text-align: center;
+}
+.empty-state .eyebrow {
+  margin: 28px 0 14px;
+  color: #87947e;
+  font-size: 10px;
+}
+.empty-state h2 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: -0.7px;
+}
+.empty-state > p:not(.eyebrow) {
+  margin: 15px 0 26px;
+  color: #86917f;
+  font-size: 12px;
+  line-height: 1.9;
+}
+.manage-link {
+  min-height: 42px;
+  padding: 0 16px;
+  font-size: 12px;
+}
+.empty-illustration {
+  position: relative;
+  width: 120px;
+  height: 104px;
+}
+.sheet {
+  position: absolute;
+  width: 76px;
+  height: 88px;
+  border: 1px solid #cedbc6;
+  border-radius: 5px;
+  background: #f9fcf5;
+}
+.sheet-back {
+  top: 2px;
+  left: 12px;
+  transform: rotate(-12deg);
+  background: #edf3e5;
+}
+.sheet-front {
+  top: 10px;
+  left: 30px;
+  padding: 22px 15px;
+  transform: rotate(6deg);
+  box-shadow: 0 5px 20px #425a2e08;
+}
+.sheet-front > span {
+  display: block;
+  height: 3px;
+  margin-bottom: 8px;
+  border-radius: 2px;
+  background: #dbe5d2;
+}
+.sheet-front > span:nth-child(2) {
+  width: 70%;
+}
+.sheet-front b {
+  position: absolute;
+  bottom: -11px;
+  right: -10px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 3px solid #fdfefb;
+  border-radius: 50%;
+  background: #486840;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 400;
+}
+.workspace-footer {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 24px;
+  color: #a0aa99;
+  font-size: 10px;
+}
+.session-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  min-height: 100vh;
+  color: #6b7b67;
+  font-size: 14px;
+}
+.session-state h1 {
+  margin: 15px 0 0;
+  color: var(--green);
+  font-size: 24px;
+  font-weight: 500;
+}
+.session-state .primary {
+  min-width: 200px;
+}
+
+/* 目录复用真实组织数据，独立列表与详情是业务模块的最小导航参考。 */
+.directory-intro {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin: 0 0 24px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.directory-panel {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fdfefb;
+  overflow: hidden;
+}
+.directory-panel table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+.directory-panel th,
+.directory-panel td {
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.directory-panel th {
+  background: #f1f5eb;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+.record-link {
+  color: var(--green);
+  text-decoration: underline;
+  text-decoration-color: #c6d5b5;
+  text-underline-offset: 4px;
+}
+.record-link:hover {
+  text-decoration-color: var(--green);
+}
+.directory-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.directory-pagination button {
+  padding: 8px 12px;
+  margin-left: 8px;
+  background: #f1f5eb;
+  color: var(--green);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.directory-empty {
+  text-align: center;
+  padding: 48px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.record-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  padding: 8px 24px;
+  gap: 0 36px;
+}
+.record-facts > div {
+  padding: 24px 0;
+  border-bottom: 1px solid var(--line);
+}
+.record-facts dt {
+  color: var(--muted);
+  font-size: 11px;
+  margin-bottom: 12px;
+}
+.record-facts dd {
+  margin: 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}

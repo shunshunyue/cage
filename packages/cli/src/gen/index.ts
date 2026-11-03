@@ -1,7 +1,7 @@
 // cage gen：从声明生成 contracts、路由清单、安全视图与策略 DDL、迁移草稿、状态图、本体图。
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { kebab, type Registry } from '@yss123/cage-kernel';
+import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { dirname, join, relative } from 'node:path';
+import { isRelation, kebab, type Fields, type Registry } from '@yss123/cage-kernel';
 import {
   createTableSql,
   diffSchemas,
@@ -17,6 +17,7 @@ import { statesHoldingResources } from '../rules.js';
 import type { Ontology } from '../ontology.js';
 import type { DeclSite } from '../static-check.js';
 import { contractsFiles } from './contracts.js';
+import { schemaDiagnostics } from './zod-code.js';
 
 export function stateDiagram(g: Ontology, agg: string): string {
   const lines = ['stateDiagram-v2'];
@@ -63,6 +64,45 @@ function writeIf(
   written.push(path);
 }
 
+/**
+ * 升级目录布局或删除聚合后，旧契约不能继续留在包里参与编译和导出。
+ * 只清理由生成器签名标记的文件；用户自己添加的代码不属于生成器的删除范围。
+ * check 仅报告，不写文件，因此 CI 不会悄悄“修正”待审查的工作区。
+ */
+function removeStaleContracts(
+  root: string,
+  expected: Record<string, string>,
+  check: boolean,
+  written: string[],
+  findings: Finding[],
+) {
+  if (!existsSync(root)) return;
+  const visit = (directory: string) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) visit(path);
+      else if (
+        entry.name.endsWith('.ts') &&
+        !(relative(root, path).replace(/\\/g, '/') in expected) &&
+        readFileSync(path, 'utf8').startsWith('// 生成物：由 cage gen 从 domain 声明生成，不要手改。')
+      ) {
+        if (check)
+          findings.push({
+            code: 'CAGE-GEN-001',
+            at: path,
+            reason: '存在已过期的生成契约（聚合已删除或生成目录布局已更新）',
+            fix: '运行 cage gen 清理旧生成文件，并提交目录变更',
+          });
+        else {
+          unlinkSync(path);
+          written.push(path);
+        }
+      }
+    }
+  };
+  visit(root);
+}
+
 export function generate(
   cfg: CageConfig,
   reg: Registry,
@@ -74,6 +114,11 @@ export function generate(
   const written: string[] = [];
   const findings: Finding[] = [];
   const gen = abs(cfg, cfg.generated);
+  for (const entry of [...reg.commands.map(c => ({ name: c.capability, input: c.cmd.input })), ...reg.queries.map(q => ({ name: q.name, input: q.input }))])
+    for (const diagnostic of schemaDiagnostics(entry.input)) findings.push({
+      code: 'CAGE-GEN-003', severity: 'warning', at: `${entry.name}:${diagnostic.path}`,
+      reason: diagnostic.reason, fix: '前端校验只提供即时提示，以服务端命令校验为准；不要复制可执行函数到契约。',
+    });
 
   // 不入库的生成物：直接覆盖（check 模式不比较）
   if (!check) {
@@ -107,6 +152,7 @@ export function generate(
 
   // 入库的生成物：前端契约
   const files = contractsFiles(reg, sites);
+  removeStaleContracts(abs(cfg, cfg.contracts), files, check, written, findings);
   for (const [name, content] of Object.entries(files))
     writeIf(join(abs(cfg, cfg.contracts), name), content, check, written, findings);
 
@@ -143,7 +189,16 @@ export function generate(
 }
 
 export function routes(reg: Registry) {
-  const out: { method: string; url: string; capability: string }[] = [];
+  const out: { method: string; url: string; capability: string }[] = [
+    { method: 'POST', url: '/api/sys/uploads', capability: '目标用户命令能力及字段限制' },
+    { method: 'GET', url: '/api/sys/uploads', capability: '本人会话及目标命令能力' },
+    { method: 'GET', url: '/api/sys/uploads/:id', capability: '本人会话及目标命令能力' },
+    { method: 'POST', url: '/api/sys/uploads/:id/parts/:number', capability: '本人会话及目标命令能力' },
+    { method: 'POST', url: '/api/sys/uploads/:id/complete', capability: '本人会话及目标命令能力' },
+    { method: 'POST', url: '/api/sys/uploads/:id/cancel', capability: '本人会话及目标命令能力' },
+    { method: 'GET', url: '/api/sys/files/:id', capability: '所属对象 read/范围；临时文件限本人' },
+    { method: 'GET', url: '/api/sys/files/:id/download', capability: '所属对象 read/范围；临时文件限本人' },
+  ];
   for (const c of reg.commands) {
     if (!c.cmd.invokedBy.includes('user')) continue;
     const base = `/api/${kebab(c.cmd.agg.name)}`;
@@ -160,6 +215,13 @@ export function routes(reg: Registry) {
       { method: 'GET', url: `${base}/:id`, capability: `${a.name}.read` },
       { method: 'POST', url: `${base}/export`, capability: `${a.name}.export` },
     );
+    for (const [key, field] of Object.entries(a.fields as Fields))
+      if (isRelation(field))
+        out.push({
+          method: 'GET',
+          url: `${base}/:id/relations/${kebab(key)}`,
+          capability: [...new Set([`${a.name}.read`, `${field.ref}.read`])].join(','),
+        });
   }
   for (const q of reg.queries)
     out.push({

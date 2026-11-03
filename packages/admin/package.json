@@ -1,6 +1,6 @@
 {
   "name": "@yss123/cage-admin",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "组织模型声明与 /admin 系统管理",
   "type": "module",
   "main": "dist/index.js",
@@ -17,11 +17,14 @@
   },
   "files": [
     "dist",
-    "ui"
+    "ui/index.html",
+    "ui/style.css",
+    "ui/dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "build": "tsc -p tsconfig.json && tsc -p ui/tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p ui/tsconfig.json --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@yss123/cage-kernel": "workspace:*",

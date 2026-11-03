@@ -9,6 +9,7 @@ export const REACTION = Symbol.for('cage.reaction');
 export const QUERY = Symbol.for('cage.query');
 export const APPROVAL = Symbol.for('cage.approval');
 export const JOB = Symbol.for('cage.job');
+export const BUSINESS_PROCESS = Symbol.for('cage.businessProcess');
 export const UNSAFE = Symbol.for('cage.unsafe');
 // 以下原语由 @yss123/cage-connectors、@yss123/cage-approval 实现，标记放在这里统一管理
 export const CONNECTOR = Symbol.for('cage.connector');
@@ -22,7 +23,7 @@ export const CONSUMERS = Symbol.for('cage.consumers');
 export const SYSTEM_DDL = Symbol.for('cage.systemDdl');
 
 export const ALL_BRANDS = {
-  AGGREGATE, STATES, COMMAND, EVENT, REACTION, QUERY, APPROVAL, JOB, UNSAFE,
+  AGGREGATE, STATES, COMMAND, EVENT, REACTION, QUERY, APPROVAL, JOB, BUSINESS_PROCESS, UNSAFE,
   CONNECTOR, OUTBOUND, INBOUND, ROUTE,
 } as const;
 

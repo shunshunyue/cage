@@ -4,6 +4,8 @@ node_modules
 .git
 .cage
 **/.cage
+.cage-files
+**/.cage-files
 generated
 .env
 .env.*

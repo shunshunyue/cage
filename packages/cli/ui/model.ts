@@ -1,106 +1,33 @@
-// 图谱的投影层和页面分离：声明数据保持原样，视图额外补充的“归属”关系
-// 有独立标记。这样不会让用户把布局连线误认为框架抽取出的业务依赖。
-import type { NodeKind, OntEdge, OntNode, Ontology } from '../src/ontology.js';
-
+// 页面只保留颜色、布局和筛选；语义投影由 Web 与 CLI 共用。
+import type { NodeKind } from '../src/ontology.js';
+import { kindLabels, type ViewNode, type ViewEdge } from '../src/graph-model.js';
+export { nodeLabel, projectGraph, neighborhood, edgeLabels } from '../src/graph-model.js';
+export type { ViewNode, ViewEdge, GraphModel } from '../src/graph-model.js';
+export { matchesNode } from '../src/graph-search.js';
 export const kinds: Record<
   NodeKind | 'entry',
   { label: string; color: string; short: string; column: number }
 > = {
-  aggregate: { label: '业务对象', color: '#197c72', short: '表', column: 0 },
-  command: { label: '命令', color: '#547db2', short: '令', column: 1 },
-  event: { label: '事件', color: '#c08c36', short: '事', column: 2 },
-  reaction: { label: '反应', color: '#aa7288', short: '应', column: 3 },
-  query: { label: '查询', color: '#648c5b', short: '查', column: 1 },
-  approval: { label: '审批', color: '#9c739f', short: '审', column: 3 },
-  route: { label: '审批路由', color: '#9c739f', short: '路', column: 3 },
-  job: { label: '定时任务', color: '#7f82a0', short: '时', column: 0 },
-  connector: { label: '连接器', color: '#b57452', short: '连', column: 4 },
-  outbound: { label: '出站映射', color: '#b57452', short: '出', column: 3 },
-  inbound: { label: '入站回调', color: '#b57452', short: '入', column: 4 },
-  field: { label: '字段', color: '#67998f', short: '字', column: 1 },
-  state: { label: '状态', color: '#898b69', short: '态', column: 2 },
-  capability: { label: '能力点', color: '#81949f', short: '权', column: 1 },
-  entry: { label: '新建入口', color: '#89938e', short: '+', column: 0 },
+  aggregate: { label: kindLabels.aggregate, color: '#197c72', short: '表', column: 0 },
+  command: { label: kindLabels.command, color: '#547db2', short: '令', column: 1 },
+  event: { label: kindLabels.event, color: '#c08c36', short: '事', column: 2 },
+  reaction: { label: kindLabels.reaction, color: '#aa7288', short: '应', column: 3 },
+  query: { label: kindLabels.query, color: '#648c5b', short: '查', column: 1 },
+  approval: { label: kindLabels.approval, color: '#9c739f', short: '审', column: 3 },
+  route: { label: kindLabels.route, color: '#9c739f', short: '路', column: 3 },
+  job: { label: kindLabels.job, color: '#7f82a0', short: '时', column: 0 },
+  connector: { label: kindLabels.connector, color: '#b57452', short: '连', column: 4 },
+  outbound: { label: kindLabels.outbound, color: '#b57452', short: '出', column: 3 },
+  inbound: { label: kindLabels.inbound, color: '#b57452', short: '入', column: 4 },
+  field: { label: kindLabels.field, color: '#67998f', short: '字', column: 1 },
+  state: { label: kindLabels.state, color: '#898b69', short: '态', column: 2 },
+  capability: { label: kindLabels.capability, color: '#81949f', short: '权', column: 1 },
+  entry: { label: kindLabels.entry, color: '#89938e', short: '+', column: 0 },
+  process: { label: kindLabels.process, color: '#397a56', short: '流', column: 0 },
+  stage: { label: kindLabels.stage, color: '#648c5b', short: '段', column: 1 },
 };
 
-export const edgeLabels: Record<string, string> = {
-  transition: '状态迁移',
-  reads: '读取',
-  emits: '发出',
-  uses: '使用字段',
-  triggers: '触发',
-  targets: '调用目标',
-  queries: '查询',
-  refs: '引用',
-  calls: '调用',
-  binds: '审批绑定',
-  field: '声明字段',
-  ownership: '归属（视图推导）',
-};
-
-export interface ViewNode extends Omit<OntNode, 'kind'> {
-  key: string;
-  kind: NodeKind | 'entry';
-}
-export interface ViewEdge extends Omit<OntEdge, 'kind'> {
-  key: string;
-  kind: OntEdge['kind'] | 'ownership';
-  derived: boolean;
-}
-export interface GraphModel {
-  nodes: ViewNode[];
-  edges: ViewEdge[];
-}
-
-/** 中文用于展示，英文仍作为复制、搜索和查源码的稳定标识。
- * 没有配置业务名称的未知节点保留原标识，不能猜测业务含义后悄悄改名。 */
-export function nodeLabel(node: ViewNode, labels: Record<string, string> = {}): string {
-  if (node.kind === 'entry') return '新建入口';
-  return labels[node.key] || String(node.attrs.description || node.id);
-}
-
-export function matchesNode(node: ViewNode, query: string, labels: Record<string, string>): boolean {
-  return `${nodeLabel(node, labels)} ${node.id} ${kinds[node.kind].label}`
-    .toLowerCase()
-    .includes(query.toLowerCase());
-}
-
-export function projectGraph(graph: Ontology): GraphModel {
-  const nodes: ViewNode[] = graph.nodes.map((n) => ({ ...n, key: `${n.kind}:${n.id}` }));
-  const edges: ViewEdge[] = [];
-  // 节点身份包含 kind。能力点和命令可能同名，不能单用显示名作为 SVG 的主键。
-  const find = (id: string) =>
-    nodes.find((n) => n.id === id && n.kind !== 'capability') ?? nodes.find((n) => n.id === id);
-  for (const e of graph.edges) {
-    let from = find(e.from);
-    const to = find(e.to);
-    // [new] 是迁移的起点，并不属于声明状态；在视图中显式标为虚拟入口。
-    if (!from && e.kind === 'transition' && e.from.endsWith('.[new]')) {
-      from = { key: `entry:${e.from}`, id: e.from, kind: 'entry', hash: '', attrs: {} };
-      nodes.push(from);
-    }
-    if (from && to)
-      edges.push({ ...e, from: from.key, to: to.key, key: `edge:${edges.length}`, derived: false });
-  }
-  for (const n of nodes) {
-    if (!['command', 'state', 'capability', 'entry'].includes(n.kind)) continue;
-    const owner = nodes.find((a) => a.kind === 'aggregate' && n.id.startsWith(`${a.id}.`));
-    if (owner)
-      edges.push({ key: `owner:${n.key}`, kind: 'ownership', from: owner.key, to: n.key, derived: true });
-  }
-  return { nodes, edges };
-}
-
-export const isSystem = (n: ViewNode) => /^(User|Role|Dept)(\.|$)/.test(n.id);
-export function neighborhood(model: GraphModel, key: string): Set<string> {
-  const connected = new Set([key]);
-  for (const e of model.edges) {
-    if (e.from === key) connected.add(e.to);
-    if (e.to === key) connected.add(e.from);
-  }
-  return connected;
-}
-
+export const isSystem = (node: ViewNode) => /^(User|Role|Dept)(\.|$)/.test(node.id);
 export interface Position {
   x: number;
   y: number;

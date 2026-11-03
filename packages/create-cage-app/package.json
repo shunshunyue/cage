@@ -1,6 +1,6 @@
 {
   "name": "@yss123/create-cage-app",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "从 Cage 薄壳模板创建中后台项目",
   "bin": {

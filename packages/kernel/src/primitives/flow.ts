@@ -18,7 +18,11 @@ export interface Reaction<E extends AnyEvent = AnyEvent, C extends AnyCommand = 
   /** 作用的聚合（等于 command.agg，写出来便于阅读） */
   readonly target: AnyAggregate;
   /** 把事件载荷映射成命令输入（纯函数）；返回 null 表示这次不处理 */
-  readonly map: (e: PayloadOf<E>) => z.input<C['input']> | null;
+  readonly map: (e: PayloadOf<E>) => z.input<C['input']> | readonly z.input<C['input']>[] | null;
+  /** 同一事件、同一事务模式中的显式步骤序号；启用后各步骤必须完整、唯一地声明。 */
+  readonly order?: number;
+  /** 有界集合的可检查元数据；集合仍逐项经过命令流水线。 */
+  readonly collection?: { readonly maxItems: number; readonly orderBy: string; readonly itemsSource: string; readonly mapSource: string };
   /** 事务语义：outbox 异步（默认，见 D3）；same 与触发命令同一事务 */
   readonly tx: TxMode;
   /** 获得的资源，供资源配对检查使用 */
@@ -40,10 +44,14 @@ export function reaction<E extends AnyEvent, C extends AnyCommand>(
     acquires?: string;
     releases?: string;
     name?: string;
+    order?: number;
   },
 ): Reaction<E, C> {
   if (def.target && def.target !== def.command.agg) {
     throw declError('CAGE-REACT-001', `反应的 target 与 command 所属聚合不一致`);
+  }
+  if (def.order !== undefined && (!Number.isSafeInteger(def.order) || def.order < 0)) {
+    throw declError('CAGE-REACT-003', '反应 order 必须为非负安全整数');
   }
   return Object.freeze({
     [REACTION]: true as const,
@@ -55,6 +63,7 @@ export function reaction<E extends AnyEvent, C extends AnyCommand>(
     acquires: def.acquires,
     releases: def.releases,
     name: def.name,
+    order: def.order,
   });
 }
 
@@ -71,6 +80,8 @@ export interface Query<I extends z.ZodType = z.ZodType> {
   /** 查询构建器写法：db 是只读账号上的 Kysely，只映射安全视图 */
   readonly build?: (db: Kysely<any>, input: z.output<I>) => { execute(): Promise<unknown[]> };
   readonly description?: string;
+  /** 用途级可靠审计；敏感明文查询另会自动审计所涉及聚合。 */
+  readonly audit?: { readonly purpose: string };
 }
 
 export type AnyQuery = Query<z.ZodType>;
@@ -83,6 +94,7 @@ export function query<I extends z.ZodType = z.ZodObject<{}>>(
     sql?: string;
     build?: (db: Kysely<any>, input: z.output<I>) => { execute(): Promise<unknown[]> };
     description?: string;
+    audit?: { purpose: string };
   },
 ): Query<I> {
   if (!/^[a-z][A-Za-z0-9]*$/.test(name)) throw declError('CAGE-NAME-005', `查询名 ${name} 必须是小驼峰`);
@@ -90,6 +102,7 @@ export function query<I extends z.ZodType = z.ZodObject<{}>>(
   if (def.sql && /\bcore\.|\bsys\./i.test(def.sql)) {
     throw declError('CAGE-QUERY-002', `查询 ${name} 引用了基表，只能引用 safe.* 安全视图`);
   }
+  if (def.audit && !def.audit.purpose.trim()) throw declError('CAGE-QUERY-003', `查询 ${name} 的审计 purpose 不能为空`);
   return Object.freeze({
     [QUERY]: true as const,
     name,
@@ -98,6 +111,7 @@ export function query<I extends z.ZodType = z.ZodObject<{}>>(
     sql: def.sql,
     build: def.build,
     description: def.description,
+    audit: def.audit ? Object.freeze({ ...def.audit }) : undefined,
   });
 }
 

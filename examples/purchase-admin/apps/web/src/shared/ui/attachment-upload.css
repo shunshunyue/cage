@@ -1,0 +1,18 @@
+.attachment-upload { margin: 20px 0; border-top: 1px solid var(--line, #e3e5df); padding-top: 18px; }
+.attachment-heading, .attachment-row, .attachment-progress { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.attachment-heading { margin-bottom: 10px; }
+.attachment-picker { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px; border: 1px dashed #a9b8aa; border-radius: 8px; background: #f5f8f2; cursor: pointer; }
+.attachment-picker input, .attachment-resume input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.attachment-picker:focus-within, .attachment-resume:focus-within { outline: 2px solid #3c6c48; outline-offset: 3px; }
+.attachment-picker small, .attachment-hint, .attachment-progress { font-size: 12px; }
+.attachment-hint { margin: 8px 0 12px; }
+.attachment-row { padding: 8px 0; min-width: 0; }
+.attachment-row > span, .attachment-row > a { overflow-wrap: anywhere; }
+.attachment-task { padding: 8px 0; border-bottom: 1px solid var(--line, #e3e5df); }
+.attachment-task progress { display: block; width: 100%; height: 6px; accent-color: #3c6c48; }
+.attachment-progress { margin-top: 8px; color: #687066; font-variant-numeric: tabular-nums; }
+.attachment-error { color: #a33b30; font-size: 13px; }
+.attachment-recovery { margin-top: 14px; padding: 12px; background: #f6f4ed; border-radius: 8px; font-size: 13px; }
+.attachment-recovery > p { margin: 6px 0; }
+.attachment-resume { position: relative; display: inline-flex; padding: 6px 10px; border: 1px solid #c5c9bf; border-radius: 5px; cursor: pointer; white-space: nowrap; }
+@media (max-width: 600px) { .attachment-picker { align-items: flex-start; flex-direction: column; } .attachment-row { flex-wrap: wrap; } }

@@ -2,7 +2,7 @@
 import { z } from 'zod';
 import { EVENT } from '../brands.js';
 import { declError } from '../errors.js';
-import { type FieldValues, type Fields, objectSchema } from './fields.js';
+import { type FieldValues, type Fields, isRelation, isFile, objectSchema } from './fields.js';
 
 export interface Event<N extends string = string, F extends Fields = Fields> {
   readonly [EVENT]: true;
@@ -17,6 +17,8 @@ export type PayloadOf<E> = E extends Event<any, infer F> ? FieldValues<F> : neve
 
 export function event<const N extends string, F extends Fields>(name: N, fields: F, opts?: { description?: string }): Event<N, F> {
   if (!/^[A-Z][A-Za-z0-9]*$/.test(name)) throw declError('CAGE-NAME-003', `事件名 ${name} 必须是大驼峰`);
+  if (Object.values(fields).some(isRelation)) throw declError('CAGE-REL-001', '事件载荷不声明持久化关系；传递 ID 数组请使用 list(id())');
+  if (Object.values(fields).some(isFile)) throw declError('CAGE-FILE-001', '事件传递文件 ID 请使用 id/list(id())，不声明文件生命周期');
   return Object.freeze({
     [EVENT]: true as const,
     name,

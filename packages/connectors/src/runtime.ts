@@ -1,6 +1,8 @@
 // 连接器运行时：每一道管控都在这里发生——字段白名单、地址白名单、密钥、限流、超时、调用记录、响应校验。
 import { systemCtx, type Kernel } from '@yss123/cage-kernel';
-import type { EventConsumer } from '@yss123/cage-kernel/worker';
+import type { EventConsumer, OutboxRow } from '@yss123/cage-kernel/worker';
+import { createHash, randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import { sql } from 'kysely';
 import { z } from 'zod';
 import type { Connector, Op, Outbound } from './primitives.js';
@@ -32,13 +34,15 @@ export const secrets = { get: (name: string) => secretProvider.get(name) };
 // ---------------- 限流 ----------------
 
 const buckets = new Map<string, { tokens: number; at: number }>();
-export async function take(c: Connector<any>): Promise<void> {
+export async function take(c: Connector<any>, signal?: AbortSignal): Promise<void> {
   const rate = c.rateLimit?.perSecond;
   if (!rate) return;
+  const capacity = Math.max(1, rate); // 低于每秒一次时仍需容纳一个完整令牌。
   for (;;) {
+    signal?.throwIfAborted();
     const now = Date.now();
-    const b = buckets.get(c.name) ?? { tokens: rate, at: now };
-    b.tokens = Math.min(rate, b.tokens + ((now - b.at) / 1000) * rate);
+    const b = buckets.get(c.name) ?? { tokens: capacity, at: now };
+    b.tokens = Math.min(capacity, b.tokens + ((now - b.at) / 1000) * rate);
     b.at = now;
     if (b.tokens >= 1) {
       b.tokens -= 1;
@@ -46,13 +50,13 @@ export async function take(c: Connector<any>): Promise<void> {
       return;
     }
     buckets.set(c.name, b);
-    await new Promise((r) => setTimeout(r, Math.ceil(((1 - b.tokens) / rate) * 1000)));
+    await delay(Math.ceil(((1 - b.tokens) / rate) * 1000), undefined, { signal });
   }
 }
 
 // ---------------- fake ----------------
 
-type FakeHandler = (req: any) => unknown | Promise<unknown>;
+type FakeHandler = (req: any, context: { key: string; signal: AbortSignal }) => unknown | Promise<unknown>;
 const fakes = new Map<string, FakeHandler>();
 export const fakeCalls: { connector: string; operation: string; request: unknown; key: string }[] = [];
 
@@ -91,7 +95,7 @@ export function sampleFromSchema(schema: z.ZodType, seed = 'fake'): unknown {
 // ---------------- 调用 ----------------
 
 export class ConnectorError extends Error {
-  constructor(message: string, readonly status: number | null, readonly retryable: boolean) {
+  constructor(message: string, readonly status: number | null, readonly retryable: boolean, readonly outcome: 'rejected' | 'unknown' = 'rejected') {
     super(message);
     this.name = 'ConnectorError';
   }
@@ -106,7 +110,7 @@ async function recordCall(k: Kernel | undefined, o: Op, key: string, tenantId: s
       http_status: httpStatus, request: JSON.stringify(request), response: response === undefined ? null : JSON.stringify(response), error: error ?? null,
     })
     .onConflict((oc) =>
-      oc.columns(['connector', 'operation', 'idempotency_key']).doUpdateSet({
+      oc.columns(['tenant_id', 'connector', 'operation', 'idempotency_key']).doUpdateSet({
         status, http_status: httpStatus, attempts: sql`sys.sync_record.attempts + 1`, response: response === undefined ? null : JSON.stringify(response),
         error: error ?? null, updated_at: sql`now()`,
       }),
@@ -115,75 +119,138 @@ async function recordCall(k: Kernel | undefined, o: Op, key: string, tenantId: s
     .catch((e) => k.log.warn({ err: String(e) }, '同步记录写入失败'));
 }
 
-/** 调用一个连接器操作。白名单外的字段直接报错，不会被悄悄发出去。 */
-export async function call(o: Op, payload: unknown, key: string, opts: { kernel?: Kernel; tenantId?: string } = {}): Promise<any> {
-  const body = (o.request as z.ZodObject<any>).strict().parse(payload);
-  const st = stage();
-  if (st === 'fake') {
-    const h = fakes.get(`${o.connector.name}.${o.name}`);
-    const res = h ? await h(body) : sampleFromSchema(o.response, o.connector.name);
-    fakeCalls.push({ connector: o.connector.name, operation: o.name, request: body, key });
-    const parsed = o.response.parse(res);
-    await recordCall(opts.kernel, o, key, opts.tenantId ?? null, 'ok', 200, body, parsed);
-    return parsed;
-  }
-  const host = o.connector.hosts[st];
-  if (!host) throw new ConnectorError(`[CAGE-CONN-007] 连接器 ${o.connector.name} 没有 ${st} 环境的地址`, null, false);
-  const token = o.connector.secret ? await secrets.get(o.connector.secret) : undefined;
-  await take(o.connector);
-  const url = new URL(o.path, `https://${host}`);
-  if (o.method === 'GET') for (const [k, v] of Object.entries(body)) url.searchParams.set(k, String(v));
-  let res: Response;
-  try {
-    // 生产环境出站流量经过出口代理：设置 HTTPS_PROXY 与 NODE_USE_ENV_PROXY=1
-    res = await fetch(url, {
-      method: o.method,
-      headers: {
-        'content-type': 'application/json',
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
-        'idempotency-key': key,
-      },
-      body: o.method === 'GET' ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(o.connector.timeoutMs),
-    });
-  } catch (e) {
-    await recordCall(opts.kernel, o, key, opts.tenantId ?? null, 'failed', null, body, undefined, String(e));
-    throw new ConnectorError(`[CAGE-CONN-008] 调用 ${o.connector.name}.${o.name} 失败：${String(e)}`, null, true);
-  }
-  const text = await res.text();
-  let json: unknown = null;
-  try {
-    json = text ? JSON.parse(text) : null;
-  } catch {
-    json = { raw: text.slice(0, 500) };
-  }
-  if (!res.ok) {
-    await recordCall(opts.kernel, o, key, opts.tenantId ?? null, 'failed', res.status, body, json);
-    const retryable = o.effect === 'retryableWrite' || o.effect === 'read' ? res.status >= 500 || res.status === 429 : false;
-    throw new ConnectorError(`[CAGE-CONN-009] ${o.connector.name}.${o.name} 返回 ${res.status}`, res.status, retryable);
-  }
-  const parsed = o.response.safeParse(json);
-  if (!parsed.success) {
-    await recordCall(opts.kernel, o, key, opts.tenantId ?? null, 'failed', res.status, body, json, '响应格式不符合声明');
-    throw new ConnectorError(`[CAGE-CONN-010] ${o.connector.name}.${o.name} 的响应格式与声明不符`, res.status, false);
-  }
-  await recordCall(opts.kernel, o, key, opts.tenantId ?? null, 'ok', res.status, body, parsed.data);
-  return parsed.data;
+async function abortable<T>(signal: AbortSignal, run: () => Promise<T>): Promise<T> {
+  signal.throwIfAborted();
+  let onAbort: () => void = () => {};
+  const aborted = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(signal.reason);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+  try { return await Promise.race([run(), aborted]); }
+  finally { signal.removeEventListener('abort', onAbort); }
 }
 
-/** 出站映射的事件消费者：调用第三方，成功后以 external 身份执行回写命令，和去重登记同一个事务 */
+/** 调用一个连接器操作。白名单外的字段直接报错，不会被悄悄发出去。 */
+export async function call(o: Op, payload: unknown, key: string, opts: { kernel?: Kernel; tenantId?: string; signal?: AbortSignal } = {}): Promise<any> {
+  const body = (o.request as z.ZodObject<any>).strict().parse(payload);
+  const timeout = AbortSignal.timeout(o.connector.timeoutMs);
+  const signal = opts.signal ? AbortSignal.any([opts.signal, timeout]) : timeout;
+  let httpStatus: number | null = null;
+  try {
+    const parsed = await abortable(signal, async () => {
+      const st = stage();
+      if (st === 'fake') {
+        const h = fakes.get(`${o.connector.name}.${o.name}`);
+        fakeCalls.push({ connector: o.connector.name, operation: o.name, request: body, key });
+        const response = h ? await h(body, { key, signal }) : sampleFromSchema(o.response, o.connector.name);
+        httpStatus = 200;
+        return o.response.parse(response);
+      }
+      const host = o.connector.hosts[st];
+      if (!host) throw new ConnectorError(`[CAGE-CONN-007] 连接器 ${o.connector.name} 没有 ${st} 环境的地址`, null, false);
+      const token = o.connector.secret ? await secrets.get(o.connector.secret) : undefined;
+      await take(o.connector, signal);
+      const url = new URL(o.path, `https://${host}`);
+      if (o.method === 'GET') for (const [field, value] of Object.entries(body)) url.searchParams.set(field, String(value));
+      // 超时覆盖限流等待、请求和响应体读取，关闭 worker 同样能取消在途网络 IO。
+      const res = await fetch(url, {
+        method: o.method,
+        headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}), 'idempotency-key': key },
+        body: o.method === 'GET' ? undefined : JSON.stringify(body), signal,
+      });
+      httpStatus = res.status;
+      const text = await res.text();
+      let json: unknown = null;
+      try { json = text ? JSON.parse(text) : null; } catch { /* 无效响应由下方 schema 统一诊断，不记录原文。 */ }
+      if (!res.ok) throw new ConnectorError(`[CAGE-CONN-009] ${o.connector.name}.${o.name} 返回 ${res.status}`, res.status,
+        o.effect !== 'write' && (res.status >= 500 || res.status === 429), res.status >= 500 ? 'unknown' : 'rejected');
+      const result = o.response.safeParse(json);
+      if (!result.success) throw new ConnectorError(`[CAGE-CONN-010] ${o.connector.name}.${o.name} 的响应格式与声明不符`, res.status, false, 'unknown');
+      return result.data;
+    });
+    await recordCall(opts.kernel, o, key, opts.tenantId ?? null, 'ok', httpStatus, body, parsed);
+    return parsed;
+  } catch (e) {
+    const err = e instanceof ConnectorError ? e : new ConnectorError(`[CAGE-CONN-008] 调用 ${o.connector.name}.${o.name} 失败：${(e as Error)?.name ?? 'Error'}`, httpStatus, o.effect !== 'write', 'unknown');
+    await recordCall(opts.kernel, o, key, opts.tenantId ?? null, 'failed', httpStatus, body, undefined, err.message);
+    throw err;
+  }
+}
+
+function canonical(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  return `{${Object.keys(value).sort().filter((key) => (value as any)[key] !== undefined).map((key) => `${JSON.stringify(key)}:${canonical((value as any)[key])}`).join(',')}}`;
+}
+
+type OutboundPrepared = { skipped: true } | { skipped: false; response: unknown };
+
+/** 先持久化意图，释放连接后才外呼；成功回执先提交，后续本地回写失败不再外呼。 */
+async function prepareOutbound(k: Kernel, ob: Outbound, row: OutboxRow, consumer: string, signal?: AbortSignal): Promise<OutboundPrepared> {
+  const mapped = ob.map(row.payload as any);
+  if (mapped === null || mapped === undefined) return { skipped: true };
+  const body = (ob.op.request as z.ZodObject<any>).strict().parse(mapped);
+  const key = ob.idempotencyKey(row.payload as any);
+  if (!key || typeof key !== 'string') throw new ConnectorError('[CAGE-CONN-013] 出站幂等键必须为非空字符串', null, false);
+  const requestHash = createHash('sha256').update(canonical(body)).digest('hex');
+  const identity = { tenant_id: row.tenant_id, connector: ob.op.connector.name, operation: ob.op.name, idempotency_key: key };
+  const locate = (db: typeof k.app) => db.selectFrom('sys.connector_execution').selectAll()
+    .where('tenant_id', '=', identity.tenant_id).where('connector', '=', identity.connector)
+    .where('operation', '=', identity.operation).where('idempotency_key', '=', identity.idempotency_key);
+  const token = randomUUID();
+  const claim = await k.app.transaction().execute(async (tx) => {
+    await tx.insertInto('sys.connector_execution').values({ ...identity, request_hash: requestHash, status: 'planned', outbox_id: row.id, consumer })
+      .onConflict((oc) => oc.columns(['tenant_id', 'connector', 'operation', 'idempotency_key']).doNothing()).execute();
+    const previous = await locate(tx).forUpdate().executeTakeFirstOrThrow();
+    if (previous.request_hash !== requestHash) return { kind: 'conflict' as const };
+    if (previous.status === 'succeeded') return { kind: 'receipt' as const, response: previous.response };
+    if (previous.status === 'unknown') return { kind: 'unknown' as const };
+    if (previous.status === 'calling' && previous.lease_until && new Date(previous.lease_until).getTime() > Date.now()) return { kind: 'busy' as const };
+    if (previous.status === 'calling' && ob.op.effect === 'write') {
+      await tx.updateTable('sys.connector_execution').set({ status: 'unknown', error: '执行租约中断，远端结果需人工核对', updated_at: sql`now()` })
+        .where('tenant_id', '=', identity.tenant_id).where('connector', '=', identity.connector).where('operation', '=', identity.operation).where('idempotency_key', '=', key).execute();
+      return { kind: 'unknown' as const };
+    }
+    await tx.updateTable('sys.connector_execution')
+      .set({ status: 'calling', lease_token: token, lease_until: new Date(Date.now() + ob.op.connector.timeoutMs + 30_000), attempts: sql`attempts + 1`, error: null, updated_at: sql`now()` })
+      .where('tenant_id', '=', identity.tenant_id).where('connector', '=', identity.connector).where('operation', '=', identity.operation).where('idempotency_key', '=', key).execute();
+    return { kind: 'claimed' as const };
+  });
+  if (claim.kind === 'conflict') throw new ConnectorError(`[CAGE-CONN-013] ${consumer} 同一幂等键对应不同请求；禁止覆盖已有执行`, null, false);
+  if (claim.kind === 'unknown') throw new ConnectorError(`[CAGE-CONN-014] ${consumer} 的不可重试调用结果未知；人工核对远端后再恢复`, null, false, 'unknown');
+  if (claim.kind === 'busy') throw new ConnectorError(`${consumer} 的调用仍由其他执行者持有`, null, true);
+  if (claim.kind === 'receipt') return { skipped: false, response: ob.op.response.parse(claim.response) };
+  let response: unknown;
+  try {
+    // 回调声明的业务键可能只在租户内唯一；外发键补租户命名空间，重试始终复用。
+    response = await call(ob.op, body, `${row.tenant_id}:${key}`, { signal });
+  } catch (e) {
+    const err = e as ConnectorError;
+    const unknown = ob.op.effect === 'write' && err.outcome === 'unknown';
+    await k.app.updateTable('sys.connector_execution')
+      .set({ status: unknown ? 'unknown' : 'failed', error: String(err.message), lease_token: null, lease_until: null, updated_at: sql`now()` })
+      .where('tenant_id', '=', identity.tenant_id).where('connector', '=', identity.connector).where('operation', '=', identity.operation).where('idempotency_key', '=', key).where('lease_token', '=', token).execute();
+    await recordCall(k, ob.op, key, row.tenant_id, 'failed', err.status, body, undefined, err.message);
+    throw err;
+  }
+  // 此处崩溃仍只能依靠远端幂等协议。不可重试写的租约超期会进入 unknown，不盲目重发。
+  const saved = await k.app.updateTable('sys.connector_execution')
+    .set({ status: 'succeeded', response: JSON.stringify(response), error: null, lease_token: null, lease_until: null, updated_at: sql`now()` })
+    .where('tenant_id', '=', identity.tenant_id).where('connector', '=', identity.connector).where('operation', '=', identity.operation).where('idempotency_key', '=', key).where('lease_token', '=', token).executeTakeFirst();
+  if (Number(saved.numUpdatedRows) !== 1) throw new ConnectorError(`${consumer} 执行租约已失效，未提交本地回写`, null, true, 'unknown');
+  await recordCall(k, ob.op, key, row.tenant_id, 'ok', 200, body, response);
+  return { skipped: false, response };
+}
+
+/** 出站网络执行与短事务回写分离；回写命令与 processed_event 去重登记共同提交。 */
 export function outboundConsumer(k: Kernel, ob: Outbound): EventConsumer {
   const name = `outbound:${ob.op.connector.name}.${ob.op.name}:${ob.event.name}`;
   return {
     name,
     event: ob.event.name,
-    async handle(row, tx) {
-      const req = ob.map(row.payload as any);
-      if (req === null || req === undefined) return;
-      const key = ob.idempotencyKey(row.payload as any);
-      let res: any;
+    async prepare(row, _kernel, { signal }) {
       try {
-        res = await call(ob.op, req, key, { kernel: k, tenantId: row.tenant_id });
+        return await prepareOutbound(k, ob, row, name, signal);
       } catch (e) {
         if (e instanceof ConnectorError && !e.retryable) {
           // 不可重试：标成永久错误，直接进死信
@@ -191,8 +258,13 @@ export function outboundConsumer(k: Kernel, ob: Outbound): EventConsumer {
         }
         throw e;
       }
+    },
+    async handle(row, tx, _kernel, prepared) {
+      if (!prepared) throw new Error('[CAGE-WORKER-002] 出站消费者必须经 worker prepare 阶段执行');
+      const result = prepared as OutboundPrepared;
+      if (result.skipped) return;
       if (ob.onSuccess) {
-        const input = ob.onSuccess.map(res, row.payload as any);
+        const input = ob.onSuccess.map(result.response, row.payload as any);
         const ctx = systemCtx({ kind: 'external', name: ob.op.connector.name, tenantId: row.tenant_id, capabilities: [k.registry.capabilityOf(ob.onSuccess.command)], requestId: row.request_id ?? undefined });
         await k.executeIn(tx, ob.onSuccess.command, input, ctx, 0);
       }

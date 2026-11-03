@@ -1,10 +1,42 @@
-# CAGE-APPR-003
+# CAGE-APPR-003：审批结论未允许流程调用
 
-## 什么时候出现
+[返回错误码册](README.md) · [业务排错](../ai/troubleshooting.md)
 
-命中以下实现中的检查时触发。终端会附具体声明位置、原因和修复方法。
+> 本页由框架生成。正反例为局部声明或操作说明，完整写法见业务开发指南及本项目 domain。
 
-来源：[packages/kernel/src/primitives/flow.ts:139](../../packages/kernel/src/primitives/flow.ts)
+## 何时出现
+
+阶段：声明、图规则或 worker。
+
+审批结论命令的 invokedBy 不包含 process。
+
+## 修复步骤
+
+1. 将结论命令声明为 process；前端通过待办接口审批，不要为了显示按钮把结论改成用户可直调。
+
+## 正例
+
+```text
+invokedBy: 'process'
+```
+
+## 反例
+
+```text
+invokedBy: 'user' // 用作审批结论
+```
+
+## 修复后验证
+
+先 cage check；涉及选人/流程推进时，用实际用户、部门和角色提交并处理待办，检查 worker 与死信。
+
+## 框架内的检查位置
+
+以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
+
+- `packages/kernel/src/primitives/flow.ts:153`
+
+实现片段（位置随框架版本更新）：
 
 ```ts
     if (!c.invokedBy.includes('process')) {
@@ -12,21 +44,4 @@
     }
   }
   return Object.freeze({
-    [APPROVAL]: true as const,
-```
-
-## 怎么修
-
-核对流程绑定、可路由字段、结论命令及审批人配置。结论只能调用所属聚合的 process 命令。
-
-## 正例
-
-```text
-onApproved: approve // approve 声明 invokedBy: 'process'
-```
-
-## 反例
-
-```text
-onApproved: otherAggregateCommand // 结论落到了错误聚合
 ```

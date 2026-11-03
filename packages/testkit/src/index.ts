@@ -3,4 +3,4 @@ export { fakeRepo, draftOf, sampleValue, sampleRecord, arbitraryOf, arbitrarySna
 export { createTestEnv, type TestEnv, type TestUser, type CallResult } from './env.js';
 export { startEmbeddedPostgres, withDb, freePort, type PgInstance } from './pg.js';
 export { setSessionVarsSql } from './session.js';
-export { derived, SKIP, type Derived, type Skip } from './derived.js';
+export { derived, SKIP, DerivedTestError, type Derived, type Skip, type DerivedOptions, type DerivedFixtureContext, type DerivedCommandTrace, type DerivedRunTrace, type DerivedInvariantResult } from './derived.js';

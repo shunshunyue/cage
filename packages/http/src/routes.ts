@@ -1,15 +1,21 @@
 // 路由生成：启动时遍历注册表，为每个命令、聚合、查询、入站回调挂路由。路由本身不做任何判断，全部交给内核。
 // 业务项目里禁止调用 app.get / app.post（lint 拦截），所以没有声明就没有路由。
-import { cageError, kebab, systemCtx, type AnyAggregate, type Kernel, type RegisteredCommand } from '@yss123/cage-kernel';
+import { cageError, isRelation, kebab, systemCtx, type AnyAggregate, type Fields, type Kernel, type RegisteredCommand } from '@yss123/cage-kernel';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { registerTransfers, transferKey, transferRoutes } from './transfers.js';
+import { fileRoutes } from './files.js';
 
 export interface RouteInfo {
   method: 'GET' | 'POST';
   url: string;
-  kind: 'command' | 'list' | 'get' | 'export' | 'query' | 'hook';
+  kind: 'command' | 'list' | 'get' | 'related' | 'export' | 'query' | 'hook' | 'import' | 'transfer-list' | 'transfer-get' | 'transfer-download' | 'transfer-options'
+    | 'upload-begin' | 'upload-list' | 'upload-get' | 'upload-part' | 'upload-complete' | 'upload-cancel' | 'file-info' | 'file-download';
   capability?: string;
   aggregate?: string;
+  /** related 的响应类型来自目标聚合，所属对象仍在 aggregate 中。 */
+  targetAggregate?: string;
+  relation?: string;
   command?: RegisteredCommand;
   input?: z.ZodType;
 }
@@ -21,7 +27,7 @@ export function commandUrl(c: RegisteredCommand): string {
 
 /** 注册表 → 路由清单（cage gen 也用它生成路由清单和前端 SDK） */
 export function routeTable(k: Kernel): RouteInfo[] {
-  const out: RouteInfo[] = [];
+  const out: RouteInfo[] = [...transferRoutes, ...fileRoutes];
   for (const c of k.registry.commands) {
     if (!c.cmd.invokedBy.includes('user')) continue; // 流程、任务、外部专用命令不对浏览器开放
     out.push({ method: 'POST', url: commandUrl(c), kind: 'command', capability: c.capability, aggregate: c.cmd.agg.name, command: c, input: c.cmd.input });
@@ -31,6 +37,9 @@ export function routeTable(k: Kernel): RouteInfo[] {
     out.push({ method: 'GET', url: base, kind: 'list', capability: `${a.name}.read`, aggregate: a.name });
     out.push({ method: 'POST', url: `${base}/export`, kind: 'export', capability: `${a.name}.export`, aggregate: a.name });
     out.push({ method: 'GET', url: `${base}/:id`, kind: 'get', capability: `${a.name}.read`, aggregate: a.name });
+    for (const [key, field] of Object.entries(a.fields as Fields)) if (isRelation(field))
+      out.push({ method: 'GET', url: `${base}/:id/relations/${kebab(key)}`, kind: 'related',
+        capability: [...new Set([`${a.name}.read`, `${field.ref}.read`])].join(','), aggregate: a.name, targetAggregate: field.ref, relation: key });
   }
   for (const q of k.registry.queries) {
     out.push({ method: 'GET', url: `/api/queries/${kebab(q.name)}`, kind: 'query', capability: q.reads.map((r) => `${r.name}.read`).join(','), input: q.input });
@@ -43,6 +52,7 @@ export function routeTable(k: Kernel): RouteInfo[] {
 
 export function registerRoutes(app: FastifyInstance, k: Kernel): RouteInfo[] {
   const table = routeTable(k);
+  registerTransfers(app, k);
   for (const c of k.registry.commands) {
     if (!c.cmd.invokedBy.includes('user')) continue;
     app.post(commandUrl(c), async (req) => {
@@ -82,10 +92,14 @@ function registerAggregate(app: FastifyInstance, k: Kernel, a: AnyAggregate) {
   const base = `/api/${kebab(a.name)}`;
   app.get(base, async (req) => k.read.list(a, req.query as Record<string, unknown>, req.cageCtx));
   app.get(`${base}/:id`, async (req) => k.read.get(a, (req.params as { id: string }).id, req.cageCtx));
+  for (const [key, field] of Object.entries(a.fields as Fields)) if (isRelation(field))
+    app.get(`${base}/:id/relations/${kebab(key)}`, async (req) =>
+      k.read.related(a, (req.params as { id: string }).id, key, req.query as Record<string, unknown>, req.cageCtx));
   app.post(`${base}/export`, async (req, reply) => {
-    const out = await k.read.export(a, (req.body ?? {}) as Record<string, unknown>, req.cageCtx);
-    reply.header('content-type', out.contentType).header('content-disposition', `attachment; filename="${out.filename}"`);
-    return out.body;
+    const parsed = z.record(z.string(), z.unknown()).safeParse(req.body ?? {});
+    if (!parsed.success) throw cageError('INVALID_INPUT', '导出筛选参数必须是对象');
+    const task = await k.transfers.export(a.name, parsed.data, req.cageCtx, transferKey(req));
+    return reply.code(202).send(task);
   });
 }
 

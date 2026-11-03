@@ -1,10 +1,42 @@
-# CAGE-FIELD-002
+# CAGE-FIELD-002：引用目标为空
 
-## 什么时候出现
+[返回错误码册](README.md) · [业务排错](../ai/troubleshooting.md)
 
-命中以下实现中的检查时触发。终端会附具体声明位置、原因和修复方法。
+> 本页由框架生成。正反例为局部声明或操作说明，完整写法见业务开发指南及本项目 domain。
 
-来源：[packages/kernel/src/primitives/fields.ts:149](../../packages/kernel/src/primitives/fields.ts)
+## 何时出现
+
+阶段：声明加载。
+
+ref 收到空目标，常见原因是循环导入。
+
+## 修复步骤
+
+1. 使用 ref("聚合名") 避免循环求值，确保对应聚合从入口导出且名称正确。
+
+## 正例
+
+```text
+deptId: ref('Dept')
+```
+
+## 反例
+
+```text
+deptId: ref(undefined)
+```
+
+## 修复后验证
+
+重跑 cage check/gen，审查契约与迁移；敏感字段还要验证普通用户读结果。
+
+## 框架内的检查位置
+
+以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
+
+- `packages/kernel/src/primitives/fields.ts:174`
+
+实现片段（位置随框架版本更新）：
 
 ```ts
   const target = typeof to === 'string' ? to : to?.name;
@@ -12,21 +44,4 @@
   return mk(z.string().uuid(), { kind: 'ref', sql: 'uuid', ref: target });
 }
 
-type ShapeZod<S extends Fields> = {
-```
-
-## 怎么修
-
-使用 field 工厂声明字段，避免覆盖 id/status/version 等系统列，引用指向存在的聚合。
-
-## 正例
-
-```text
-fields: { deptId: ref('Dept'), amount: money() }
-```
-
-## 反例
-
-```text
-fields: { version: text() } // 系统版本号不能改作业务字段
 ```

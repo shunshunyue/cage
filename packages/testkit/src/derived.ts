@@ -1,26 +1,26 @@
 // 派生测试运行时：cage test 生成的测试文件调用这里。它们不是测 handler，而是持续证明「笼子没有洞」：
 // 如果有人把内核的能力判定改坏了，或者某个路由绕过了内核，这一批测试会同时失败。
-import { randomUUID } from 'node:crypto';
-import { rowToSnapshot } from '@yss123/cage-kernel/db';
-import { systemCtx, type AnyAggregate, type Ctx, type Fields, type RegisteredCommand } from '@yss123/cage-kernel';
+import { loadScoped, systemCtx, type AnyAggregate, type AnyField, type Ctx, type Fields, type RegisteredCommand } from '@yss123/cage-kernel';
 import { sql } from 'kysely';
 import { z } from 'zod';
 import { createTestEnv, type CallResult, type TestEnv } from './env.js';
 import { sampleValue } from './fakes.js';
+import { DerivedTestError, derivedRedactor, seededRandom, seededUuid, type DerivedInvariantResult, type DerivedOptions, type DerivedRunTrace } from './derived-diagnostics.js';
+export { DerivedTestError, type DerivedOptions, type DerivedFixtureContext, type DerivedCommandTrace, type DerivedRunTrace, type DerivedInvariantResult } from './derived-diagnostics.js';
 
 export type Skip = 'skip';
 export const SKIP: Skip = 'skip';
 
-function sampleJson(s: any): unknown {
+function sampleJson(s: any, random: () => number): unknown {
   if (!s || typeof s !== 'object') return null;
   if (s.const !== undefined) return s.const;
   if (s.enum) return s.enum[0];
-  if (s.anyOf) return sampleJson(s.anyOf.find((x: any) => x.type !== 'null') ?? s.anyOf[0]);
+  if (s.anyOf) return sampleJson(s.anyOf.find((x: any) => x.type !== 'null') ?? s.anyOf[0], random);
   switch (Array.isArray(s.type) ? s.type.find((t: string) => t !== 'null') : s.type) {
     case 'string':
-      if (s.format === 'uuid') return randomUUID();
+      if (s.format === 'uuid') return seededUuid(random);
       if (s.format === 'email') return 'someone@example.com';
-      if (s.format === 'date-time') return new Date().toISOString();
+      if (s.format === 'date-time') return '2026-01-01T00:00:00.000Z';
       if (s.pattern) return s.pattern.includes('\\d') ? '100.00' : 'a';
       return 'x'.repeat(Math.max(1, s.minLength ?? 1));
     case 'integer':
@@ -29,9 +29,9 @@ function sampleJson(s: any): unknown {
     case 'boolean':
       return false;
     case 'array':
-      return Array.from({ length: Math.max(1, s.minItems ?? 1) }, () => sampleJson(s.items));
+      return Array.from({ length: Math.max(1, s.minItems ?? 1) }, () => sampleJson(s.items, random));
     case 'object':
-      return Object.fromEntries(Object.entries(s.properties ?? {}).filter(([k]) => (s.required ?? []).includes(k)).map(([k, v]) => [k, sampleJson(v)]));
+      return Object.fromEntries(Object.entries(s.properties ?? {}).filter(([k]) => (s.required ?? []).includes(k)).map(([k, v]) => [k, sampleJson(v, random)]));
     default:
       return null;
   }
@@ -48,10 +48,14 @@ export interface Derived {
   scopeHidden(agg: string, combinator: 'self' | 'dept'): Promise<{ get: string; listed: boolean; rawVisible: boolean; baseDenied: boolean } | Skip>;
   outOfScopeWrite(cap: string): Promise<CallResult | Skip>;
   masked(agg: string): Promise<{ field: string; plain: unknown; seen: unknown }[] | Skip>;
-  invariantsHold(agg: string, runs?: number): Promise<{ steps: number; violations: string[] } | Skip>;
+  invariantsHold(agg: string, runs?: number): Promise<DerivedInvariantResult | Skip>;
 }
 
-export function derived(domain: object): Derived {
+export function derived(domain: object, options: DerivedOptions = {}): Derived {
+  const seed = options.seed ?? 20261103;
+  if (!Number.isSafeInteger(seed) || seed < 0 || seed > 0xffff_ffff) throw new RangeError('DerivedOptions.seed 必须是 uint32 整数');
+  const random = seededRandom(seed);
+  const uuid = () => seededUuid(random);
   let env: TestEnv;
   const rc = (cap: string): RegisteredCommand => {
     const c = env.kernel.registry.command(cap);
@@ -63,11 +67,22 @@ export function derived(domain: object): Derived {
   async function refValue(target: string): Promise<string> {
     if (target === 'Dept') return env.rootDeptId;
     if (target === 'User') return (await env.user({ caps: [] })).id;
-    return (await env.insert(target)).id;
+    return (await env.insert(target, { id: uuid() })).id;
+  }
+
+  function fieldValue(field: AnyField, name: string, rng: () => number): unknown {
+    if (field.isOptional) return null;
+    if (field.kind === 'id' || field.kind === 'ref') return seededUuid(rng);
+    if (field.kind === 'text' && !field.sensitiveKind) return `${name || 'text'}-${seededUuid(rng).slice(0, 8)}`.slice(0, field.max ?? 500);
+    if (field.kind === 'list' && field.shape) {
+      if ('item' in field.shape && Object.keys(field.shape).length === 1) return [fieldValue(field.shape.item, 'item', rng)];
+      return [Object.fromEntries(Object.entries(field.shape).map(([key, entry]) => [key, fieldValue(entry, key, rng)]))];
+    }
+    return sampleValue(field, name);
   }
 
   /** 构造一份合法输入：id 取种子数据；聚合同名字段取种子值或示例值；其他按 schema 造 */
-  async function sampleInput(c: RegisteredCommand, seeded: Record<string, any> | null): Promise<unknown | null> {
+  async function sampleInput(c: RegisteredCommand, seeded: Record<string, any> | null, rng = random): Promise<unknown | null> {
     const schema = c.cmd.input;
     if (!(schema instanceof z.ZodObject)) return null;
     let js: any = {};
@@ -85,8 +100,9 @@ export function derived(domain: object): Derived {
       else if (key in fields) {
         const f = fields[key];
         if (f.isOptional && !required) continue;
-        out[key] = f.ref ? await refValue(f.ref) : sampleValue(f, key);
-      } else if (required) out[key] = sampleJson(js.properties?.[key]);
+        // 集合引用需要目标 ID 数组，不能沿用标量 ref 的取值；否则用例会被误判为无法造输入而跳过。
+        out[key] = f.kind === 'manyToMany' ? [await refValue(f.ref!)] : f.kind === 'ref' ? await refValue(f.ref!) : fieldValue(f, key, rng);
+      } else if (required) out[key] = sampleJson(js.properties?.[key], rng);
     }
     return schema.safeParse(out).success ? out : null;
   }
@@ -141,7 +157,7 @@ export function derived(domain: object): Derived {
       const seeded = c.cmd.from === 'new' ? null : await env.seedFor(cap);
       const input = await sampleInput(c, seeded);
       if (input === null) return SKIP;
-      const ctx = { ...(await powerActor(c)), idempotencyKey: randomUUID() };
+      const ctx = { ...(await powerActor(c)), idempotencyKey: uuid() };
       const [a, b] = await Promise.all([env.callAs(ctx, cap, input), env.callAs(ctx, cap, input)]);
       if (!a.ok || !b.ok) return SKIP;
       const rows = await env.audit({ aggregateId: a.data.id, command: cap, kind: 'write' });
@@ -152,8 +168,8 @@ export function derived(domain: object): Derived {
       const a = agg(aggName);
       if (combinator === 'self' && !a.scope.ownerField) return SKIP;
       if (combinator === 'dept' && (!a.scope.deptField || a.scope.deptField === 'id')) return SKIP;
-      const deptA = await env.dept(`derived-a-${randomUUID().slice(0, 6)}`);
-      const deptB = await env.dept(`derived-b-${randomUUID().slice(0, 6)}`);
+      const deptA = await env.dept(`derived-a-${uuid().slice(0, 6)}`);
+      const deptB = await env.dept(`derived-b-${uuid().slice(0, 6)}`);
       const owner = await env.user({ caps: [], deptId: deptA });
       const rec = await env.insert(a, { ownerId: owner.id, ...(a.scope.deptField && a.scope.deptField !== 'id' ? { [a.scope.deptField]: deptA } : {}) });
       const other = await env.user({ caps: [`${aggName}.read`], scopes: { [aggName]: combinator }, deptId: deptB });
@@ -204,44 +220,81 @@ export function derived(domain: object): Derived {
       const names = Object.keys(a.invariants);
       if (names.length === 0) return SKIP;
       const cmds = env.kernel.registry.commands.filter((c) => c.cmd.agg === a);
+      const rng = seededRandom(seed);
+      const redact = derivedRedactor(env.kernel.registry.aggregates);
       const violations: string[] = [];
+      const traces: DerivedRunTrace[] = [];
       let steps = 0;
+      const failedInvariants = (snapshot: Record<string, any>) => names.filter((name) => {
+        try { return !a.invariants[name](snapshot as any); } catch { return true; }
+      });
       for (let run = 0; run < runs; run++) {
-        // 随机命令序列：每一步之后，库里的数据都必须满足所有不变量
+        const trace: DerivedRunTrace = { aggregate: aggName, seed, run, phase: 'fixture', initial: null, preparation: [], commands: [], failedInvariants: [], minimalPrefix: [] };
         let rec: Record<string, any> | null = null;
-        const creators = cmds.filter((c) => c.cmd.from === 'new');
-        if (creators.length) {
-          const c = creators[run % creators.length];
-          const input = await sampleInput(c, null);
-          if (input) {
-            const r = await env.callAs(await powerActor(c), c.capability, input);
-            if (r.ok) rec = r.data;
+        try {
+          const fixture = options.fixtures?.[aggName];
+          if (typeof fixture === 'function') {
+            rec = await fixture({ env, aggregate: a, run, seed, random: rng, uuid: () => seededUuid(rng) });
+          } else if (fixture) {
+            rec = await env.insert(a, { id: seededUuid(rng), ...fixture });
+          } else {
+            const creators = cmds.filter((c) => c.cmd.from === 'new');
+            if (creators.length) {
+              const c = creators[run % creators.length];
+              const input = await sampleInput(c, null, rng);
+              if (input) {
+                const result = await env.callAs(await powerActor(c), c.capability, input);
+                trace.preparation.push({ step: 0, capability: c.capability, input: redact(input), result: { ok: result.ok, code: result.code, ...(!result.ok ? { domainCode: result.domainCode } : {}) } });
+                if (result.ok) rec = result.data;
+              }
+            }
+            if (!rec) {
+              const values = Object.fromEntries(Object.entries(a.fields as Fields)
+                .filter(([, field]) => field.kind !== 'ref' && field.kind !== 'hasMany').map(([name, field]) => [name, fieldValue(field, name, rng)]));
+              trace.initial = redact(values);
+              rec = await env.insert(a, { id: seededUuid(rng), ...values });
+            }
           }
+          // 必须读取完整持久快照检查初始不变量，不能等第一条业务命令失败才把非法种子算作业务反例。
+          const initial = rec?.id ? await loadScoped(env.kernel.app, a, rec.id, env.system(), false) : null;
+          if (!initial) throw new Error('fixture-record-missing');
+          rec = initial;
+          trace.initial = redact(initial);
+          trace.failedInvariants = failedInvariants(initial);
+          if (trace.failedInvariants.length) throw new DerivedTestError(trace);
+        } catch (e) {
+          if (e instanceof DerivedTestError) throw e;
+          trace.failedInvariants = [`fixtureConstruction:${(e as { code?: string }).code ?? (e as Error).name ?? 'Error'}`];
+          throw new DerivedTestError(trace);
         }
-        rec ??= await env.insert(a);
+        trace.phase = 'execution';
         for (let i = 0; i < 4; i++) {
           const options = cmds.filter((c) => c.cmd.from !== 'new' && (c.cmd.from as string[]).includes(rec!.status));
           if (options.length === 0) break;
-          const c = options[Math.floor(Math.random() * options.length)];
-          const input = await sampleInput(c, rec);
+          const c = options[Math.floor(rng() * options.length)];
+          const input = await sampleInput(c, rec, rng);
           if (!input) continue;
-          const r = await env.callAs(await powerActor(c), c.capability, input);
-          steps++;
-          const [row] = await env.query(`select * from "${a.table.schema}"."${a.table.name}" where id = $1`, [rec.id]);
-          const snap = rowToSnapshot(a, row);
-          for (const n of names) {
-            let ok = false;
-            try {
-              ok = !!a.invariants[n](snap as any);
-            } catch {
-              ok = false;
-            }
-            if (!ok) violations.push(`${c.capability} 之后 ${aggName}.${n} 不成立`);
+          let result: CallResult;
+          try { result = await env.callAs(await powerActor(c), c.capability, input); }
+          catch (e) {
+            trace.commands.push({ step: i, capability: c.capability, input: redact(input), result: { ok: false, code: (e as { code?: string }).code ?? 'INTERNAL' } });
+            trace.minimalPrefix = [...trace.commands];
+            throw new DerivedTestError(trace);
           }
-          if (r.ok) rec = { ...rec, ...snap };
+          steps++;
+          trace.commands.push({ step: i, capability: c.capability, input: redact(input), result: { ok: result.ok, code: result.code, ...(!result.ok ? { domainCode: result.domainCode } : {}) } });
+          const snap: Record<string, any> = (await loadScoped(env.kernel.app, a, rec!.id, env.system(), false))!;
+          trace.failedInvariants = snap ? failedInvariants(snap) : ['recordMissing'];
+          if (trace.failedInvariants.length) {
+            trace.minimalPrefix = [...trace.commands];
+            violations.push(`${c.capability} 之后 ${aggName}.${trace.failedInvariants.join(',')} 不成立；${JSON.stringify(trace)}`);
+            break;
+          }
+          rec = snap;
         }
+        traces.push(trace);
       }
-      return { steps, violations };
+      return { steps, violations, seed, traces };
     },
   };
 }

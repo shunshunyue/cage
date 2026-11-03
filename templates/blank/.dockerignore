@@ -1,0 +1,12 @@
+node_modules
+**/node_modules
+**/dist
+.git
+.cage
+**/.cage
+.cage-files
+**/.cage-files
+generated
+.env
+.env.*
+*.log

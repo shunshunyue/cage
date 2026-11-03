@@ -1,10 +1,43 @@
-# CAGE-REG-002
+# CAGE-REG-002：聚合或查询注册重名
 
-## 什么时候出现
+[返回错误码册](README.md) · [业务排错](../ai/troubleshooting.md)
 
-命中以下实现中的检查时触发。终端会附具体声明位置、原因和修复方法。
+> 本页由框架生成。正反例为局部声明或操作说明，完整写法见业务开发指南及本项目 domain。
 
-来源：[packages/kernel/src/registry.ts:86](../../packages/kernel/src/registry.ts)
+## 何时出现
+
+阶段：声明加载 / 执行。
+
+同类聚合/查询拥有相同逻辑名称。
+
+## 修复步骤
+
+1. 保留一个规范声明，或为真正不同对象选不同逻辑名；不能通过对象复制创建同名注册。
+
+## 正例
+
+```text
+aggregate('PurchaseOrder', ...)、aggregate('Inventory', ...)
+```
+
+## 反例
+
+```text
+不同文件都 aggregate('Order', ...) 并导出
+```
+
+## 修复后验证
+
+重跑 cage check/analyze/gen，确认统一入口包含引用双方。
+
+## 框架内的检查位置
+
+以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
+
+- `packages/kernel/src/registry.ts:94`
+- `packages/kernel/src/registry.ts:195`
+
+实现片段（位置随框架版本更新）：
 
 ```ts
           if (aggregates.some((a) => a.name === (v as AnyAggregate).name)) {
@@ -12,21 +45,4 @@
           }
           aggregates.push(v as AnyAggregate);
           break;
-        case 'COMMAND': {
-```
-
-## 怎么修
-
-检查统一入口中的聚合/命令引用及名称是否重复，所有依赖都必须在注册表中。
-
-## 正例
-
-```text
-export * from './purchase-order.js';
-```
-
-## 反例
-
-```text
-// 命令引用了没有从入口导出的聚合
 ```

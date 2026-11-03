@@ -4,3 +4,4 @@ export { noEscalation, noEscalationViaRoles, noWiderScope, knownCapability } fro
 export { hashPassword } from './domain/org.js';
 export { bootstrapOrg, grantAll, grantAllToSuperadmin, type BootstrapResult } from './bootstrap.js';
 export { adminRoutes } from './http.js';
+export { adminCatalog, type AdminLabels } from './catalog.js';

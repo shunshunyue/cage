@@ -1,10 +1,43 @@
-# CAGE-STATE-010
+# CAGE-STATE-010：状态不可达
 
-## 什么时候出现
+[返回错误码册](README.md) · [业务排错](../ai/troubleshooting.md)
 
-命中以下实现中的检查时触发。终端会附具体声明位置、原因和修复方法。
+> 本页由框架生成。正反例为局部声明或操作说明，完整写法见业务开发指南及本项目 domain。
 
-来源：[packages/cli/src/rules.ts:67](../../packages/cli/src/rules.ts)
+## 何时出现
+
+阶段：声明 / 图规则。
+
+图规则从创建/初始状态沿声明的迁移无法到达某状态。
+
+## 修复步骤
+
+1. 补真实进入路径或移除无用状态，确保命令从入口导出；不要用不可调用的假命令连线。
+
+## 正例
+
+```text
+draft 经 submit 到 pending_approval，再经 approve 到 approved
+```
+
+## 反例
+
+```text
+states 包含 received，却没有任何命令迁移到它
+```
+
+## 修复后验证
+
+重跑 cage check、gen，审查状态图和相关状态迁移用例。
+
+## 框架内的检查位置
+
+以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
+
+- `packages/cli/src/rules.ts:68`
+- `packages/cli/src/rules.ts:94`
+
+实现片段（位置随框架版本更新）：
 
 ```ts
 
@@ -12,21 +45,4 @@
 export function checkStates(g: Ontology): Finding[] {
   const { get } = index(g);
   const findings: Finding[] = [];
-  for (const a of g.nodes.filter((n) => n.kind === 'aggregate')) {
-```
-
-## 怎么修
-
-让 from/to 引用已声明的状态，初始状态可达，非终态有出边，结束状态列入 terminal。
-
-## 正例
-
-```text
-states('draft', 'done', { terminal: ['done'] });
-```
-
-## 反例
-
-```text
-command(Order, { from: 'missing', to: 'done', handler: o => o });
 ```

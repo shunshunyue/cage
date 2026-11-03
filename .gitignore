@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .cage/
+.cage-files/
 generated/
 .turbo/
 *.log
@@ -10,7 +11,7 @@ pnpm-publish-summary.json
 .env
 .env.*
 !.env.example
-# CLI 分发副本由 build 从 templates/app 和 docs/errors 生成。
+# CLI 分发副本由 build 从两套模板（含学习资料）生成。
 packages/cli/templates/
 packages/cli/managed/
 packages/cli/graph-ui/

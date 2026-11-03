@@ -10,6 +10,7 @@
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%232d665a'/%3E%3Cpath d='M11 12h18v16H11zm0 8h18m-9-8v16' stroke='%23fff' fill='none' stroke-width='2'/%3E%3C/svg%3E"
     />
     <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/business.css" />
   </head>
   <body>
     <div class="app-shell">
@@ -19,7 +20,7 @@
           ><strong>CAGE<span>ATLAS</span></strong></a
         >
         <div class="breadcrumb">
-          <span>开发者工作台</span><b>/</b><span id="project-name">正在读取项目</span>
+          <span>业务探索工作台</span><b>/</b><span id="project-name">正在读取项目</span>
         </div>
         <span class="local-badge"><i></i>本地声明</span>
         <button
@@ -35,7 +36,9 @@
       <aside class="sidebar" id="sidebar">
         <div class="section-label">项目工作区 <span>01</span></div>
         <div class="nav-active"><span class="nav-symbol">◇</span> 本体图谱 <span class="nav-dot"></span></div>
-        <div class="sidebar-heading">业务对象 <span id="aggregate-total"></span></div>
+        <div class="sidebar-heading">
+          <span id="objects-heading-label">业务板块</span><span id="aggregate-total"></span>
+        </div>
         <div id="aggregate-list" class="aggregate-list"></div>
         <div class="sidebar-heading" id="types-heading">
           节点类型 <button id="reset-types" class="text-button">重置</button>
@@ -61,12 +64,12 @@
         >
       </aside>
 
-      <main class="main">
+      <main class="main business-page" id="main">
         <section class="page-heading">
           <div>
             <div class="eyebrow">业务关系探索</div>
-            <h1>本体图谱<span class="version-tag">v0.1</span></h1>
-            <p>从声明出发，看见业务如何连接。</p>
+            <h1 id="page-title">业务地图</h1>
+            <p id="page-description">先理解业务，再沿流程找到实现。</p>
           </div>
           <div class="heading-actions">
             <button id="download" class="button secondary"><span>↓</span> 导出 JSON</button
@@ -77,15 +80,17 @@
         <section class="overview" aria-label="图谱统计">
           <div class="overview-item">
             <span class="metric-icon aggregate-icon">◇</span>
-            <div><small>业务对象</small><strong id="metric-aggregates">—</strong></div>
+            <div>
+              <small id="metric-first-label">业务板块</small><strong id="metric-aggregates">—</strong>
+            </div>
           </div>
           <div class="overview-item">
             <span class="metric-icon node-icon">⠿</span>
-            <div><small>声明节点</small><strong id="metric-nodes">—</strong></div>
+            <div><small id="metric-second-label">流程入口</small><strong id="metric-nodes">—</strong></div>
           </div>
           <div class="overview-item">
             <span class="metric-icon edge-icon">↗</span>
-            <div><small>声明关系</small><strong id="metric-edges">—</strong></div>
+            <div><small id="metric-third-label">业务对象</small><strong id="metric-edges">—</strong></div>
           </div>
           <div class="overview-health">
             <span id="health-dot" class="health-dot"></span>
@@ -94,12 +99,12 @@
           </div>
         </section>
 
-        <section class="explorer" aria-label="交互式本体图谱">
+        <section class="explorer business-mode" id="explorer" aria-label="交互式业务地图与本体图谱">
           <div class="graph-panel">
             <div class="graph-toolbar">
               <div class="tabs" role="group" aria-label="图谱视图">
-                <button data-mode="structure" class="active" aria-pressed="true">对象与字段</button
-                ><button data-mode="business" aria-pressed="false">业务流程</button
+                <button data-mode="business" class="active" aria-pressed="true">业务地图</button
+                ><button data-mode="structure" aria-pressed="false">对象与字段</button
                 ><button data-mode="all" aria-pressed="false">完整本体</button>
               </div>
               <div class="search-wrap">
@@ -107,13 +112,14 @@
                 ><input
                   id="search"
                   type="search"
-                  placeholder="搜索中文名称或代码标识"
+                  placeholder="搜索业务、流程或代码标识"
                   aria-label="搜索节点"
                   autocomplete="off"
                 /><kbd>/</kbd>
                 <div id="search-results" class="search-results" hidden></div>
               </div>
             </div>
+            <div id="business-view" class="business-view" aria-label="业务板块与流程"></div>
             <div class="graph-subbar">
               <span
                 ><i class="tiny-dot"></i><strong id="view-title">全部业务</strong
@@ -180,6 +186,7 @@
           </div>
           <aside id="inspector" class="inspector" aria-label="节点与关系详情" aria-live="polite"></aside>
         </section>
+        <div id="business-health" class="business-health" aria-live="polite"></div>
         <footer class="page-footer">
           <span id="domain-path">packages/domain/src/index.ts</span><span>只读探索 · 不连接业务数据库</span>
         </footer>

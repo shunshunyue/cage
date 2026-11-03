@@ -54,6 +54,12 @@ export interface Connector<Ops extends Record<string, OpDef<any, any>> = Record<
 
 export function connector<Ops extends Record<string, OpDef<any, any>>>(name: string, def: ConnectorDef<Ops>): Connector<Ops> {
   if (!/^[a-z][a-z0-9-]*$/.test(name)) throw declError('CAGE-CONN-001', `连接器名 ${name} 必须是小写短横线`);
+  if (def.timeoutMs !== undefined && (!Number.isSafeInteger(def.timeoutMs) || def.timeoutMs <= 0 || def.timeoutMs > 300_000)) {
+    throw declError('CAGE-CONN-015', '连接器 timeoutMs 必须是 1～300000 毫秒的整数');
+  }
+  if (def.rateLimit && (!Number.isFinite(def.rateLimit.perSecond) || def.rateLimit.perSecond <= 0)) {
+    throw declError('CAGE-CONN-015', '连接器 rateLimit.perSecond 必须为有限正数');
+  }
   for (const h of Object.values(def.hosts)) {
     if (h && /[/:\s]/.test(h.replace(/:\d+$/, ''))) throw declError('CAGE-CONN-003', `地址白名单只能写主机名（可带端口）：${h}`);
   }

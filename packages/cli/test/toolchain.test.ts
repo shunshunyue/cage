@@ -1,6 +1,6 @@
 // 工具链反例：测试检查器是否能发现具体缺陷，而不是复述生成器内部实现。
 import { afterAll, describe, expect, it } from 'vitest';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { aggregate, buildRegistry, command, states, text, scope } from '@yss123/cage-kernel';
@@ -16,31 +16,135 @@ import { generate } from '../src/gen/index.js';
 import { deriveTests } from '../src/derive.js';
 import { run } from '../src/process.js';
 import { loadProjectEnv } from '../src/env.js';
-import { setupDatabase } from '../src/database.js';
+import { createApp } from '../src/create.js';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { databaseConnectionError } from '../src/migrate.js';
 
 const reg = buildRegistry(domain);
 const graph = extract(reg);
 const temporary = mkdtempSync(join(tmpdir(), 'cage-cli-test-'));
 afterAll(() => rmSync(temporary, { recursive: true, force: true }));
 
-it('数据库配置由框架生成，角色密码各自独立，重复 setup 不轮换已有密码', () => {
-  const root = join(temporary, 'database-project');
+it('新项目保留已有数据库配置入口，不分发数据库生命周期命令', () => {
+  const root = createApp(join(temporary, 'configured-database'));
+  const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+  expect(Object.keys(pkg.scripts).filter((key) => key.startsWith('db:'))).toEqual([]);
+  expect(pkg.scripts.migrate).toBe('cage migrate');
+  const example = readFileSync(join(root, '.env.example'), 'utf8');
+  expect(example).toContain('同一个数据库');
+  expect(example).toContain('CAGE_APP_DATABASE_URL=');
+  expect(example).toContain('CAGE_READ_DATABASE_URL=');
+  expect(example).toContain('CAGE_MIGRATE_DATABASE_URL=');
+  expect(existsSync(join(root, 'compose.yaml'))).toBe(false);
+  expect(existsSync(join(root, '.env'))).toBe(false);
+  expect(readFileSync(join(root, '.gitignore'), 'utf8')).toContain('.env');
+  expect(existsSync(join(root, '_gitignore'))).toBe(false);
+});
+
+it.each(['blank', 'purchase'] as const)('%s 模板交付完整本地教材，且只注册所选业务', (template) => {
+  const root = createApp(join(temporary, 'ai-business-guide-' + template), undefined, template);
+  const agents = readFileSync(join(root, 'AGENTS.md'), 'utf8');
+  expect(agents).toContain('docs/ai/README.md');
+  expect(agents).toContain('项目自己的业务约定');
+  expect(agents).toContain(managedBlock);
+  expect(agents).not.toContain('../../docs/');
+  // 检查实际创建结果，不只检查规范文档，能抓到模板复制或打包遗漏。
+  for (const file of [
+    'docs/ai/README.md',
+    'docs/ai/architecture.md',
+    'docs/ai/project-structure.md',
+    'docs/ai/primitives.md',
+    'docs/ai/workflow.md',
+    'docs/ai/ontology-context.md',
+    'docs/ai/recipes.md',
+    'docs/ai/purchase-example.md',
+    'docs/ai/troubleshooting.md',
+    'docs/ai/transfers.md',
+    'docs/errors/README.md',
+    'docs/errors/runtime.md',
+    'docs/errors/CAGE-APPR-007.md',
+    'docs/errors/CAGE-PAIR-002.md',
+  ])
+    expect(existsSync(join(root, file)), file).toBe(true);
+  const reference = template === 'blank' ? 'docs/examples/purchase-admin' : '';
+  for (const name of [
+    'modules/purchase/purchase-order.ts',
+    'workflows/purchase-inventory.ts',
+    'modules/purchase/approvals.ts',
+    'integrations/erp.ts',
+  ])
+    expect(existsSync(join(root, reference, 'packages/domain/src', name)), name).toBe(true);
+  const migration = readFileSync(join(root, 'db/migrations/0001_init.sql'), 'utf8');
+  const contracts = readFileSync(join(root, 'packages/contracts/src/index.ts'), 'utf8');
+  if (template === 'blank') {
+    // 看实际分发结果，防止“空白”只换了首页，后台仍然注册采购并建业务表。
+    expect(existsSync(join(root, 'packages/domain/src/modules/purchase'))).toBe(false);
+    expect(migration).not.toContain('purchase_order');
+    expect(migration).not.toContain('inventory');
+    expect(contracts).not.toContain('PurchaseOrder');
+    expect(contracts).toContain('User.read');
+    expect(readFileSync(join(root, 'apps/api/src/worker.ts'), 'utf8')).not.toContain('fakeConnector');
+  } else {
+    expect(migration).toContain('purchase_order');
+    expect(contracts).toContain('PurchaseOrder.read');
+  }
+  expect(JSON.parse(readFileSync(join(root, 'cage.config.json'), 'utf8')).structure).toBe('modular');
+  for (const path of [
+    'apps/web/src/app/app.tsx',
+    'apps/web/src/modules/auth/pages/login-page.tsx',
+    'apps/web/src/shared',
+    'packages/contracts/src/aggregates/user/index.ts',
+  ])
+    expect(existsSync(join(root, path)), path).toBe(true);
+  expect(existsSync(join(root, 'packages/contracts/src/user.ts'))).toBe(false);
+  expect(readFileSync(join(root, 'apps/web/src/main.tsx'), 'utf8')).not.toContain('function Workspace');
+  expect(readFileSync(join(root, 'README.md'), 'utf8')).toContain('(docs/ai/README.md)');
+  expect(readFileSync(join(root, 'docs/errors/CAGE-APPR-007.md'), 'utf8')).toContain('重放');
+  expect(readFileSync(join(root, 'docs/ai/primitives.md'), 'utf8')).toContain(
+    'export const Note = aggregate',
+  );
+});
+
+it('创建入口支持显式模板，非交互缺参数或未知模板在写文件前报错', () => {
+  const bin = fileURLToPath(new URL('../bin/create-cage-app.js', import.meta.url));
+  const destination = join(temporary, 'from-bin');
+  for (const args of [[destination], [destination, '--template', 'unknown']]) {
+    const result = spawnSync(process.execPath, [bin, ...args], { encoding: 'utf8' });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('CAGE-CREATE-001');
+    expect(existsSync(destination)).toBe(false);
+  }
+  const result = spawnSync(process.execPath, [bin, destination, '--template', 'blank'], { encoding: 'utf8' });
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain('空白业务项目');
+  expect(existsSync(join(destination, 'packages/domain/src/index.ts'))).toBe(true);
+});
+
+it('缺少连接时 dev 明确失败，不创建数据库或生成凭证', () => {
+  const root = join(temporary, 'missing-database');
   mkdirSync(root);
-  writeFileSync(join(root, 'cage.config.json'), '{"devDbPort":55432}');
-  const cfg = loadConfig(root);
-  expect(setupDatabase(cfg)).toBe(true);
-  const before = readFileSync(join(root, '.env'), 'utf8');
-  const env: NodeJS.ProcessEnv = {};
-  loadProjectEnv(root, env);
-  const urls = ['APP', 'READ', 'MIGRATE'].map((role) => new URL(env[`CAGE_${role}_DATABASE_URL`]!));
-  expect(urls.map((url) => url.username)).toEqual(['cage_app', 'cage_read', 'cage_migrate']);
-  expect(urls.every((url) => url.port === '55432')).toBe(true);
-  expect(new Set(urls.map((url) => url.password)).size).toBe(3);
-  expect(new URL(env.CAGE_TEST_DATABASE_URL!).port).toBe('55433');
-  expect(setupDatabase(cfg)).toBe(false);
-  expect(readFileSync(join(root, '.env'), 'utf8')).toBe(before);
+  const env = { ...process.env };
+  for (const key of Object.keys(env)) {
+    if (key === 'DATABASE_URL' || key.startsWith('CAGE_')) delete env[key];
+  }
+  const cli = fileURLToPath(new URL('../bin/cage.js', import.meta.url));
+  const result = spawnSync(process.execPath, [cli, 'dev', '--root', root], { encoding: 'utf8', env });
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain('CAGE-ENV-001');
+  expect(existsSync(join(root, '.env'))).toBe(false);
+  expect(existsSync(join(root, '.cage', 'postgres'))).toBe(false);
+});
+
+it('数据库认证失败提示检查 .env，且不泄露密码', () => {
+  const error = databaseConnectionError(
+    { code: '28P01' },
+    'postgresql://cage_migrate:never-print-this@127.0.0.1:54329/cage_dev',
+  );
+  expect(error.message).toContain('127.0.0.1:54329/cage_dev');
+  expect(error.message).toContain('.env');
+  expect(error.message).not.toContain('cage db');
+  expect(error.message).not.toContain('never-print-this');
 });
 
 it('项目 .env 提供本地连接，部署环境中的值优先且不会执行文件中的 shell 表达式', () => {
@@ -191,12 +295,30 @@ describe('静态边界与生成一致性', () => {
     const first = generate(cfg, reg, graph, []);
     expect(first.migrationDraft).toBeTruthy();
     expect(generate(cfg, reg, graph, [], { check: true }).findings).toEqual([]);
-    const file = join(cfg.root, cfg.contracts, 'purchase-order.ts');
+    const file = join(cfg.root, cfg.contracts, 'aggregates/purchase-order/index.ts');
     writeFileSync(file, '// 意外手改');
     expect(generate(cfg, reg, graph, [], { check: true }).findings).toEqual([
       expect.objectContaining({ code: 'CAGE-GEN-001' }),
     ]);
     expect(readFileSync(file, 'utf8')).toBe('// 意外手改');
+  });
+  it('生成布局升级报告并清理旧契约，保留手写文件，公共入口仍导出聚合 API', () => {
+    const cfg = project('stale-contracts', '');
+    generate(cfg, reg, graph, []);
+    const old = join(cfg.root, cfg.contracts, 'purchase-order.ts');
+    const custom = join(cfg.root, cfg.contracts, 'custom.ts');
+    writeFileSync(old, '// 生成物：由 cage gen 从 domain 声明生成，不要手改。\nexport {};\n');
+    writeFileSync(custom, '// 项目手写扩展\nexport {};\n');
+    expect(generate(cfg, reg, graph, [], { check: true }).findings).toEqual([
+      expect.objectContaining({ code: 'CAGE-GEN-001', at: old }),
+    ]);
+    expect(existsSync(old)).toBe(true);
+    generate(cfg, reg, graph, []);
+    expect(existsSync(old)).toBe(false);
+    expect(existsSync(custom)).toBe(true);
+    expect(readFileSync(join(cfg.root, cfg.contracts, 'index.ts'), 'utf8')).toContain(
+      "export * from './aggregates/purchase-order'",
+    );
   });
   it('派生测试包含能力、范围、非法状态、审计和幂等类别', () => {
     const cfg = project('derived', '');
@@ -223,6 +345,14 @@ describe('命令行门禁退出码', () => {
   it('未知参数返回失败；帮助入口无需项目即可运行', () => {
     const cli = fileURLToPath(new URL('../bin/cage.js', import.meta.url));
     expect(spawnSync(process.execPath, [cli, '--not-a-real-option'], { encoding: 'utf8' }).status).toBe(1);
-    expect(spawnSync(process.execPath, [cli, '--help'], { encoding: 'utf8' }).status).toBe(0);
+    const help = spawnSync(process.execPath, [cli, '--help'], { encoding: 'utf8' });
+    expect(help.status).toBe(0);
+    expect(help.stdout).not.toMatch(/db\s+(setup|up|init|down|status)/);
+    expect(spawnSync(process.execPath, [cli, 'migrate', '--init'], { encoding: 'utf8' }).status).toBe(1);
+    const removed = spawnSync(process.execPath, [cli, 'db', 'setup', '--root', temporary], {
+      encoding: 'utf8',
+    });
+    expect(removed.status).toBe(1);
+    expect(removed.stderr).toContain('未知命令 db');
   });
 });

@@ -1,9 +1,11 @@
 // /api/sys/*：系统管理接口。组织与授权的写操作直接用生成的命令路由（/api/role/:id/grant-capability 等），
 // 这里只放内核系统表的查询与运维动作；每个接口都要求对应的系统能力点，运维动作写审计。
-import { cageError, sensitiveFields, type Ctx, type Kernel } from '@yss123/cage-kernel';
+import { cageError, type Ctx, type Kernel } from '@yss123/cage-kernel';
+import { adminCatalog, type AdminLabels } from './catalog.js';
 import { discardDeadLetter, nextRun, replayDeadLetter } from '@yss123/cage-kernel/worker';
 import type { FastifyInstance } from 'fastify';
 import { sql } from 'kysely';
+import { diagnosticRoutes } from './diagnostics.js';
 
 const ctxOf = (req: any): Ctx => req.cageCtx as Ctx;
 
@@ -14,7 +16,8 @@ function need(ctx: Ctx, cap: string) {
 
 const intParam = (v: unknown, d: number, max: number) => Math.min(max, Math.max(1, Number(v ?? d) || d));
 
-export function adminRoutes(app: FastifyInstance, k: Kernel) {
+export function adminRoutes(app: FastifyInstance, k: Kernel, labels: AdminLabels = {}) {
+  diagnosticRoutes(app, k);
   const opsAudit = (ctx: Ctx, command: string, detail: unknown) =>
     k.writeAudit(k.app, {
       tenantId: ctx.tenantId, actor: ctx.actor!.id, actorKind: ctx.actor!.kind, source: 'api', kind: 'ops',
@@ -24,17 +27,7 @@ export function adminRoutes(app: FastifyInstance, k: Kernel) {
   app.get('/api/sys/catalog', async (req) => {
     const ctx = ctxOf(req);
     if (!ctx.userId) throw cageError('UNAUTHENTICATED');
-    return {
-      capabilities: k.registry.capabilityCatalog(),
-      aggregates: k.registry.aggregates.map((a) => ({
-        name: a.name, description: a.description ?? null, states: a.states.values,
-        scope: { deptField: a.scope.deptField ?? null, ownerField: a.scope.ownerField ?? null },
-        sensitive: sensitiveFields(a),
-      })),
-      combinators: ['self', 'dept', 'deptSubtree', 'deptSet', 'all'],
-      approvals: k.registry.approvals.map(({ a, name }) => ({ name, process: a.process, aggregate: a.agg.name, routable: a.routable })),
-      jobs: k.registry.jobs.map((j) => ({ name: j.name, cron: j.cron, description: j.description ?? null })),
-    };
+    return adminCatalog(k.registry, labels);
   });
 
   // ---------- 审计查询：读侧账号 + safe.audit_log 视图（内核账号本身读不到审计） ----------

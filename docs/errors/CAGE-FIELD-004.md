@@ -1,10 +1,42 @@
-# CAGE-FIELD-004
+# CAGE-FIELD-004：覆盖系统保留列
 
-## 什么时候出现
+[返回错误码册](README.md) · [业务排错](../ai/troubleshooting.md)
 
-命中以下实现中的检查时触发。终端会附具体声明位置、原因和修复方法。
+> 本页由框架生成。正反例为局部声明或操作说明，完整写法见业务开发指南及本项目 domain。
 
-来源：[packages/kernel/src/primitives/aggregate.ts:85](../../packages/kernel/src/primitives/aggregate.ts)
+## 何时出现
+
+阶段：声明加载。
+
+业务 fields 定义了 id/version/status/createdAt/updatedAt/tenantId 等保留字段。
+
+## 修复步骤
+
+1. 移除重复系统字段；状态使用 aggregate.states 或唯一 fields.status 状态声明；业务另取有意义名称。
+
+## 正例
+
+```text
+fields: { externalId: text() }, states: POStatus
+```
+
+## 反例
+
+```text
+fields: { version: text() }
+```
+
+## 修复后验证
+
+重跑 cage check/gen，审查契约与迁移；敏感字段还要验证普通用户读结果。
+
+## 框架内的检查位置
+
+以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
+
+- `packages/kernel/src/primitives/aggregate.ts:85`
+
+实现片段（位置随框架版本更新）：
 
 ```ts
     if ((RESERVED_FIELDS as readonly string[]).includes(k)) {
@@ -12,21 +44,4 @@
     }
     if (!/^[a-z][A-Za-z0-9]*$/.test(k)) throw declError('CAGE-NAME-002', `字段名 ${name}.${k} 必须是小驼峰`);
     fields[k] = v;
-  }
-```
-
-## 怎么修
-
-使用 field 工厂声明字段，避免覆盖 id/status/version 等系统列，引用指向存在的聚合。
-
-## 正例
-
-```text
-fields: { deptId: ref('Dept'), amount: money() }
-```
-
-## 反例
-
-```text
-fields: { version: text() } // 系统版本号不能改作业务字段
 ```

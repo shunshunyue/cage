@@ -1,7 +1,7 @@
 {
   "name": "@yss123/cage-cli",
-  "version": "0.1.0",
-  "description": "cage 命令行：gen、check、impact、test、verify、budget、sync、upgrade、dev、migrate",
+  "version": "0.2.0",
+  "description": "cage 命令行：init、gen、check、graph、context、impact、test、verify、budget、sync、upgrade、dev、migrate",
   "type": "module",
   "bin": {
     "cage": "./bin/cage.js",
@@ -19,15 +19,16 @@
     "dist",
     "bin",
     "graph-ui",
-    "templates",
-    "managed"
+    "templates"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && tsc -p ui/tsconfig.json && node scripts/build-graph.mjs && node scripts/copy-assets.mjs",
+    "build": "node scripts/clean-dist.ts && tsc -p tsconfig.json && tsc -p ui/tsconfig.json && node scripts/build-graph.ts && node scripts/copy-assets.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p ui/tsconfig.json",
     "test": "vitest run"
   },
   "dependencies": {
+    "@yss123/cage-admin": "workspace:*",
+    "@clack/prompts": "^1.8.1",
     "@yss123/cage-kernel": "workspace:*",
     "@yss123/cage-lint": "workspace:*",
     "@yss123/cage-testkit": "workspace:*",

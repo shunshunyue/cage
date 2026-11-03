@@ -1,6 +1,6 @@
 // 抽取器：把声明变成一张本体图（节点 + 边），写到 .cage/ontology.json。规则检查、影响分析、测试生成都读这张图。
 import { createHash } from 'node:crypto';
-import { snake, stableStringify, type AnyAggregate, type Fields, type Registry } from '@yss123/cage-kernel';
+import { brandOf, isRelation, snake, stableStringify, type AnyAggregate, type BusinessAction, type Fields, type Registry } from '@yss123/cage-kernel';
 import { z } from 'zod';
 import type { DeclSite } from './static-check.js';
 
@@ -18,7 +18,9 @@ export type NodeKind =
   | 'connector'
   | 'outbound'
   | 'inbound'
-  | 'capability';
+  | 'capability'
+  | 'process'
+  | 'stage';
 
 export interface OntNode {
   kind: NodeKind;
@@ -36,12 +38,17 @@ export type EdgeKind =
   | 'emits'
   | 'uses'
   | 'triggers'
+  | 'cancels'
   | 'targets'
   | 'queries'
   | 'refs'
   | 'calls'
   | 'binds'
-  | 'field';
+  | 'field'
+  | 'contains'
+  | 'implements'
+  | 'follows'
+  | 'relates';
 
 export interface OntEdge {
   kind: EdgeKind;
@@ -53,6 +60,14 @@ export interface OntEdge {
   releases?: string;
   /** uses 边的来源说明：约束、事件载荷、路由条件、出站映射、查询 */
   as?: string;
+  cardinality?: 'many-to-one' | 'one-to-one' | 'one-to-many' | 'many-to-many';
+  mappedBy?: string;
+  /** 新的业务规格边显式保留端点类型，避免同名事件和命令混淆。 */
+  fromKind?: NodeKind;
+  toKind?: NodeKind;
+  mode?: 'manual' | 'automatic' | 'wait';
+  label?: string;
+  branch?: boolean;
 }
 
 export interface Ontology {
@@ -81,8 +96,10 @@ function fieldAttrs(f: any) {
     ref: f.ref ?? null,
     unique: !!f.isUnique,
     hidden: !!f.isHidden,
+    ...(isRelation(f) ? { virtual: true, mappedBy: f.mappedBy ?? null, readOnly: f.kind === 'hasMany' } : {}),
     description: f.description ?? null,
     values: f.values ?? null,
+    ...(f.filePolicy ? { filePolicy: f.filePolicy } : {}),
     shape: f.shape
       ? Object.fromEntries(
           Object.entries(f.shape).map(([k, sf]: [string, any]) => [
@@ -133,10 +150,15 @@ export function extract(reg: Registry, sites: DeclSite[] = [], unsafeCount = 0):
       where(a),
     );
     for (const [k, f] of Object.entries(a.fields as Fields)) {
-      push('field', `${a.name}.${k}`, fieldAttrs(f));
+      push('field', `${a.name}.${k}`, { ...fieldAttrs(f),
+        ...(f.kind === 'manyToMany' ? { through: `${a.table.schema}.${a.table.name}__${snake(k)}` } : {}),
+      });
       edges.push({ kind: 'field', from: a.name, to: `${a.name}.${k}` });
       aggOfField.set(`${a.name}.${k}`, a);
-      if (f.ref) edges.push({ kind: 'refs', from: `${a.name}.${k}`, to: f.ref });
+      if (f.ref) edges.push({ kind: 'refs', from: `${a.name}.${k}`, to: f.ref,
+        cardinality: f.kind === 'hasMany' ? 'one-to-many' : f.kind === 'manyToMany' ? 'many-to-many' : f.isUnique ? 'one-to-one' : 'many-to-one',
+        ...(f.mappedBy ? { mappedBy: f.mappedBy } : {}),
+      });
     }
     for (const s of a.states.values) {
       push('state', `${a.name}.${s}`, {
@@ -212,11 +234,13 @@ export function extract(reg: Registry, sites: DeclSite[] = [], unsafeCount = 0):
       name,
       {
         tx: r.tx,
+        order: (r as any).order ?? null,
+        collection: (r as any).collection ?? null,
         acquires: r.acquires ?? null,
         releases: r.releases ?? null,
         event: r.event.name,
         command: reg.capabilityOf(r.command),
-        src: h(String(r.map)),
+        src: h((r as any).collection ? sites.find(s => s.exportName === name)?.text ?? String(r.map) : String(r.map)),
       },
       where(r),
     );
@@ -269,6 +293,9 @@ export function extract(reg: Registry, sites: DeclSite[] = [], unsafeCount = 0):
       where(a),
     );
     edges.push({ kind: 'triggers', from: a.start.name, to: name });
+    // cancelOn 原本只留在属性中，沿图查取消逻辑时会漏掉审批。把声明中的事件
+    // 也抽成关系，明确它负责取消流程，不能与 start 混成“启动审批”。
+    for (const event of a.cancelOn) edges.push({ kind: 'cancels', from: event.name, to: name });
     edges.push({ kind: 'binds', from: name, to: reg.capabilityOf(a.onApproved) });
     edges.push({ kind: 'binds', from: name, to: reg.capabilityOf(a.onRejected) });
     for (const f of a.routable)
@@ -372,6 +399,49 @@ export function extract(reg: Registry, sites: DeclSite[] = [], unsafeCount = 0):
       );
       edges.push({ kind: 'targets', from: id, to: reg.capabilityOf(v.command) });
     }
+  }
+
+  // 业务阶段引用真实声明。流程规格关系与实际调用关系使用不同边类型，
+  // 静态检查及 UI 都不能把“下一步”当作 worker 会自动执行的证据。
+  const actionRef = (action: BusinessAction): { kind: NodeKind; id: string } => {
+    const kind = brandOf(action)!;
+    const named = action as { name?: string };
+    if (kind === 'COMMAND') return { kind: 'command', id: reg.capabilityOf(action as Parameters<Registry['capabilityOf']>[0]) };
+    return {
+      kind: kind.toLowerCase() as NodeKind,
+      id: ['EVENT', 'QUERY', 'JOB', 'REACTION'].includes(kind) ? named.name ?? reg.nameOf(action)! : reg.nameOf(action)!,
+    };
+  };
+  for (const process of reg.businessProcesses) {
+    push('process', process.name, {
+      title: process.title, description: process.description, area: process.area,
+      subject: process.subject.name, entry: `${process.name}.${process.entry}`, transitions: process.transitions,
+    }, where(process));
+    edges.push({ kind: 'relates', from: process.name, to: process.subject.name, fromKind: 'process', toKind: 'aggregate', label: '主业务对象' });
+    for (const [id, stage] of Object.entries(process.stages)) {
+      const stageId = `${process.name}.${id}`;
+      const primary = actionRef(stage.action);
+      push('stage', stageId, {
+        process: process.name, title: stage.title, description: stage.description,
+        actor: stage.actor ?? null, stageKind: stage.kind ?? 'action', primary: `${primary.kind}:${primary.id}`,
+        details: (stage.details ?? []).map(ref => { const n = actionRef(ref); return `${n.kind}:${n.id}`; }),
+        related: (stage.related ?? []).map(r => { const via = actionRef(r.via); return { object: r.object.name, label: r.label, via: `${via.kind}:${via.id}` }; }),
+      }, where(process));
+      edges.push({ kind: 'contains', from: process.name, to: stageId, fromKind: 'process', toKind: 'stage' });
+      for (const ref of new Set([stage.action, ...(stage.details ?? [])])) {
+        const target = actionRef(ref);
+        edges.push({ kind: 'implements', from: stageId, to: target.id, fromKind: 'stage', toKind: target.kind });
+      }
+      for (const related of stage.related ?? []) {
+        const via = actionRef(related.via);
+        edges.push({ kind: 'relates', from: stageId, to: related.object.name, fromKind: 'stage', toKind: 'aggregate',
+          label: related.label, via: `${via.kind}:${via.id}` });
+      }
+    }
+    for (const transition of process.transitions) edges.push({
+      kind: 'follows', from: `${process.name}.${transition.from}`, to: `${process.name}.${transition.to}`,
+      fromKind: 'stage', toKind: 'stage', mode: transition.mode, label: transition.label, branch: transition.branch ?? false,
+    });
   }
 
   nodes.sort((a, b) => a.id.localeCompare(b.id) || a.kind.localeCompare(b.kind));

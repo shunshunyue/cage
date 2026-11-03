@@ -14,10 +14,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@yss123/cage-kernel": "0.1.0",
-    "@yss123/cage-admin": "0.1.0",
-    "@yss123/cage-approval": "0.1.0",
-    "@yss123/cage-connectors": "0.1.0",
+    "@yss123/cage-kernel": "0.2.0",
+    "@yss123/cage-admin": "0.2.0",
+    "@yss123/cage-approval": "0.2.0",
+    "@yss123/cage-connectors": "0.2.0",
     "zod": "^4.1.5"
   }
 }

@@ -1,23 +1,18 @@
-# CAGE-SENS-001
+# CAGE-SENS-001：敏感字段未标注就进入事件
 
-## 什么时候出现
+[返回错误码册](README.md) · [业务排错](../ai/troubleshooting.md)
 
-命中以下实现中的检查时触发。终端会附具体声明位置、原因和修复方法。
+> 本页由框架生成。正反例为局部声明或操作说明，完整写法见业务开发指南及本项目 domain。
 
-来源：[packages/cli/src/rules.ts:114](../../packages/cli/src/rules.ts)
+## 何时出现
 
-```ts
+阶段：图规则。
 
-/** CAGE-SENS-001：敏感字段不得原样进入事件载荷 */
-export function checkSensitiveEvents(g: Ontology): Finding[] {
-  const { get, out } = index(g);
-  const findings: Finding[] = [];
-  for (const c of g.nodes.filter((n) => n.kind === 'command')) {
-```
+命令事件载荷包含与聚合同名的敏感字段，却没有对应 sensitive 标记。
 
-## 怎么修
+## 修复步骤
 
-从事件移除敏感字段，或保留与聚合一致的 sensitive 标注，让运行时脱敏。
+1. 移除非必要敏感数据，或在事件保持一致 sensitive 标记以便掩码；自定义映射也要审查，字段改名不会自动证明安全。
 
 ## 正例
 
@@ -28,5 +23,26 @@ event('OrderChanged', { phone: text().sensitive('phone') })
 ## 反例
 
 ```text
-event('OrderChanged', { phone: text() }) // 来源字段是敏感电话
+聚合 phone 为 sensitive，事件 phone 却是普通 text()
+```
+
+## 修复后验证
+
+重跑 cage check，检查实际 outbox 载荷及普通读结果没有泄漏明文。
+
+## 框架内的检查位置
+
+以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
+
+- `packages/cli/src/rules.ts:115`
+- `packages/cli/src/rules.ts:129`
+
+实现片段（位置随框架版本更新）：
+
+```ts
+
+/** CAGE-SENS-001：敏感字段不得原样进入事件载荷 */
+export function checkSensitiveEvents(g: Ontology): Finding[] {
+  const { get, out } = index(g);
+  const findings: Finding[] = [];
 ```

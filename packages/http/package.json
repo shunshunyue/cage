@@ -1,6 +1,6 @@
 {
   "name": "@yss123/cage-http",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "笼子 HTTP 层：Fastify 插件、路由生成、认证、安全基线",
   "type": "module",
   "main": "dist/index.js",
@@ -23,6 +23,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@yss123/cage-files": "workspace:*",
     "@yss123/cage-admin": "workspace:*",
     "@yss123/cage-approval": "workspace:*",
     "@yss123/cage-kernel": "workspace:*",

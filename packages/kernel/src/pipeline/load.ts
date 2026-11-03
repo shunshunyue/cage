@@ -7,6 +7,8 @@ import { rowToSnapshot } from '../db/rows.js';
 import { compileScope } from '../scope/index.js';
 import type { Ctx } from '../types.js';
 import { snake } from '../util/names.js';
+import { loadRelationIds } from '../relations.js';
+import { isRelation } from '../primitives/fields.js';
 
 type Db = Transaction<any> | Kysely<any>;
 
@@ -20,7 +22,7 @@ export async function loadScoped(tx: Db, agg: AnyAggregate, id: string, ctx: Ctx
     .where(compileScope(agg.scope, agg.name, ctx, 't'));
   if (forUpdate) q = q.forUpdate();
   const row = await q.executeTakeFirst();
-  return row ? rowToSnapshot(agg, row) : null;
+  return row ? (await loadRelationIds(tx, agg, [rowToSnapshot(agg, row)], ctx))[0] : null;
 }
 
 const SYSTEM_KEYS: Record<string, string> = {
@@ -35,7 +37,7 @@ export function whereColumns(agg: AnyAggregate, where: Record<string, unknown> |
     const col = SYSTEM_KEYS[k] ?? (k in agg.fields ? snake(k) : undefined);
     if (!col) throw cageError('INVALID_INPUT', { field: k, message: `${agg.name} 没有字段 ${k}` });
     const f = (agg.fields as any)[k];
-    if (f?.sql === 'jsonb') throw cageError('INVALID_INPUT', { field: k, message: '明细字段不能作为查询条件' });
+    if (f && (f.sql === 'jsonb' || isRelation(f))) throw cageError('INVALID_INPUT', { field: k, message: '明细或集合关系不能作为主表查询条件' });
     out.push([col, v]);
   }
   return out;
@@ -48,7 +50,8 @@ export function scopedFind(tx: Db, agg: AnyAggregate, ctx: Ctx, where?: Record<s
   }
   if (opts.orderBy) {
     const col = SYSTEM_KEYS[opts.orderBy] ?? (opts.orderBy in agg.fields ? snake(opts.orderBy) : undefined);
-    if (!col) throw cageError('INVALID_INPUT', { field: opts.orderBy });
+    const field = agg.fields[opts.orderBy];
+    if (!col || (field && isRelation(field))) throw cageError('INVALID_INPUT', { field: opts.orderBy });
     q = q.orderBy(sql.ref(`t.${col}`), opts.desc ? 'desc' : 'asc');
   } else {
     q = q.orderBy('t.created_at', 'asc');
@@ -63,10 +66,10 @@ export function bindReads<R extends Reads>(tx: Db, reads: R, ctx: Ctx): Record<s
     deps[alias] = Object.freeze({
       get: async (id: string) => (typeof id === 'string' && /^[0-9a-f-]{36}$/i.test(id) ? loadScoped(tx, agg, id, ctx, false) : null),
       find: async (where?: Record<string, unknown>, opts?: FindOptions) =>
-        (await scopedFind(tx, agg, ctx, where, opts).execute()).map((r) => rowToSnapshot(agg, r)),
+        loadRelationIds(tx, agg, (await scopedFind(tx, agg, ctx, where, opts).execute()).map((r) => rowToSnapshot(agg, r)), ctx),
       findOne: async (where: Record<string, unknown>) => {
         const rows = await scopedFind(tx, agg, ctx, where, { limit: 1 }).execute();
-        return rows[0] ? rowToSnapshot(agg, rows[0]) : null;
+        return rows[0] ? (await loadRelationIds(tx, agg, [rowToSnapshot(agg, rows[0])], ctx))[0] : null;
       },
       count: async (where?: Record<string, unknown>) => {
         let q = tx.selectFrom(tableRef(agg)).select(sql<number>`count(*)::int`.as('n')).where(compileScope(agg.scope, agg.name, ctx, 't'));

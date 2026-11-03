@@ -1,32 +1,47 @@
-# CAGE-CONN-009
+# CAGE-CONN-009：外部服务返回非成功状态
 
-## 什么时候出现
+[返回错误码册](README.md) · [业务排错](../ai/troubleshooting.md)
 
-命中以下实现中的检查时触发。终端会附具体声明位置、原因和修复方法。
+> 本页由框架生成。正反例为局部声明或操作说明，完整写法见业务开发指南及本项目 domain。
 
-来源：[packages/connectors/src/runtime.ts:163](../../packages/connectors/src/runtime.ts)
+## 何时出现
 
-```ts
-    const retryable = o.effect === 'retryableWrite' || o.effect === 'read' ? res.status >= 500 || res.status === 429 : false;
-    throw new ConnectorError(`[CAGE-CONN-009] ${o.connector.name}.${o.name} 返回 ${res.status}`, res.status, retryable);
-  }
-  const parsed = o.response.safeParse(json);
-  if (!parsed.success) {
-    await recordCall(opts.kernel, o, key, opts.tenantId ?? null, 'failed', res.status, body, json, '响应格式不符合声明');
-```
+阶段：声明、图规则或 worker。
 
-## 怎么修
+连接器取得 HTTP 响应，但状态码不是成功码。
 
-核对 host 白名单、操作名、字段 schema 和签名。永久失败应先修正配置再重放死信。
+## 修复步骤
+
+1. 看同步记录的状态与脱敏响应；核对鉴权、字段及限流。可重试性还受 effect 和状态码控制，不是所有 4xx 都会重试。
 
 ## 正例
 
 ```text
-hosts: { test: 'erp-sandbox.example.com', prod: 'erp.example.com' }
+修正 401 的运行环境密钥，确认后重放失败事件
 ```
 
 ## 反例
 
 ```text
-// outbound 映射发送了 request schema 之外的字段
+把所有 4xx 改成成功，或无限重试无效请求
+```
+
+## 修复后验证
+
+先 cage check；涉及网络时检查同步记录、外部幂等结果与成功回写。fake 与真实联调分别报告。
+
+## 框架内的检查位置
+
+以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
+
+- `packages/connectors/src/runtime.ts:165`
+
+实现片段（位置随框架版本更新）：
+
+```ts
+      try { json = text ? JSON.parse(text) : null; } catch { /* 无效响应由下方 schema 统一诊断，不记录原文。 */ }
+      if (!res.ok) throw new ConnectorError(`[CAGE-CONN-009] ${o.connector.name}.${o.name} 返回 ${res.status}`, res.status,
+        o.effect !== 'write' && (res.status >= 500 || res.status === 429), res.status >= 500 ? 'unknown' : 'rejected');
+      const result = o.response.safeParse(json);
+      if (!result.success) throw new ConnectorError(`[CAGE-CONN-010] ${o.connector.name}.${o.name} 的响应格式与声明不符`, res.status, false, 'unknown');
 ```

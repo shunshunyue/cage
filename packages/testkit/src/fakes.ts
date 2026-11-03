@@ -22,6 +22,7 @@ export function sampleValue(f: AnyField, name = '', force = false): unknown {
       return '100.00';
     case 'id':
     case 'ref':
+    case 'file':
       return randomUUID();
     case 'date':
       return '2026-01-01';
@@ -35,6 +36,9 @@ export function sampleValue(f: AnyField, name = '', force = false): unknown {
       if (!f.shape) return {};
       if ('item' in f.shape && Object.keys(f.shape).length === 1) return [sampleValue(f.shape.item, 'item')];
       return [Object.fromEntries(Object.entries(f.shape).map(([k, sf]) => [k, sampleValue(sf, k)]))];
+    case 'manyToMany':
+    case 'files':
+      return [];
     default:
       return null;
   }
@@ -58,7 +62,14 @@ export function arbitraryOf(f: AnyField): fc.Arbitrary<unknown> {
       break;
     case 'id':
     case 'ref':
+    case 'file':
       a = fc.uuid();
+      break;
+    case 'manyToMany':
+      a = fc.uniqueArray(fc.uuid(), { maxLength: 5 }).map((ids) => ids.sort());
+      break;
+    case 'files':
+      a = fc.constant([]);
       break;
     case 'bool':
       a = fc.boolean();
@@ -79,13 +90,13 @@ export function arbitraryOf(f: AnyField): fc.Arbitrary<unknown> {
 }
 
 export function arbitrarySnapshot(agg: AnyAggregate): fc.Arbitrary<Record<string, unknown>> {
-  return fc.record(Object.fromEntries(Object.entries(agg.fields as Fields).map(([k, f]) => [k, arbitraryOf(f)])));
+  return fc.record(Object.fromEntries(Object.entries(agg.fields as Fields).filter(([, f]) => f.kind !== 'hasMany').map(([k, f]) => [k, arbitraryOf(f)])));
 }
 
 /** 一条合法的示例记录（所有字段都有值） */
 export function sampleRecord(agg: AnyAggregate, overrides: Record<string, unknown> = {}): Record<string, any> {
   const out: Record<string, any> = {};
-  for (const [k, f] of Object.entries(agg.fields as Fields)) out[k] = sampleValue(f, k);
+  for (const [k, f] of Object.entries(agg.fields as Fields)) if (f.kind !== 'hasMany') out[k] = sampleValue(f, k);
   return { ...out, ...overrides };
 }
 

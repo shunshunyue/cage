@@ -1,6 +1,6 @@
 // 组织模型：部门、用户、角色。它们本身也是聚合，增删改都是命令，同样被鉴权、写审计。
 // 业务 domain 包通过 export * from '@yss123/cage-admin/domain' 把它们纳入注册表。
-import { scryptSync, randomBytes } from 'node:crypto';
+import { scrypt, randomBytes } from 'node:crypto';
 import {
   aggregate, command, enumOf, fail, id, json, list, ref, scope, states, text, COMBINATORS,
 } from '@yss123/cage-kernel';
@@ -165,9 +165,12 @@ export const disableUser = command(User, { name: 'disable', description: '停用
 export const enableUser = command(User, { name: 'enable', description: '启用用户', from: 'disabled', to: 'active', handler: () => ({}) });
 
 /** 密码哈希：scrypt$盐$哈希（纯计算，不做 IO） */
-export function hashPassword(pw: string): string {
+export async function hashPassword(pw: string): Promise<string> {
   const salt = randomBytes(16).toString('hex');
-  return `scrypt$${salt}$${scryptSync(pw, salt, 32).toString('hex')}`;
+  const key = await new Promise<Buffer>((resolve, reject) => {
+    scrypt(pw, salt, 32, (error, derived) => error ? reject(error) : resolve(derived));
+  });
+  return `scrypt$${salt}$${key.toString('hex')}`;
 }
 
 export const setPassword = command(User, {
@@ -176,7 +179,7 @@ export const setPassword = command(User, {
   from: 'active',
   to: 'active',
   input: z.object({ id: z.string().uuid(), password: z.string().min(8).max(200) }),
-  handler: (_o, input) => ({ passwordHash: hashPassword(input.password) }),
+  handler: async (_o, input) => ({ passwordHash: await hashPassword(input.password) }),
 });
 
 // ---------------- 角色命令 ----------------

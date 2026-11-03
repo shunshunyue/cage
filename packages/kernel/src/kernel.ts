@@ -1,6 +1,5 @@
 // 内核：唯一的写入入口 execute。HTTP、审批流程、定时任务、反应、批量导入都调用它，
 // 所以检查只写一遍，顺序永远一样（设计文档第 5 节的 12 关）。
-import { randomUUID } from 'node:crypto';
 import type { Kysely, Transaction } from 'kysely';
 import { sql } from 'kysely';
 import { z } from 'zod';
@@ -16,11 +15,18 @@ import type { AnyAggregate } from './primitives/aggregate.js';
 import type { AnyCommand } from './primitives/command.js';
 import type { ConstraintMeta } from './primitives/constraints.js';
 import { type AnyEvent, defaultPayload } from './primitives/event.js';
+import { reactionEntries, reactionEntryError } from './primitives/collection.js';
 import type { Fields } from './primitives/fields.js';
 import { ReadSide } from './read.js';
 import { buildRegistry, type RegisteredCommand, type Registry, type RegistryOptions } from './registry.js';
 import { consoleLogger, type Logger, step, traceCarrier } from './telemetry.js';
 import type { CapabilityParams, Ctx } from './types.js';
+import { DataTransfers } from './transfer/index.js';
+import { writeRelations } from './relations.js';
+import { assertInvoker } from './pipeline/invoker.js';
+import { explainAuthorization } from './authorization.js';
+import { newDraft, splitRaw } from './pipeline/draft.js';
+import { writeFileLinks } from './files/links.js';
 
 export interface KernelOptions {
   /** domain 包的导出（可以是多个模块，例如框架自带的组织模型 + 业务声明） */
@@ -72,10 +78,12 @@ function zodIssues(e: z.ZodError) {
 }
 
 export class Kernel {
+  explain(capability: string, input: Record<string, unknown>, ctx: Ctx) { return explainAuthorization(this, capability, input, ctx); }
   readonly registry: Registry;
   readonly app: Kysely<any>;
   readonly readDb: Kysely<any>;
   readonly read: ReadSide;
+  readonly transfers: DataTransfers;
   readonly log: Logger;
   private readonly handles: DbHandle[] = [];
   private readonly maxDepth: number;
@@ -97,6 +105,7 @@ export class Kernel {
       throw new Error('[CAGE-ENV-001] createKernel 需要 urls 或 db');
     }
     this.read = new ReadSide(this);
+    this.transfers = new DataTransfers(this);
   }
 
   async close(): Promise<void> {
@@ -200,6 +209,11 @@ export class Kernel {
     const parsed = cmd.input.safeParse(rest);
     if (!parsed.success) throw cageError('INVALID_INPUT', zodIssues(parsed.error));
     const input = parsed.data as Record<string, any>;
+    const fields = agg.fields as Fields;
+    const inverseKeys = Object.keys(fields).filter((key) => fields[key].kind === 'hasMany');
+    // hasMany 的归属保存在子对象的 ref 上；拒绝写入，避免调用者误以为传入数组就会搬动子对象。
+    if (rest && typeof rest === 'object' && inverseKeys.some((key) => Object.hasOwn(rest, key)))
+      throw cageError('INVALID_INPUT', { message: 'hasMany 是只读反查，请通过子对象命令修改 mappedBy 指向的外键' });
 
     // 第 3 关：调用方与能力
     assertInvoker(cmd, ctx, capability);
@@ -214,16 +228,13 @@ export class Kernel {
     const now = new Date();
     const actorUserId = ctx.onBehalfOf ?? ctx.userId ?? null;
     const isNew = cmd.from === 'new';
-    const fieldKeys = Object.keys(agg.fields as Fields);
+    const fieldKeys = Object.keys(fields).filter((key) => fields[key].kind !== 'hasMany');
     let cur: Record<string, any>;
 
     if (isNew) {
       // 新建：跳过第 4、5 关，由内核生成 id 和初始版本号；输入里的同名字段预填进草稿
       // 输入里带了 id（确定性主键，例如库存锁用采购单 id）时使用它，重复时报 CONFLICT
-      const givenId = typeof input.id === 'string' ? input.id : undefined;
-      cur = { id: givenId ?? randomUUID(), status: cmd.to, version: 0, createdAt: now.toISOString(), updatedAt: now.toISOString() };
-      for (const k of fieldKeys) cur[k] = k in input ? input[k] : null;
-      if (agg.scope.deptField && agg.scope.deptField !== 'id' && cur[agg.scope.deptField] == null) cur[agg.scope.deptField] = ctx.deptId;
+      cur = newDraft(cmd, input, ctx, now);
     } else {
       if (typeof input.id !== 'string') throw cageError('INVALID_INPUT', [{ path: 'id', message: '缺少 id' }]);
       // 第 4 关：按范围加载并加行锁；范围外和不存在一律 404
@@ -260,6 +271,8 @@ export class Kernel {
     const result = await step('handler', async () => cmd.handler(draft as any, input as any, deps as any, Object.freeze({ now, actorUserId })));
     if (isDomainError(result)) throw new CageError('DOMAIN_ERROR', result.detail, result.code);
     const changes: Record<string, any> = { ...draft, ...(result && typeof result === 'object' ? result : {}) };
+    if (inverseKeys.some((key) => Object.hasOwn(changes, key)))
+      throw cageError('INVALID_INPUT', { message: 'handler 不能给 hasMany 赋值；请调用子对象命令' });
 
     // 第 9 关：状态只由内核推进；创建人字段只由内核设置
     const next: Record<string, any> = { ...cur };
@@ -272,6 +285,13 @@ export class Kernel {
     const record = Object.fromEntries(fieldKeys.map((k) => [k, next[k] ?? ((agg.fields as Fields)[k].isOptional ? null : undefined)]));
     const valid = agg.schema.safeParse(record);
     if (!valid.success) throw cageError('INVALID_INPUT', zodIssues(valid.error));
+    // 关系是无序集合；统一 UUID 大小写、去重并排序，让审计及重试只记录真正的关联变化。
+    for (const k of fieldKeys) if (fields[k].kind === 'manyToMany')
+      next[k] = [...new Set((next[k] as string[]).map((id) => id.toLowerCase()))].sort();
+    for (const k of fieldKeys) if (fields[k].kind === 'file' || fields[k].kind === 'files') {
+      next[k] = Array.isArray(next[k]) ? next[k].map((id: string) => id.toLowerCase()) : next[k]?.toLowerCase() ?? null;
+      record[k] = next[k];
+    }
 
     // 第 10 关：不变量
     for (const [name, fn] of Object.entries(agg.invariants)) {
@@ -307,6 +327,8 @@ export class Kernel {
       next.version = cur.version + 1;
     }
     next.updatedAt = now.toISOString();
+    await writeRelations(tx, this.registry, agg, isNew ? {} : cur, next, ctx);
+    await writeFileLinks(tx, agg, isNew ? {} : cur, next, ctx);
 
     const changed = isNew ? fieldKeys.filter((k) => next[k] !== null) : diffFields(agg, cur, next);
     await this.writeAudit(tx, {
@@ -331,13 +353,17 @@ export class Kernel {
     for (const ev of events) {
       for (const { r, name } of this.registry.reactionsFor(ev.event)) {
         if (r.tx !== 'same') continue;
-        const rin = r.map(ev.payload as any);
-        if (rin === null || rin === undefined) continue;
         const rctx = systemCtx({
           kind: 'reaction', name, tenantId: ctx.tenantId, capabilities: [this.registry.capabilityOf(r.command)],
           onBehalfOf: actorUserId, requestId: ctx.requestId,
         });
-        await this.run(tx, this.resolve(r.command), rin, rctx, depth + 1);
+        for (const entry of reactionEntries(r, ev.payload)) {
+          try {
+            await this.run(tx, this.resolve(r.command), entry.input, rctx, depth + 1);
+          } catch (error) {
+            throw reactionEntryError(error, r, name, entry);
+          }
+        }
       }
     }
 
@@ -461,31 +487,6 @@ export class Kernel {
 
 export function createKernel(opts: KernelOptions): Kernel {
   return new Kernel(opts);
-}
-
-function splitRaw(raw: unknown): { expectedVersion?: number; rest: unknown } {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { rest: raw ?? {} };
-  const { expectedVersion, ...rest } = raw as Record<string, unknown>;
-  if (expectedVersion === undefined || expectedVersion === null) return { rest };
-  const v = Number(expectedVersion);
-  if (!Number.isInteger(v)) throw cageError('INVALID_INPUT', [{ path: 'expectedVersion', message: '版本号必须是整数' }]);
-  return { expectedVersion: v, rest };
-}
-
-/** 第 3 关之一：流程专用命令只接受流程身份；用户命令可以被声明过它的系统身份调用 */
-function assertInvoker(cmd: AnyCommand, ctx: Ctx, capability: string): void {
-  const kind = ctx.actor!.kind;
-  if (kind === 'system') return;
-  if (kind === 'user' || kind === 'anonymous') {
-    if (!cmd.invokedBy.includes('user')) {
-      throw cageError('FORBIDDEN', { capability, message: `该命令只接受 ${cmd.invokedBy.join('/')} 调用` });
-    }
-    return;
-  }
-  const as = kind === 'reaction' ? 'process' : kind;
-  if (!cmd.invokedBy.includes('user') && !cmd.invokedBy.includes(as as any)) {
-    throw cageError('FORBIDDEN', { capability, message: `${kind} 身份不能调用该命令` });
-  }
 }
 
 function maskEventPayload(ev: AnyEvent, payload: Record<string, unknown>): Record<string, unknown> {

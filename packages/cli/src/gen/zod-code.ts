@@ -1,15 +1,65 @@
-// 把 Zod schema（经 JSON Schema 中转）或字段声明翻译成 Zod 源码，写进前端契约。前后端校验规则因此永远一致。
-import type { AnyField, Fields } from '@yss123/cage-kernel';
+// 生成可表达的输入校验；自定义函数仍由服务端执行，生成报告必须明确列出这些边界。
+import { isRelation, type AnyField, type Fields } from '@yss123/cage-kernel';
 import { z } from 'zod';
 
 const str = (s: string) => JSON.stringify(s);
+const activeJsonSchemas = new Set<object>();
+
+export interface SchemaDiagnostic { path: string; reason: string }
+
+/** Inspect the original schema: JSON Schema intentionally cannot retain executable refinements. */
+export function schemaDiagnostics(schema: z.ZodType, path = '$'): SchemaDiagnostic[] {
+  const findings: SchemaDiagnostic[] = [];
+  const visit = (value: any, at: string, ancestors: Set<unknown>) => {
+    if (!value?._zod) return;
+    if (ancestors.has(value)) {
+      findings.push({ path: at, reason: '递归结构的后续层级只在服务端完整校验' });
+      return;
+    }
+    const next = new Set(ancestors).add(value);
+    const def = value._zod.def;
+    if (def.coerce || ['transform', 'pipe', 'date', 'bigint', 'symbol', 'function', 'map', 'set', 'promise', 'custom', 'lazy', 'catch', 'prefault', 'undefined', 'void', 'file', 'readonly'].includes(def.type))
+      findings.push({ path: at, reason: `${def.type} 不能无损生成；对应规则只在服务端执行` });
+    for (const check of def.checks ?? []) {
+      if (['custom', 'overwrite'].includes(check._zod?.def?.check)) findings.push({ path: at, reason: '自定义 refine/superRefine 或输入转换仅由服务端执行' });
+      if (check._zod?.def?.pattern instanceof RegExp && check._zod.def.pattern.flags)
+        findings.push({ path: at, reason: '正则 flags 无法由 JSON Schema 无损保留；完整匹配规则只在服务端执行' });
+    }
+    if (def.type === 'object') for (const [key, child] of Object.entries(def.shape ?? {})) visit(child, `${at}.${key}`, next);
+    if (def.element) visit(def.element, `${at}[]`, next);
+    if (def.innerType) visit(def.innerType, at, next);
+    if (def.in) visit(def.in, at, next);
+    if (def.left) visit(def.left, at, next);
+    if (def.right) visit(def.right, at, next);
+    if (def.catchall) visit(def.catchall, `${at}.*`, next);
+    if (def.keyType) visit(def.keyType, `${at}{key}`, next);
+    if (def.valueType) visit(def.valueType, `${at}.*`, next);
+    for (const [index, child] of (def.options ?? def.items ?? []).entries()) visit(child, `${at}[${index}]`, next);
+    if (def.rest) visit(def.rest, `${at}[rest]`, next);
+  };
+  visit(schema, path, new Set());
+  return findings;
+}
 
 export function zodCodeOf(schema: z.ZodType): string {
   let js: any;
   try {
-    js = z.toJSONSchema(schema, { unrepresentable: 'any', io: 'input' });
-  } catch {
-    return 'z.unknown()';
+    js = z.toJSONSchema(schema, {
+      unrepresentable: 'any', io: 'input',
+      override: ({ zodSchema, jsonSchema }) => {
+        const def = (zodSchema as any)._zod?.def;
+        // A transform may make otherwise invalid raw input valid (trim before max, catch fallback).
+        // Dropping that node is safer than generating a stricter client-side rule.
+        if (def?.type === 'catch' || def?.checks?.some((check: any) => check._zod?.def?.check === 'overwrite'))
+          for (const key of Object.keys(jsonSchema)) delete (jsonSchema as any)[key];
+        else if (def?.checks?.some((check: any) => check._zod?.def?.pattern instanceof RegExp && check._zod.def.pattern.flags)) {
+          delete jsonSchema.pattern;
+          delete jsonSchema.allOf;
+        }
+      },
+    });
+  } catch (error) {
+    throw new Error(`[CAGE-GEN-003] 输入 schema 无法转换：${String(error)}`);
   }
   return jsonToZod(js, js);
 }
@@ -19,13 +69,14 @@ function withChecks(base: string, s: any): string {
   if (s.type === 'string' || base.startsWith('z.string')) {
     if (typeof s.minLength === 'number') out += `.min(${s.minLength})`;
     if (typeof s.maxLength === 'number') out += `.max(${s.maxLength})`;
-    if (typeof s.pattern === 'string' && !s.format) out += `.regex(new RegExp(${str(s.pattern)}))`;
+    if (typeof s.pattern === 'string') out += `.regex(new RegExp(${str(s.pattern)}))`;
   }
   if (s.type === 'number' || s.type === 'integer') {
     if (typeof s.minimum === 'number') out += `.min(${s.minimum})`;
     if (typeof s.maximum === 'number') out += `.max(${s.maximum})`;
     if (typeof s.exclusiveMinimum === 'number') out += `.gt(${s.exclusiveMinimum})`;
     if (typeof s.exclusiveMaximum === 'number') out += `.lt(${s.exclusiveMaximum})`;
+    if (typeof s.multipleOf === 'number') out += `.multipleOf(${s.multipleOf})`;
   }
   if (s.type === 'array') {
     if (typeof s.minItems === 'number') out += `.min(${s.minItems})`;
@@ -35,18 +86,39 @@ function withChecks(base: string, s: any): string {
 }
 
 export function jsonToZod(s: any, root: any): string {
+  if (s && activeJsonSchemas.has(s)) return 'z.unknown() /* CAGE-GEN-003: recursive validation remains server-only */';
+  if (s && typeof s === 'object') activeJsonSchemas.add(s);
+  try {
+    const code = jsonToZodInner(s, root);
+    return s && Object.prototype.hasOwnProperty.call(s, 'default') ? `${code}.default(${JSON.stringify(s.default)})` : code;
+  } finally { if (s && typeof s === 'object') activeJsonSchemas.delete(s); }
+}
+
+function jsonToZodInner(s: any, root: any): string {
+  if (s === false) return 'z.never()';
   if (!s || typeof s !== 'object' || Object.keys(s).length === 0) return 'z.unknown()';
   if (s.$ref) {
-    const name = String(s.$ref).split('/').pop()!;
-    const def = root.$defs?.[name] ?? root.definitions?.[name];
-    return def ? jsonToZod(def, root) : 'z.unknown()';
+    const ref = String(s.$ref);
+    const def = ref === '#' ? root : ref.startsWith('#/')
+      ? ref.slice(2).split('/').map(part => part.replace(/~1/g, '/').replace(/~0/g, '~')).reduce((value, key) => value?.[key], root)
+      : undefined;
+    if (!def) throw new Error(`[CAGE-GEN-003] 无法解析 schema 引用 ${String(s.$ref)}`);
+    return jsonToZod(def, root);
   }
   if (s.const !== undefined) return `z.literal(${JSON.stringify(s.const)})`;
   if (Array.isArray(s.enum)) {
+    if (!s.enum.length) return 'z.never()';
+    if (s.enum.length === 1) return `z.literal(${JSON.stringify(s.enum[0])})`;
     if (s.enum.every((v: unknown) => typeof v === 'string')) return `z.enum([${s.enum.map(str).join(', ')}])`;
     return `z.union([${s.enum.map((v: unknown) => `z.literal(${JSON.stringify(v)})`).join(', ')}])`;
   }
   const variants = s.anyOf ?? s.oneOf;
+  if (Array.isArray(s.allOf)) {
+    const { allOf, ...base } = s;
+    const baseCode = jsonToZod(base, root);
+    const codes = [...(baseCode === 'z.unknown()' ? [] : [baseCode]), ...allOf.map((part: any) => jsonToZod(s.type && !part.type ? { type: s.type, ...part } : part, root))];
+    return codes.length ? codes.reduce((left: string, right: string) => `z.intersection(${left}, ${right})`) : 'z.unknown()';
+  }
   if (Array.isArray(variants)) {
     const nonNull = variants.filter((v: any) => v.type !== 'null');
     const nullable = nonNull.length !== variants.length;
@@ -63,9 +135,13 @@ export function jsonToZod(s: any, root: any): string {
   }
   switch (s.type) {
     case 'string': {
-      if (s.format === 'uuid') return 'z.string().uuid()';
+      if (s.format === 'uuid') return withChecks('z.string().uuid()', s);
       if (s.format === 'email') return withChecks('z.string().email()', { ...s, pattern: undefined });
-      if (s.format === 'date-time') return 'z.string().datetime({ offset: true })';
+      if (s.format === 'date-time') return withChecks('z.string().datetime({ offset: true })', s);
+      if (s.format === 'uri' || s.format === 'url') return withChecks('z.string().url()', s);
+      if (s.format === 'date') return withChecks('z.iso.date()', s);
+      if (s.format === 'time') return withChecks('z.iso.time()', s);
+      if (s.format === 'duration') return withChecks('z.iso.duration()', s);
       return withChecks('z.string()', s);
     }
     case 'integer':
@@ -77,24 +153,33 @@ export function jsonToZod(s: any, root: any): string {
     case 'null':
       return 'z.null()';
     case 'array':
+      if (s.prefixItems) {
+        const tuple = `z.tuple([${s.prefixItems.map((item: unknown, index: number) => `${jsonToZod(item, root)}${typeof s.minItems === 'number' && index >= s.minItems ? '.optional()' : ''}`).join(', ')}])`;
+        return s.items && typeof s.items === 'object' ? `${tuple}.rest(${jsonToZod(s.items, root)})` : tuple;
+      }
       return withChecks(`z.array(${jsonToZod(s.items ?? {}, root)})`, s);
     case 'object': {
       const props = Object.entries(s.properties ?? {});
       if (props.length === 0 && s.additionalProperties && typeof s.additionalProperties === 'object') {
-        return `z.record(z.string(), ${jsonToZod(s.additionalProperties, root)})`;
+        return `z.record(${s.propertyNames ? jsonToZod({ type: 'string', ...s.propertyNames }, root) : 'z.string()'}, ${jsonToZod(s.additionalProperties, root)})`;
       }
-      if (props.length === 0) return 'z.record(z.string(), z.unknown())';
       const req = new Set<string>(s.required ?? []);
       const body = props
         .map(
           ([k, v]) =>
-            `${/^[A-Za-z_$][\w$]*$/.test(k) ? k : str(k)}: ${jsonToZod(v, root)}${req.has(k) ? '' : '.optional()'}`,
+            `${/^[A-Za-z_$][\w$]*$/.test(k) ? k : str(k)}: ${jsonToZod(v, root)}${req.has(k) || Object.prototype.hasOwnProperty.call(v, 'default') ? '' : '.optional()'}`,
         )
         .join(', ');
-      return `z.object({ ${body} })`;
+      const object = `z.object({ ${body} })`;
+      if (s.additionalProperties === false) return `${object}.strict()`;
+      if (s.additionalProperties === true) return `${object}.loose()`;
+      if (s.additionalProperties && typeof s.additionalProperties === 'object') return `${object}.catchall(${jsonToZod(s.additionalProperties, root)})`;
+      return object;
     }
     default:
-      return 'z.unknown()';
+      if (s.not && Object.keys(s.not).length === 0) return 'z.never()';
+      if (!s.type) return 'z.unknown()';
+      throw new Error(`[CAGE-GEN-003] 无法生成 JSON Schema 类型 ${String(s.type)}`);
   }
 }
 
@@ -115,7 +200,11 @@ export function fieldReadCode(f: AnyField): string {
         break;
       case 'id':
       case 'ref':
+      case 'file':
         base = 'z.string().uuid()';
+        break;
+      case 'files':
+        base = `z.array(z.string().uuid()).max(${f.filePolicy!.maxCount})`;
         break;
       case 'enum':
         base = `z.enum([${(f.values ?? []).map(str).join(', ')}])`;
@@ -142,7 +231,7 @@ export function snapshotCode(fields: Fields, states: readonly string[]): string 
   const lines = [
     'id: z.string().uuid()',
     ...Object.entries(fields)
-      .filter(([, f]) => !f.isHidden)
+      .filter(([, f]) => !f.isHidden && !isRelation(f))
       .map(([k, f]) => `${k}: ${fieldReadCode(f)}`),
     `status: z.enum([${states.map(str).join(', ')}])`,
     'version: z.number().int()',

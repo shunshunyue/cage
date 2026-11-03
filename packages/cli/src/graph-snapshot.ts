@@ -4,6 +4,7 @@ import { analyze } from './analyze.js';
 import { loadConfig } from './config.js';
 import type { Finding } from './findings.js';
 import type { Ontology } from './ontology.js';
+import { graphPresentation, type GraphPresentation } from './graph-presentation.js';
 
 export interface GraphSnapshot {
   project: string;
@@ -11,27 +12,25 @@ export interface GraphSnapshot {
   generatedAt: string;
   graph: Ontology;
   findings: Finding[];
-  presentation: { title: string; labels: Record<string, string> };
+  presentation: GraphPresentation;
+  /** 仅保存在本地抽取快照；HTTP 按节点提供，不能接受任意文件路径。 */
+  sources?: Record<string, GraphSource>;
+}
+
+export interface GraphSource {
+  file: string;
+  line: number;
+  endLine: number;
+  exportName: string;
+  code: string;
 }
 
 async function collect() {
   const cfg = loadConfig(process.argv[2]);
-  const result = await analyze(cfg, { write: true });
+  const result = await analyze(cfg);
   if (!result.graph) {
     throw new Error(result.findings.map((f) => `[${f.code}] ${f.reason}`).join('\n'));
   }
-  // 优先复用声明已有的描述。图谱文案单独传递，不给本体节点改名或改哈希，
-  // 避免一次中文标题调整被误认为命令、能力点或数据库结构发生变化。
-  const labels: Record<string, string> = {};
-  const remember = (kind: string, id: string, description?: string) => {
-    if (description) labels[`${kind}:${id}`] = description;
-  };
-  const registry = result.registry!;
-  for (const a of registry.aggregates) remember('aggregate', a.name, a.description);
-  for (const c of registry.commands) remember('command', c.capability, c.cmd.description);
-  for (const e of registry.events) remember('event', e.name, e.description);
-  for (const q of registry.queries) remember('query', q.name, q.description);
-  for (const j of registry.jobs) remember('job', j.name, j.description);
   // 有图规则问题时仍展示图和问题列表，开发者可以借助关系图定位错误。
   const snapshot: GraphSnapshot = {
     project: cfg.name,
@@ -39,7 +38,28 @@ async function collect() {
     generatedAt: new Date().toISOString(),
     graph: result.graph,
     findings: result.findings,
-    presentation: { title: cfg.graph?.title ?? cfg.name, labels: { ...labels, ...cfg.graph?.labels } },
+    presentation: graphPresentation(cfg, result.registry!),
+    // 复用本次静态检查已读到的声明，预览和图谱始终对应同一时刻；
+    // 请求代码时不重新读磁盘，避免旧行号错指及任意文件读取。
+    sources: Object.fromEntries(
+      result.graph.nodes.flatMap((node) => {
+        const site = result.source.sites.find((s) => s.file === node.file && s.line === node.line);
+        return site
+          ? [
+              [
+                `${node.kind}:${node.id}`,
+                {
+                  file: site.file,
+                  line: site.line,
+                  endLine: site.line + site.text.split('\n').length - 1,
+                  exportName: site.exportName,
+                  code: site.text,
+                },
+              ],
+            ]
+          : [];
+      }),
+    ),
   };
   process.send!({ snapshot });
 }

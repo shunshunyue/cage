@@ -1,10 +1,42 @@
-# CAGE-JOB-001
+# CAGE-JOB-001：定时表达式不合法
 
-## 什么时候出现
+[返回错误码册](README.md) · [业务排错](../ai/troubleshooting.md)
 
-命中以下实现中的检查时触发。终端会附具体声明位置、原因和修复方法。
+> 本页由框架生成。正反例为局部声明或操作说明，完整写法见业务开发指南及本项目 domain。
 
-来源：[packages/kernel/src/primitives/flow.ts:190](../../packages/kernel/src/primitives/flow.ts)
+## 何时出现
+
+阶段：声明 / worker。
+
+job 声明的 cron 缺少基本时间字段，后续解析也可能发现具体表达式错误。
+
+## 修复步骤
+
+1. 使用受支持的 cron 表达式并按业务明确运行频率；不要将无效配置静默改成每分钟执行。
+
+## 正例
+
+```text
+cron: '0 2 * * *'
+```
+
+## 反例
+
+```text
+cron: '每天两点'
+```
+
+## 修复后验证
+
+先 cage check，再在独立测试环境用目标任务数据验证读取、调用与审计；不要等待生产定时器试错。
+
+## 框架内的检查位置
+
+以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
+
+- `packages/kernel/src/primitives/flow.ts:204`
+
+实现片段（位置随框架版本更新）：
 
 ```ts
   if (!/^[a-z][A-Za-z0-9]*$/.test(name)) throw declError('CAGE-NAME-006', `任务名 ${name} 必须是小驼峰`);
@@ -12,21 +44,4 @@
   return Object.freeze({
     [JOB]: true as const,
     name,
-    cron: def.cron,
-```
-
-## 怎么修
-
-校正 cron、reads 和 calls。任务只能读取和调用显式声明的依赖。
-
-## 正例
-
-```text
-job('expireOrders', { cron: '0 2 * * *', reads: [Order], calls: [cancel], run })
-```
-
-## 反例
-
-```text
-calls: [] // run 却调用 cancel
 ```

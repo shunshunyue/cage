@@ -1,32 +1,5 @@
 # CAGE-MIG-004
 
-## 什么时候出现
+此错误码属于 npm 0.1.0 的旧数据库初始化流程，当前源码已移除该流程，保留本页供历史错误查询。
 
-命中以下实现中的检查时触发。终端会附具体声明位置、原因和修复方法。
-
-来源：[packages/cli/src/migrate.ts:35](../../packages/cli/src/migrate.ts)
-
-```ts
-      throw new Error(
-        '[CAGE-MIG-004] 集群已有 cage 账号，拒绝覆盖密码；请复用已初始化的库或使用独立 PostgreSQL 集群',
-      );
-    }
-    await db.query('begin');
-    await db.query(bootstrapSql(passwords, name));
-```
-
-## 怎么修
-
-核对迁移 SQL、账号权限和目标数据库。初始化只用于独立新集群，已发布迁移不可重写。
-
-## 正例
-
-```text
-pnpm cage migrate
-```
-
-## 反例
-
-```text
-// 用 cage_read 执行建表或覆盖已有集群角色密码
-```
+当前项目首次在根目录 `.env` 填写 `CAGE_ADMIN_DATABASE_URL`，运行 `pnpm exec cage init` 自动准备账号与连接，再执行 `pnpm migrate` 更新表结构。已有集群角色需复用原凭证，不能覆盖其他项目正在使用的密码。

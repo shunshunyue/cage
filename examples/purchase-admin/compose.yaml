@@ -1,3 +1,4 @@
+# 仅供框架维护者做 PostgreSQL 回归，不分发到业务应用模板。
 # 开发库和测试库使用不同 PostgreSQL 集群。testkit 会初始化集群角色，
 # 因此不能把测试超级用户连接串指向持久化的开发库或生产库。
 services:
@@ -5,7 +6,7 @@ services:
     image: postgres:18-bookworm
     restart: unless-stopped
     environment:
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?先运行 pnpm db:setup 生成本地凭证}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?维护者需自行配置测试基础设施凭证}
       POSTGRES_DB: postgres
     ports:
       - '127.0.0.1:${CAGE_POSTGRES_PORT:-54329}:5432'
@@ -22,7 +23,7 @@ services:
     image: postgres:18-bookworm
     profiles: [test]
     environment:
-      POSTGRES_PASSWORD: ${CAGE_TEST_POSTGRES_PASSWORD:?先运行 pnpm db:setup}
+      POSTGRES_PASSWORD: ${CAGE_TEST_POSTGRES_PASSWORD:?维护者需自行配置独立测试库凭证}
       POSTGRES_DB: postgres
     ports:
       - '127.0.0.1:${CAGE_TEST_POSTGRES_PORT:-54330}:5432'

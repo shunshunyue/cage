@@ -42,11 +42,27 @@ export function jobApi(k: Kernel, j: Job, tenantId: string, now: Date): JobApi {
 }
 
 /** 执行一次任务（拿到锁才执行）；返回是否执行了 */
+const running = new WeakMap<Kernel, Set<string>>();
+
 export async function tick(k: Kernel, j: Job, lockConn: pg.Client, scheduledAt: Date, force = false): Promise<boolean> {
+  const active = running.get(k) ?? new Set<string>();
+  running.set(k, active);
+  // 会话 advisory lock 对同一连接可重入，必须先同步登记本进程正在运行的任务。
+  // 错过周期默认跳过，不积累一个追赶队列。
+  if (active.has(j.name)) {
+    k.log.info({ job: j.name, scheduledAt: scheduledAt.toISOString(), reason: 'already-running' }, '跳过重叠的任务周期');
+    return false;
+  }
+  active.add(j.name);
   const lockId = hash32(`cage.job.${j.name}`);
-  const r = await lockConn.query('select pg_try_advisory_lock($1) as ok', [lockId]);
-  if (!r.rows[0].ok) return false; // 别的实例在跑：本实例跳过
+  let locked = false;
   try {
+    const r = await lockConn.query('select pg_try_advisory_lock($1) as ok', [lockId]);
+    locked = r.rows[0].ok;
+    if (!locked) {
+      k.log.info({ job: j.name, scheduledAt: scheduledAt.toISOString(), reason: 'other-worker' }, '跳过其他实例持有的任务周期');
+      return false;
+    }
     await k.app.insertInto('sys.job_state').values({ name: j.name }).onConflict((oc) => oc.column('name').doNothing()).execute();
     const st = await k.app.selectFrom('sys.job_state').selectAll().where('name', '=', j.name).executeTakeFirstOrThrow();
     if (!st.enabled && !force) return false; // 管理员在 /admin 停用了
@@ -68,6 +84,10 @@ export async function tick(k: Kernel, j: Job, lockConn: pg.Client, scheduledAt: 
       .execute();
     return true;
   } finally {
-    await lockConn.query('select pg_advisory_unlock($1)', [lockId]); // 加锁和解锁必须在同一个连接上
+    try {
+      if (locked) await lockConn.query('select pg_advisory_unlock($1)', [lockId]); // 任务结束前不能释放跨实例锁
+    } finally {
+      active.delete(j.name);
+    }
   }
 }

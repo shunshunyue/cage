@@ -169,14 +169,22 @@ export async function createTestEnv(opts: {
       if (agg.scope.deptField && agg.scope.deptField !== 'id' && fields[agg.scope.deptField] === undefined) rec[agg.scope.deptField] = root.id;
       // 引用字段：指向真实存在的记录（外键）
       for (const [k, f] of Object.entries(agg.fields as Record<string, any>)) {
-        if (!f.ref || fields[k] !== undefined || k === agg.scope.ownerField || (k === agg.scope.deptField && rec[k])) continue;
+        if (f.kind !== 'ref' || fields[k] !== undefined || k === agg.scope.ownerField || (k === agg.scope.deptField && rec[k])) continue;
         if (f.isOptional) { rec[k] = null; continue; }
         rec[k] = f.ref === 'Dept' ? root.id : f.ref === 'User' ? (await env.user({ caps: [] })).id : (await env.insert(f.ref)).id;
       }
       const row = {
         id: givenId ?? randomUUID(), tenant_id: tenantId, ...fieldsToColumns(agg, rec), status: status ?? agg.states.initial, version: 1,
       };
-      await kernel.app.insertInto(`${agg.table.schema}.${agg.table.name}`).values(row).execute();
+      // 种子绕过命令，但仍按真实物理结构在同一事务插入主记录和关联，外键约束照常生效。
+      await kernel.app.transaction().execute(async (tx) => {
+        await tx.insertInto(`${agg.table.schema}.${agg.table.name}`).values(row).execute();
+        for (const table of model.tables.filter((t) => t.aggregate === agg.name && t.relation)) {
+          const ids = [...new Set(rec[table.relation!.field] as string[])];
+          if (ids.length) await tx.insertInto(`${table.schema}.${table.name}`)
+            .values(ids.map((id) => ({ tenant_id: tenantId, source_id: row.id, target_id: id }))).execute();
+        }
+      });
       return { ...rec, id: row.id, status: row.status, version: 1 };
     },
     async seedFor(capability, values = {}) {

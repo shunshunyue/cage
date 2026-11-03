@@ -1,7 +1,7 @@
 // 影响分析：在基线和当前各生成一张图，找出变化的节点，再沿着边向外扩散。
 // handler 文件的改动会被映射到它所属的命令节点，所以只改实现、不改声明也能算出影响。
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import type { DerivedTest } from './derive.js';
 import { checkEventCompat } from './rules.js';
 import { diffOntology, type NodeDiff, type OntNode, type Ontology } from './ontology.js';
@@ -55,7 +55,10 @@ export function changedFiles(root: string, base: string): string[] {
 }
 
 export function readOntology(path: string): Ontology {
-  return JSON.parse(readFileSync(path, 'utf8')) as Ontology;
+  const value = JSON.parse(readFileSync(path, 'utf8'));
+  const graph = value.graph ?? value;
+  if (graph.version !== 1 || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges)) throw new Error('[CAGE-IMPACT-002] 基线文件不是有效本体图或命名快照');
+  return graph as Ontology;
 }
 
 const LABEL: Record<string, string> = {
@@ -73,7 +76,27 @@ const LABEL: Record<string, string> = {
   state: '状态',
   connector: '连接器',
   capability: '能力点',
+  process: '业务流程',
+  stage: '业务阶段',
 };
+
+/** 影响分析与开发前上下文共用测试候选选择。项目测试只按源码里的名字匹配，
+ * 调用方必须标明它是线索，不能据此声称已找到全部需要执行的测试。 */
+export function selectRelatedTests(
+  subjects: ReadonlySet<string>,
+  tests: DerivedTest[],
+  projectTestFiles: string[],
+) {
+  const derived = tests.filter((t) => subjects.has(t.subject) || subjects.has(t.subject.split('.')[0]));
+  const names = [...subjects].map((id) => id.split('.').pop()!);
+  const project = projectTestFiles.filter((file) => {
+    // Git 候选可能包括本次删除的测试；不存在的用例不能再作为可执行候选。
+    if (!existsSync(file)) return false;
+    const text = readFileSync(file, 'utf8');
+    return names.some((name) => name.length > 2 && text.includes(name));
+  });
+  return { derived, project };
+}
 
 export function impact(
   base: Ontology,
@@ -99,7 +122,10 @@ export function impact(
     for (const e of [...base.edges, ...head.edges]) {
       let next: string | null = null;
       let why = '';
-      if (e.kind === 'reads' && e.to === n) {
+      if (['implements', 'contains', 'relates'].includes(e.kind) && e.to === n) {
+        next = e.from;
+        why = `业务规格引用 ${n}`;
+      } else if (e.kind === 'reads' && e.to === n) {
         next = e.from;
         why = `读依赖 ${n}`;
       } else if (e.kind === 'queries' && e.to === n) {
@@ -108,12 +134,18 @@ export function impact(
       } else if (e.kind === 'uses' && e.to === n) {
         next = e.from;
         why = `${e.as ?? '使用'}用到 ${n}`;
+      } else if (e.kind === 'refs' && e.to === n) {
+        next = e.from;
+        why = `关联目标 ${n}`;
+      } else if (e.kind === 'field' && e.to === n) {
+        next = e.from;
+        why = `包含字段 ${n}`;
       } else if (e.kind === 'emits' && e.from === n) {
         next = e.to;
         why = `由 ${n} 发出`;
-      } else if (e.kind === 'triggers' && e.from === n) {
+      } else if ((e.kind === 'triggers' || e.kind === 'cancels') && e.from === n) {
         next = e.to;
-        why = `订阅 ${n}`;
+        why = e.kind === 'cancels' ? `由 ${n} 取消审批` : `订阅 ${n}`;
       } else if (e.kind === 'targets' && e.from === n) {
         next = e.to;
         why = `被 ${n} 调用`;
@@ -133,16 +165,7 @@ export function impact(
       }
     }
   }
-  const pick = tests.filter((t) => affected.has(t.subject) || affected.has(t.subject.split('.')[0]));
-  const names = [...affected].map((id) => id.split('.').pop()!);
-  const projectTests = projectTestFiles.filter((f) => {
-    try {
-      const text = readFileSync(f, 'utf8');
-      return names.some((n) => n.length > 2 && text.includes(n));
-    } catch {
-      return false;
-    }
-  });
+  const selectedTests = selectRelatedTests(affected, tests, projectTestFiles);
 
   // 需要人工确认的点
   const confirm: string[] = [];
@@ -168,8 +191,8 @@ export function impact(
     start: [...start],
     affected: [...affected],
     reasons,
-    tests: pick,
-    projectTests,
+    tests: selectedTests.derived,
+    projectTests: selectedTests.project,
     confirm: [...new Set(confirm)],
     unsafe: { base: base.unsafeCount ?? 0, head: head.unsafeCount ?? 0 },
     findings: checkEventCompat(base, head),

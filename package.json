@@ -9,12 +9,16 @@
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "test:docker": "pnpm --filter @app/purchase-admin db:up && node --env-file=examples/purchase-admin/.env scripts/test-docker.mjs",
+    "test:docker": "docker compose --project-directory examples/purchase-admin --profile test up -d --wait && node --env-file=examples/purchase-admin/.env scripts/test-docker.ts",
     "example:verify": "pnpm --filter @app/purchase-admin verify",
-    "release:version": "node scripts/release-version.mjs",
-    "release:pack": "node scripts/release-pack.mjs",
-    "release:smoke": "node scripts/release-smoke.mjs",
-    "release:prepare": "turbo run build --filter=./packages/* && pnpm --filter @app/purchase-admin exec cage sync && pnpm --filter @app/purchase-admin gen && node scripts/sync-template.mjs && node scripts/build-error-docs.mjs && pnpm build && pnpm release:pack"
+    "docs:errors": "node scripts/build-error-docs.ts",
+    "docs:check": "node scripts/build-error-docs.ts --check && node scripts/check-ai-docs.ts",
+    "typecheck:scripts": "tsc -p scripts/tsconfig.json",
+    "template:sync": "node scripts/sync-template.ts",
+    "release:version": "node scripts/release-version.ts",
+    "release:pack": "node scripts/release-pack.ts",
+    "release:smoke": "node scripts/release-smoke.ts",
+    "release:prepare": "turbo run build --filter=./packages/* && pnpm --filter @app/purchase-admin exec cage sync && pnpm --filter @app/purchase-admin gen && pnpm docs:errors && pnpm template:sync && pnpm docs:check && pnpm build && pnpm release:pack"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

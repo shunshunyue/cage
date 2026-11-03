@@ -16,6 +16,8 @@ FROM node:24-bookworm-slim AS runtime
 WORKDIR /app
 COPY --from=build --chown=node:node /out/api /app
 COPY --from=build --chown=node:node /app/apps/web/dist /app/web
+# 系统管理与图谱共享中文显示配置；运行时工作目录同样保持为 /app。
+COPY --from=build --chown=node:node /app/cage.config.json /app/cage.config.json
 ENV NODE_ENV=production PORT=3000 WEB_DIR=/app/web
 USER node
 EXPOSE 3000

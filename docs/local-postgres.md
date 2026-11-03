@@ -1,18 +1,26 @@
-# 本地 Docker PostgreSQL 接入
+# 数据库配置与本机连接记录
 
-当前开发环境已连接 Docker 中的 PostgreSQL 18.6，API/worker 使用持久数据库。官方镜像为 `postgres:18-bookworm`。
+当前源码只连接使用者提供的 PostgreSQL 数据库。数据库可以来自本机安装、现有容器或远程服务；CLI 不创建数据库、不管理 Docker。以下本机地址是之前已经配置过的环境记录，不是脚手架固定值。
 
-## 框架与项目的职责
+## 在哪里配置
 
-| 层 | 负责内容 |
+业务项目根目录的 `.env`，与 `package.json`、`cage.config.json` 同级。采购范例为 `F:/cage/examples/purchase-admin/.env`；新建项目则配置它自己的 `.env`。首次复制 [配置示例](../examples/purchase-admin/.env.example)，只填写 `CAGE_ADMIN_DATABASE_URL`，再执行 `pnpm exec cage init`。
+
+| 配置 | 账号和职责 |
 | --- | --- |
-| `@yss123/cage-kernel` | PostgreSQL 连接池、事务、业务写入、只读安全视图及数据库角色边界 |
-| `@yss123/cage-cli` | 读取配置、随机凭证生成、Docker 生命周期、建库及迁移 |
-| 业务项目 | `.env` 连接参数、`compose.yaml` 部署参数、领域声明与薄启动入口 |
+| `CAGE_APP_DATABASE_URL` | `cage_app`：业务写入与后台任务 |
+| `CAGE_READ_DATABASE_URL` | `cage_read`：仅通过安全视图读取 |
+| `CAGE_MIGRATE_DATABASE_URL` | `cage_migrate`：表结构迁移 |
 
-项目无需编写 `pg.connect()`、连接池或建库脚本。生成本地凭证已收进 `cage db setup`；`cage db up` 启动容器，`cage db init` 初始化库，`cage db status` 查看状态，`cage db down` 停止容器。package.json 中的 `db:*` 只是一行命令别名。
+三个业务连接由 `init` 自动填写，主机、端口、数据库名一致，使用独立权限和随机密码。连接池、事务和安全读侧由内核实现，项目不用编写连接代码。CLI 自动加载 `.env`，已存在的环境变量优先，修改后重启应用。
 
-## 当前连接
+## 首次接入与日常更新
+
+首次在 `.env` 填写管理员连接，例如 `CAGE_ADMIN_DATABASE_URL=postgresql://postgres:管理员密码@主机:端口/已有数据库名`，执行 `pnpm exec cage init`。命令自动创建角色和授权、生成密码及 Cookie 密钥、填写 `.env`，成功后移除文件中的管理员连接。重复执行验证并复用原凭证，已有 Cage 账号但本项目没有凭证时会提示补充，不会重置其他项目密码。
+
+审查 `db/migrations` 后执行 `pnpm migrate` 更新表、视图与索引；新组织再显式 `pnpm exec cage bootstrap --credentials-file .cage/admin-credentials.json` 初始化，通过新受限文件交付凭据。日常直接运行 `pnpm dev`；有表结构变更再手动迁移。已有库中的任意历史表不会被自动识别为框架模型。
+
+## 本机已有连接记录
 
 | 用途 | 地址/名称 |
 | --- | --- |
@@ -20,28 +28,10 @@
 | 开发容器 | `purchase-admin-postgres-1` |
 | 开发持久卷 | `purchase-admin_postgres-data` |
 | 测试集群 | `127.0.0.1:54330/postgres` |
-| 测试容器 | `purchase-admin-postgres-test-1` |
-| 采购界面 | http://localhost:15173 |
-| API 与管理页 | http://localhost:3000/admin/ |
+| 采购界面 | <http://localhost:15173> |
+| API 与管理页 | <http://localhost:3000/admin/> |
 
-DBeaver、DataGrip、pgAdmin 等连接工具填写开发地址、数据库 `cage_dev`，用户名使用 `cage_app`、`cage_read` 或 `cage_migrate`，对应密码从 `examples/purchase-admin/.env` 的连接串读取。三个登录角色都不是超级用户；`cage_read` 只能通过安全视图按上下文查询。
-
-本地网页登录凭证见 `examples/purchase-admin/.cage/local-access.md`，与数据库账号不同。原内嵌数据库目录仍保留，没有导入 Docker，原密码不适用于这个新库。
-
-## 每次启动
-
-先确保 Docker Desktop 运行。在 `F:/cage` 执行：
-
-```powershell
-pnpm --filter @app/purchase-admin db:up
-pnpm --filter @app/purchase-admin dev
-```
-
-`cage dev` 自动读取示例 `.env`，使用外部数据库，应用未执行迁移并启动 API、worker、Vite。终端会显示数据库地址和实际端口，不显示数据库密码。退出 dev 只关闭应用进程，Docker 数据库继续运行。
-
-在示例目录运行 `pnpm db:status` 查看健康状态，`pnpm db:down` 停止容器并保留开发持久卷。重新创建容器后，命名卷中的数据仍会加载。
-
-新机器首次设置时，在安装、构建框架后进入示例目录，先执行 `pnpm cage db setup`、`pnpm cage db up`、`pnpm cage db init`。初始化复用 `cage migrate --init` 创建数据库及角色，已有集群使用普通 `cage migrate`。
+用户名和密码从本机项目 `.env` 读取，不提交 Git。使用 DBeaver、DataGrip 或 pgAdmin 时选择对应账号，`cage_read` 只能按上下文访问安全视图。数据库服务由自己的工具管理，退出 `dev` 只关闭应用。
 
 ## 实际验收
 
@@ -53,10 +43,5 @@ pnpm --filter @app/purchase-admin dev
 
 测试结果见 `implementation-status.md`。运行 `pnpm test:docker` 验证框架，`pnpm example:verify` 验证示例。测试会创建独立临时数据库，且测试容器与开发持久卷隔离。
 
-## 本次处理的问题
 
-Docker Desktop 原先未启动，启动后发现 Windows 把 5173 纳入保留端口，故本机设置 `CAGE_WEB_PORT=15173`。保留端口没有修改；模板仍以 5173 为默认值。
-
-Turbo 的严格环境模式原先会过滤测试连接串，现已显式传递 `CAGE_TEST_DATABASE_URL`。并行测试还会竞争 PostgreSQL 集群账号，现改为在共同管理库上取得咨询锁，串行化账号初始化，业务测试继续并行；不再依赖捕获异常后重试。
-
-`.env` 不进入 Git、模板或镜像；模板仅分发 `.env.example`，凭证生成实现随 CLI 升级。真实 ERP 服务仍使用 fake，数据库和应用持久化链路已接入真实 PostgreSQL。
+上述为此前验收记录。维护者的 `pnpm test:docker` 使用仓库内 Compose 测试环境，它不随业务模板分发。测试会初始化集群级角色，必须使用独立可丢弃集群；正常应用启动没有自动建库行为。

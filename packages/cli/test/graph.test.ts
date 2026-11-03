@@ -272,7 +272,7 @@ it('Web 服务从最新声明刷新，保留可定位的图规则问题，并拒
     }),
   );
   const source = (field: string) =>
-    `import { aggregate, text } from ${JSON.stringify(import.meta.resolve('@yss123/cage-kernel'))};\nexport const Note = aggregate('Note', { description: '通知', fields: { ${field}: text() } });\n`;
+    `import { aggregate, command, text, businessProcess } from ${JSON.stringify(import.meta.resolve('@yss123/cage-kernel'))};\nexport const Note = aggregate('Note', { description: '通知', fields: { ${field}: text() } });\nexport const publish = command(Note, { from: 'new', to: 'active', handler: () => ({}) });\nexport const noticeFlow = businessProcess('notice-flow', { title: '发布通知', description: '登记通知并结束。', area: { id: 'notice', title: '通知管理', description: '通知发布。' }, subject: Note, entry: 'publish', stages: { publish: { title: '发布通知', description: '填写通知内容。', kind: 'end', action: publish } }, transitions: [] });\n`;
   writeFileSync(file, source('title'));
   const { server, url } = await serveGraph(loadConfig(temporary), 0);
   try {
@@ -282,12 +282,50 @@ it('Web 服务从最新声明刷新，保留可定位的图规则问题，并拒
     expect((await fetch(`${url}/app.js`)).headers.get('content-type')).toContain('javascript');
     expect((await fetch(`${url}/relations.js`)).headers.get('content-type')).toContain('javascript');
     expect((await fetch(`${url}/structure.js`)).headers.get('content-type')).toContain('javascript');
+    for (const module of [
+      'graph-model',
+      'graph-search',
+      'graph-relations',
+      'graph-business',
+      'business',
+      'flowchart',
+      'flowchart-interaction',
+      'approval-flow',
+      'graph-approvals',
+    ])
+      expect((await fetch(`${url}/${module}.js`)).status).toBe(200);
+    expect((await fetch(`${url}/business.css`)).status).toBe(200);
     const first = await (await fetch(`${url}/api/graph`)).json();
     expect(first.graph.nodes.some((n: { id: string }) => n.id === 'Note.title')).toBe(true);
     expect(first.presentation.title).toBe('通知业务');
     expect(first.presentation.labels['aggregate:Note']).toBe('通知');
     expect(first.presentation.labels['field:Note.title']).toBe('通知标题');
+    expect(first.sources).toBeUndefined();
+    const stageSource = await (await fetch(`${url}/api/source?node=stage:notice-flow.publish`)).json();
+    expect(stageSource.code).toContain("businessProcess('notice-flow'");
+    expect(stageSource.line).toBe(4);
+    const actionSource = await (await fetch(`${url}/api/source?node=command:Note.publish`)).json();
+    expect(actionSource.code).toContain('handler: () => ({})');
+    const stageContext = await (await fetch(`${url}/api/context?node=stage:notice-flow.publish`)).json();
+    expect(stageContext.nodes.some((n: { key: string }) => n.key === 'command:Note.publish')).toBe(true);
+    const implementation = await (await fetch(`${url}/api/source?node=aggregate:Note`)).json();
+    expect(implementation.code).toContain('fields: { title: text() }');
+    expect(implementation.file).toBe('domain.ts');
+    expect(implementation.line).toBe(2);
+    expect(implementation.freshness).toBe('displayed-snapshot');
+    const fieldSource = await (await fetch(`${url}/api/source?node=field:Note.title`)).json();
+    expect(fieldSource.precision).toBe('aggregate');
+    expect(fieldSource.sourceKey).toBe('aggregate:Note');
+    expect((await fetch(`${url}/api/source`)).status).toBe(400);
+    expect((await fetch(`${url}/api/source?node=../../.env`)).status).toBe(404);
     expect(first.findings.some((f: { code: string }) => f.code === 'CAGE-ORG-001')).toBe(true);
+    const context = await (await fetch(`${url}/api/context?node=aggregate:Note`)).json();
+    expect(context.freshness).toBe('displayed-snapshot');
+    expect(context.extractedAt).toBe(first.generatedAt);
+    expect(context.nodes.some((node: { label: string }) => node.label === '通知标题')).toBe(true);
+    const markdown = await (await fetch(`${url}/api/context?node=aggregate:Note&format=md`)).text();
+    expect(markdown).toContain('Cage 业务开发上下文');
+    expect((await fetch(`${url}/api/context`)).status).toBe(400);
     expect((await fetch(`${url}/.env`)).status).toBe(404);
     expect(
       (
@@ -299,11 +337,15 @@ it('Web 服务从最新声明刷新，保留可定位的图规则问题，并拒
     ).toBe(403);
     // 真正改写 domain 后刷新，能检出 ESM 缓存导致的“假刷新”。
     writeFileSync(file, source('message'));
+    // 修改磁盘但未重新抽取时，源码预览必须仍与显示中的图谱对应。
+    expect((await (await fetch(`${url}/api/source?node=aggregate:Note`)).json()).code).toBe(implementation.code);
     const fresh = await (
       await fetch(`${url}/api/refresh`, { method: 'POST', headers: { Origin: url } })
     ).json();
     expect(fresh.graph.nodes.some((n: { id: string }) => n.id === 'Note.message')).toBe(true);
     expect(fresh.graph.nodes.some((n: { id: string }) => n.id === 'Note.title')).toBe(false);
+    expect((await (await fetch(`${url}/api/source?node=aggregate:Note`)).json()).code).toContain('fields: { message: text() }');
+    expect((await fetch(`${url}/api/source?node=field:Note.title`)).status).toBe(404);
     writeFileSync(file, 'this is not valid TypeScript');
     expect((await fetch(`${url}/api/refresh`, { method: 'POST', headers: { Origin: url } })).status).toBe(
       500,

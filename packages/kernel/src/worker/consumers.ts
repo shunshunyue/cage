@@ -5,6 +5,7 @@ import type { Kernel } from '../kernel.js';
 import { systemCtx } from '../org.js';
 import { loadScoped } from '../pipeline/load.js';
 import type { Approval } from '../primitives/flow.js';
+import { reactionEntries, reactionEntryError } from '../primitives/collection.js';
 import type { EventConsumer, OutboxRow } from './outbox.js';
 
 /** 审批引擎的最小接口（完整接口见 @yss123/cage-approval）。引擎只给结论，结论由桥接代码转成命令。 */
@@ -25,14 +26,12 @@ function actorUser(row: OutboxRow): string | null {
 }
 
 export function reactionConsumers(k: Kernel): EventConsumer[] {
-  return k.registry.reactions
-    .filter(({ r }) => r.tx === 'outbox')
+  const events = new Set(k.registry.reactions.map(({ r }) => r.event.name));
+  return [...events].flatMap((event) => k.registry.reactionsFor(event).filter(({ r }) => r.tx === 'outbox'))
     .map(({ r, name }) => ({
       name: `reaction:${name}`,
       event: r.event.name,
       async handle(row, tx) {
-        const input = r.map(row.payload as any);
-        if (input === null || input === undefined) return;
         const ctx = systemCtx({
           kind: 'reaction',
           name,
@@ -41,7 +40,11 @@ export function reactionConsumers(k: Kernel): EventConsumer[] {
           onBehalfOf: actorUser(row),
           requestId: row.request_id ?? undefined,
         });
-        await k.executeIn(tx, r.command, input, ctx, 0);
+        // 集合调用和去重登记共享同一事务；串行执行保留声明的锁顺序。
+        for (const entry of reactionEntries(r, row.payload)) {
+          try { await k.executeIn(tx, r.command, entry.input, ctx, 0); }
+          catch (error) { throw reactionEntryError(error, r, name, entry); }
+        }
       },
     }));
 }
@@ -52,8 +55,7 @@ export function approvalConsumers(k: Kernel, engines: Record<string, ApprovalEng
   for (const { a, name } of k.registry.approvals) {
     const engine = engines[a.process];
     if (!engine) {
-      k.log.warn({ process: a.process }, `审批绑定 ${name} 没有可用的审批引擎，流程不会启动`);
-      continue;
+      throw new Error(`[CAGE-WORKER-001] 审批绑定 ${name} 缺少流程 ${a.process} 的审批引擎；补齐路由或装配引擎后再启动 worker`);
     }
     out.push({
       name: `approval:${name}:start`,

@@ -8,7 +8,7 @@ module.exports = {
       comment: '[CAGE-DEP-001] 声明和 handler 不能直接做 IO',
       from: { path: '^packages/domain', pathNot: '\\.(test|spec)\\.' },
       to: {
-        path: '^(node:)?(fs|net|http|https|http2|child_process|dgram|tls|worker_threads|cluster)$|node_modules/(pg|kysely|axios|undici|node-fetch|got)/|node_modules/@yss123/cage-http/',
+        path: '^(node:)?(fs|net|http|https|http2|child_process|dgram|tls|worker_threads|cluster)$|node_modules/(pg|kysely|axios|undici|node-fetch|got)/|node_modules/@yss123/cage-(http|files)/',
       },
     },
     {
@@ -23,7 +23,7 @@ module.exports = {
       severity: 'error',
       comment: '[CAGE-DEP-003] 前端只能依赖 @app/contracts',
       from: { path: '^apps/web' },
-      to: { path: '^packages/domain|node_modules/@yss123/cage-(kernel|http|admin|connectors|approval|testkit)/' },
+      to: { path: '^packages/domain|node_modules/@yss123/cage-(kernel|http|files|admin|connectors|approval|testkit)/' },
     },
     {
       name: 'no-generated-imports-from-domain',

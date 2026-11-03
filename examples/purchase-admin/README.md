@@ -2,28 +2,59 @@
 
 这是可启动的标准范例：组织管理、采购单、审批待办、库存台账、库存锁生命周期和 ERP 出入站映射。
 
+## 让 AI 在本项目开发业务
+
+把本目录交给 Codex 等编程工具时，先让它读 [AGENTS.md](AGENTS.md)，再按[业务开发指南](../../docs/ai/README.md)和[任务配方](../../docs/ai/recipes.md)实现需求。普通业务不需要修改框架源码。
+
+[采购全链路导读](../../docs/ai/purchase-example.md)说明每个文件和异步步骤；[原语与最小业务](../../docs/ai/primitives.md)提供可添加的普通管理对象；[错误码册](../../docs/errors/README.md)用于按码修复。脚手架会将这些资料放入生成项目本地的 `docs/ai` 与 `docs/errors`，无需再次克隆框架。
+
 ## 启动
 
-在框架仓库根目录执行 `pnpm install`、`pnpm build`，然后进入本目录。独立模板项目先执行 `pnpm install`、`pnpm build:app`、`pnpm cage gen`。
+在框架仓库根目录执行 `pnpm install`、`pnpm build`，然后进入本目录。独立模板项目先执行 `pnpm install`、`pnpm build:app`。
 
 ```powershell
-pnpm cage db setup
-pnpm cage db up
-# 仅首次初始化独立新集群时执行；已有库随后用 cage migrate。
-pnpm cage db init
+# 首次配置时复制，已有 .env 时直接编辑原文件。
+Copy-Item .env.example .env
+# 编辑 .env，只填写 CAGE_ADMIN_DATABASE_URL，连接已经存在的数据库。
+pnpm exec cage init
+# init 自动创建账号、生成密码和 Cookie 密钥，并写回 .env。
+pnpm gen
+# 审查 db/migrations 后执行表结构迁移。
+pnpm migrate
+pnpm exec cage bootstrap --credentials-file .cage/admin-credentials.json
 pnpm dev
 ```
 
-连接池、事务、数据库初始化和凭证生成均由框架提供，项目不写连接或建库脚本。`cage db setup` 生成随机密码和本地 `.env`，重复运行保留已有配置。开发库位于 `127.0.0.1:54329/cage_dev`，测试库位于独立容器的 54330 端口。`cage db down` 停止容器但保留开发数据卷；`cage db up` 再次启动。package.json 中的 `db:*` 是相同命令的简写。
+数据库配置位于本项目根目录的 `.env`，与 `package.json`、`cage.config.json` 同级。[`.env.example`](.env.example) 为每项提供中文注释、填写格式和是否必填。连接池和事务由框架提供，项目只需配置连接。
 
-CLI 自动读取项目 `.env`，部署环境变量优先。`CAGE_APP_DATABASE_URL`、`CAGE_READ_DATABASE_URL`、`CAGE_MIGRATE_DATABASE_URL` 分别连接写入、只读和迁移账号。超级用户仅用于初始化，API/worker 不接收其凭证。
+| 配置项 | 用途 |
+| --- | --- |
+| `CAGE_APP_DATABASE_URL` | `cage_app` 账号：API/worker 业务读写 |
+| `CAGE_READ_DATABASE_URL` | `cage_read` 账号：仅查询安全视图 |
+| `CAGE_MIGRATE_DATABASE_URL` | `cage_migrate` 账号：手动执行表结构迁移 |
+
+三个连接由 `cage init` 自动生成，指向**同一个已经存在的数据库**，主机、端口和库名一致。CLI 自动读取 `.env`，部署环境中的同名变量优先。修改后重启 `dev`。`migrate` 在下次执行时读取配置。
+
+`pnpm migrate` 更新该库中的表、视图和索引；迁移历史记录在 `sys.schema_migrations`。`pnpm dev` 连接该库并启动 API、worker 和 Web，domain 变化后仅重新生成文件；表结构变更需审查迁移后手动执行。框架不创建数据库、不安装 PostgreSQL、不管理 Docker。
+
+### 首次只提供管理员连接
+
+在 `.env` 中填写 `CAGE_ADMIN_DATABASE_URL=postgresql://postgres:管理员密码@主机:端口/已有数据库名`。PostgreSQL 管理员通常叫 `postgres`，已有管理员叫 `root` 时使用实际账号名；连接串中的密码特殊字符需要 URL 编码。
+
+执行 `pnpm exec cage init` 会创建框架账号和授权，生成三个独立随机密码及 Cookie 密钥，自动填写 `.env`，成功后移除文件中的管理员连接。业务端口、自定义配置和已有 Cookie 密钥会保留；失败会回滚数据库并保留原 `.env`。日常启动不需要管理员连接。
+
+重复 `init` 会验证并复用已保存的三个账号，不更改密码。若集群已有 Cage 账号但本项目没有原连接，请先复用原凭证再运行 `init`；命令不会为了新项目重置其他项目的账号。部署时也可由平台直接提供三个账号连接，无需执行本地初始化。
+
+数据库除三个登录账号外，还有不允许登录的 `cage_view_owner`，由 `init` 一并创建，用于持有安全视图，无需填写密码。角色名属于整个 PostgreSQL 集群，不能为另一个项目随意重置密码。业务表及系统表由后续 `pnpm migrate` 创建，`init` 只准备角色、schema 和授权。连接现有数据库不表示框架会自动识别、接管其中任意历史业务表；接入历史表需另行映射和审查迁移。
 
 测试环境会初始化集群级角色，因此 `CAGE_TEST_DATABASE_URL` 必须指向独立测试集群。运行 `pnpm cage verify` 验证示例；框架仓库根目录的 `pnpm test:docker` 验证全部框架测试。
 
-浏览器打开 <http://localhost:5173>。初始管理员凭证在 API 终端显示一次。
-如果 Windows Docker/Hyper-V 保留了该端口，在 `.env` 设置 `CAGE_WEB_PORT=15173`；终端会打印实际地址。`PORT` 控制 API 端口，Vite 代理同步使用它。未配置数据库连接串时才使用原有内嵌 PostgreSQL。
+浏览器打开终端打印的 Web 地址；配置示例使用 <http://localhost:15173>。管理员凭证由显式 bootstrap 交付到新的受限文件，交付后移除。初始化仅授予系统管理能力，采购能力需要管理员明确配置。
+`CAGE_WEB_PORT` 控制 Web 端口，`PORT` 控制 API 端口，Vite 代理同步使用它。缺少数据库配置时会给出错误，需填写 `.env` 后重新启动。
 
 ## 体验完整采购流程
+
+前端使用 React Router：工作台 `/workspace`，采购列表 `/procurement/orders`，单据详情 `/procurement/orders/:id`，审批 `/approvals`，库存 `/inventory`，登录 `/login`。单号和审批待办可直接打开详情；刷新、前进后退和登录回跳保留页面地址。新增页面与部署按[路由和浏览器验收指南](../../docs/ai/routing.md)执行；Nginx 示例见 [deploy/nginx.conf](deploy/nginx.conf)。
 
 1. 管理员在“库存台账”登记 `A-01` 等物料。
 2. 进入 `/admin/` 创建采购员、经理，分别分配采购命令和审批能力；经理的 `PurchaseOrder.approve` 参数配置 `ceiling`。
@@ -47,12 +78,14 @@ CLI 自动读取项目 `.env`，部署环境变量优先。`CAGE_APP_DATABASE_UR
 
 图谱主标题显示中文业务名称，下面保留英文代码标识。框架会读取声明现有的 `description`；本项目在 `cage.config.json` 的 `graph.labels` 中补充状态、字段等名称，也可覆盖较长描述。例如 `"command:PurchaseOrder.approve": "通过审批"`。键为 `节点类型:本体节点 ID`，可从节点详情复制 ID；中文标题只用于显示，不改变命令、权限标识或数据库。新增业务声明时同时补上需要的名称，然后在图谱中点击“重新抽取”。
 
-- `packages/domain/src/inventory.ts`：最简聚合和库存锁。
-- `purchase-order.ts`：状态、命令、约束和事件。
-- `reactions.ts`：同事务建锁与异步释放，包含资源配对标记。
-- `approvals.ts`、`erp.ts`：封闭审批路由、出站和入站映射。
-- `queries.ts`、`jobs.ts`：安全视图查询及过期草稿清理。
+- `packages/domain/src/modules/inventory`：最简聚合和库存锁。
+- `packages/domain/src/modules/purchase`：采购状态、命令、约束、事件、审批、查询和任务。
+- `packages/domain/src/workflows/purchase-inventory.ts`：同事务建锁与异步释放，包含资源配对标记。
+- `packages/domain/src/integrations/erp.ts`：出站、入站映射和验签。
+- `packages/contracts/src/aggregates/<聚合>`：生成的 SDK；页面统一从 `@app/contracts` 引入。
 - `apps/api/src`：API 和 worker 的薄启动入口。
-- `apps/web/src`：仅依赖生成契约的 React 界面。
+- `apps/web/src/app`、`modules`、`shared`：应用组合、业务页面、共享基础组件；`main.tsx` 只挂载。
+
+新增业务先读[工程目录与代码组织](../../docs/ai/project-structure.md)，不要继续在 src 根目录平铺文件。模板已启用模块目录门禁，`cage check` 和 `verify` 会指出目录与依赖越界。
 
 先运行 `pnpm cage gen` 再提交契约和迁移草稿；`pnpm cage verify` 检查完整工具链。派生测试遇到无法推断的业务输入会显示跳过，`purchase-order.test.ts` 另外准备真实业务数据覆盖成功审批和约束反例。

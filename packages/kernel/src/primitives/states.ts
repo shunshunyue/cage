@@ -7,9 +7,10 @@ export interface StatesDef<S extends string = string> {
   readonly values: readonly S[];
   readonly terminal: readonly S[];
   readonly initial: S;
+  readonly labels: Readonly<Partial<Record<S, string>>>;
 }
 
-type StatesOpts<S extends string> = { terminal?: NoInfer<S>[]; initial?: NoInfer<S> };
+type StatesOpts<S extends string> = { terminal?: NoInfer<S>[]; initial?: NoInfer<S>; labels?: Partial<Record<NoInfer<S>, string>> };
 
 /**
  * states('draft', 'pending_approval', 'approved', { terminal: ['approved'] })
@@ -17,7 +18,7 @@ type StatesOpts<S extends string> = { terminal?: NoInfer<S>[]; initial?: NoInfer
 export function states<const S extends string>(...args: [...S[]] | [...S[], StatesOpts<S>]): StatesDef<S> {
   const all = args as unknown[];
   const last = all[all.length - 1];
-  const opts = (typeof last === 'object' && last !== null ? last : {}) as { terminal?: S[]; initial?: S };
+  const opts = (typeof last === 'object' && last !== null ? last : {}) as StatesOpts<S>;
   const values = all.filter((a): a is S => typeof a === 'string');
   if (values.length === 0) throw declError('CAGE-STATE-002', 'states() 至少需要一个状态');
   for (const v of values) {
@@ -28,11 +29,15 @@ export function states<const S extends string>(...args: [...S[]] | [...S[], Stat
   for (const t of [...terminal, ...(opts.initial ? [opts.initial] : [])]) {
     if (!values.includes(t)) throw declError('CAGE-STATE-001', `状态 ${t} 未在 states 中声明`);
   }
+  for (const [state, label] of Object.entries(opts.labels ?? {})) {
+    if (!values.includes(state as S) || typeof label !== 'string' || !label.trim()) throw declError('CAGE-STATE-005', `状态名称 ${state} 必须对应已声明的状态且不能为空`);
+  }
   return Object.freeze({
     [STATES]: true as const,
     values: Object.freeze([...values]),
     terminal: Object.freeze([...terminal]),
     initial: (opts.initial ?? values[0]) as S,
+    labels: Object.freeze({ ...opts.labels }),
   });
 }
 

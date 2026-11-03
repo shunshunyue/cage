@@ -1,5 +1,6 @@
 // HTTP 端到端：登录与 CSRF、生成的路由、代码内审批待办、经 fake 连接器推送 ERP、带签名的入站回调、系统管理接口。
 import { createHmac } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { bootstrapOrg } from '@yss123/cage-admin';
 import { createServer, type CageServer } from '@yss123/cage-http';
 import { createWorker } from '@yss123/cage-kernel/worker';
@@ -62,7 +63,10 @@ const ids: Record<string, string> = {};
 
 beforeAll(async () => {
   env = await createTestEnv({ domain });
-  server = createServer({ domain, urls: { app: env.urls.app, read: env.urls.read }, bootstrap: false, logger: false, authRateLimitPerMinute: 1000 });
+  server = createServer({ domain, urls: { app: env.urls.app, read: env.urls.read }, bootstrap: false, logger: false, authRateLimitPerMinute: 1000,
+    webDir: fileURLToPath(new URL('./fixtures/web/', import.meta.url)),
+    adminLabels: { 'aggregate:PurchaseOrder': '采购单', 'command:PurchaseOrder.submit': '提交采购审批' },
+  });
   await server.ready();
   const b = await bootstrapOrg(server.kernel, { adminPassword: 'admin-pass-123' });
   adminPassword = b.password!;
@@ -217,6 +221,43 @@ describe('系统管理接口', () => {
 
   it('/admin 页面可以访问', async () => {
     const r = await server.app.inject({ method: 'GET', url: '/admin/' });
-    expect([200, 404]).toContain(r.statusCode); // ui 目录在 admin 包构建后存在
+    expect(r.statusCode).toBe(200);
+    expect(r.body).toContain('./dist/app.js');
+    // npm 中必须同时分发所有浏览器模块，不能只有 HTML 可以打开。
+    for (const path of ['dist/app.js', 'dist/app/shell.js', 'dist/modules/roles/roles-page.js', 'style.css']) {
+      const asset = await server.app.inject({ method: 'GET', url: `/admin/${path}` });
+      expect(asset.statusCode).toBe(200);
+    }
+    expect((await agent().get('/api/sys/catalog')).status).toBe(401);
+    const catalog = ok(await admin.get('/api/sys/catalog'));
+    expect(catalog.aggregates.find((a: any) => a.name === 'PurchaseOrder').label).toBe('采购单');
+    expect(catalog.capabilities.find((c: any) => c.capability === 'PurchaseOrder.submit')).toMatchObject({ label: '提交采购审批', invokedBy: ['user'] });
+  });
+
+  it('SPA 深链接和刷新返回业务 HTML，系统管理与资源仍由各自入口处理', async () => {
+    for (const url of ['/procurement/orders/a-record?tab=items', '/directory/users/a-user', '/unknown-business-page']) {
+      const response = await server.app.inject({ method: 'GET', url, headers: { accept: 'text/html' } });
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['content-type']).toContain('text/html');
+      expect(response.body).toContain('id="cage-spa-fixture"');
+    }
+    const head = await server.app.inject({ method: 'HEAD', url: '/procurement/orders/a-record', headers: { accept: 'text/html' } });
+    expect(head.statusCode).toBe(200);
+    expect(head.body).toBe('');
+    const css = await server.app.inject({ method: 'GET', url: '/assets/app.css' });
+    expect(css.statusCode).toBe(200);
+    expect(css.headers['content-type']).toContain('text/css');
+    expect(css.body).not.toContain('cage-spa-fixture');
+  });
+
+  it('未知 API、管理地址和丢失资源不回退成业务首页', async () => {
+    for (const url of ['/api/not-present', '/api', '/auth/not-present', '/hooks/not-present', '/admin/not-present.js', '/assets/not-present.js']) {
+      const response = await server.app.inject({ method: 'GET', url, headers: { accept: 'text/html' } });
+      expect(response.statusCode).toBe(404);
+      expect(response.body).not.toContain('cage-spa-fixture');
+    }
+    const request = await server.app.inject({ method: 'GET', url: '/not-a-page', headers: { accept: 'application/json' } });
+    expect(request.statusCode).toBe(404);
+    expect(request.json()).toMatchObject({ code: 'NOT_FOUND' });
   });
 });

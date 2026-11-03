@@ -23,7 +23,23 @@ export interface EventConsumer {
   /** 唯一名，用于 (事件 id, 消费者) 去重 */
   name: string;
   event: string;
-  handle(row: OutboxRow, tx: Transaction<any>, kernel: Kernel): Promise<void>;
+  /** 外部 IO 在没有数据库事务占用连接时执行；恢复凭证由实现持久化。 */
+  prepare?(row: OutboxRow, kernel: Kernel, options: { signal?: AbortSignal }): Promise<unknown>;
+  handle(row: OutboxRow, tx: Transaction<any>, kernel: Kernel, prepared?: unknown): Promise<void>;
+}
+
+const manifests = new WeakMap<Kernel, Map<string, string[]>>();
+
+/** 运行期清单是启动验证的结果；投递时不能因为调用方漏传了关键消费者而静默完成。 */
+export function registerConsumerManifest(k: Kernel, consumers: EventConsumer[]): void {
+  const names = new Set<string>();
+  const events = new Map<string, string[]>(k.registry.events.map((e) => [e.name, []]));
+  for (const c of consumers) {
+    if (names.has(c.name)) throw new Error(`[CAGE-WORKER-002] 消费者名称重复：${c.name}`);
+    names.add(c.name);
+    events.set(c.event, [...(events.get(c.event) ?? []), c.name]);
+  }
+  manifests.set(k, events);
 }
 
 export const MAX_ATTEMPTS = 10;
@@ -67,11 +83,22 @@ function isPermanent(err: unknown): boolean {
   return /\[CAGE-/.test(String(e?.message ?? ''));
 }
 
-export async function deliver(k: Kernel, row: OutboxRow, consumers: EventConsumer[], maxAttempts = MAX_ATTEMPTS): Promise<'done' | 'retry' | 'dead'> {
+export async function deliver(k: Kernel, row: OutboxRow, consumers: EventConsumer[], maxAttempts = MAX_ATTEMPTS, options: { signal?: AbortSignal } = {}): Promise<'done' | 'retry' | 'dead'> {
   const mine = consumers.filter((c) => c.event === row.event);
   try {
+    const manifest = manifests.get(k);
+    const required = manifest?.get(row.event);
+    const missing = required?.filter((name) => !mine.some((c) => c.name === name)) ?? [];
+    if (missing.length || (mine.length === 0 && !(manifest?.has(row.event) ?? k.registry.events.some((e) => e.name === row.event)))) {
+      throw new Error(`[CAGE-WORKER-002] 事件 ${row.event} 缺少必要消费者或不属于当前注册版本：${missing.join(', ') || 'unknown-event'}`);
+    }
     await withCarrier(row.trace, async () => {
       for (const c of mine) {
+        options.signal?.throwIfAborted();
+        const already = await k.app.selectFrom('sys.processed_event').select('event_id').where('event_id', '=', row.id).where('consumer', '=', c.name).executeTakeFirst();
+        if (already) continue;
+        // 出站执行不在下方事务内等待网络，也不会持有连接再向同一个池取第二条连接。
+        const prepared = c.prepare ? await c.prepare(row, k, options) : undefined;
         await k.app.transaction().execute(async (tx) => {
           const first = await tx
             .insertInto('sys.processed_event')
@@ -80,7 +107,7 @@ export async function deliver(k: Kernel, row: OutboxRow, consumers: EventConsume
             .returning('event_id')
             .executeTakeFirst();
           if (!first) return; // 处理过了：直接跳过，保证幂等
-          await c.handle(row, tx, k);
+          await c.handle(row, tx, k, prepared);
         });
       }
     });

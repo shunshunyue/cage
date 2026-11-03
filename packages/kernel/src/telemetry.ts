@@ -35,10 +35,24 @@ export interface Logger {
   debug?(obj: object | string, msg?: string): void;
 }
 
+// 内核也可脱离 HTTP 单独运行；默认不能把任意业务快照、SQL 错误或外部响应写入控制台。
+const metadata = new Set(['requestId', 'capability', 'command', 'aggregate', 'aggregateId', 'outboxId', 'event', 'attempts', 'job', 'tenant', 'process', 'code', 'statusCode', 'durationMs', 'rows', 'task', 'workerId', 'scheduledAt', 'reason']);
+function consoleRecord(value: object | string): object {
+  if (typeof value === 'string') return {};
+  const record: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (key === 'err') {
+      const error = item && typeof item === 'object' ? item as Record<string, unknown> : {};
+      record.err = { type: item instanceof TypeError ? 'TypeError' : 'Error',
+        ...(typeof error.code === 'string' && /^[A-Z0-9_-]{1,64}$/.test(error.code) ? { code: error.code } : {}) };
+    } else if (metadata.has(key) && ['string', 'number', 'boolean'].includes(typeof item)) record[key] = item;
+  }
+  return record;
+}
 export const consoleLogger: Logger = {
-  info: (o, m) => console.log(m ?? '', typeof o === 'string' ? o : JSON.stringify(o)),
-  warn: (o, m) => console.warn(m ?? '', typeof o === 'string' ? o : JSON.stringify(o)),
-  error: (o, m) => console.error(m ?? '', typeof o === 'string' ? o : JSON.stringify(o)),
+  info: (o, m) => console.log(m ?? (typeof o === 'string' ? o : ''), JSON.stringify(consoleRecord(o))),
+  warn: (o, m) => console.warn(m ?? (typeof o === 'string' ? o : ''), JSON.stringify(consoleRecord(o))),
+  error: (o, m) => console.error(m ?? (typeof o === 'string' ? o : ''), JSON.stringify(consoleRecord(o))),
 };
 
 export const silentLogger: Logger = { info() {}, warn() {}, error() {} };

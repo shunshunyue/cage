@@ -1,10 +1,42 @@
-# CAGE-CONN-012
+# CAGE-CONN-012：外部专用命令没有声明调用者
 
-## 什么时候出现
+[返回错误码册](README.md) · [业务排错](../ai/troubleshooting.md)
 
-命中以下实现中的检查时触发。终端会附具体声明位置、原因和修复方法。
+> 本页由框架生成。正反例为局部声明或操作说明，完整写法见业务开发指南及本项目 domain。
 
-来源：[packages/cli/src/rules.ts:157](../../packages/cli/src/rules.ts)
+## 何时出现
+
+阶段：声明、图规则或 worker。
+
+external 专用命令没有 inbound 或 outbound.onSuccess 等图内调用者；当前图规则给出 warning。
+
+## 修复步骤
+
+1. 补真实回调/成功映射并从入口导出，或明确这是暂未接线的功能。warning 不代表外部链路已完成。
+
+## 正例
+
+```text
+recordErpNo 被 pushToErp.onSuccess.command 引用
+```
+
+## 反例
+
+```text
+定义 markReceived，却没有验签回调或其他外部调用入口
+```
+
+## 修复后验证
+
+先 cage check；涉及网络时检查同步记录、外部幂等结果与成功回写。fake 与真实联调分别报告。
+
+## 框架内的检查位置
+
+以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
+
+- `packages/cli/src/rules.ts:158`
+
+实现片段（位置随框架版本更新）：
 
 ```ts
       findings.push({
@@ -12,21 +44,4 @@
         at: at(c),
         reason: `命令 ${c.id} 只接受外部调用，但没有入站回调或出站映射调用它`,
         fix: '用 inbound(...) 或 outbound(..., { onSuccess }) 调用它',
-        severity: 'warning',
-```
-
-## 怎么修
-
-核对 host 白名单、操作名、字段 schema 和签名。永久失败应先修正配置再重放死信。
-
-## 正例
-
-```text
-hosts: { test: 'erp-sandbox.example.com', prod: 'erp.example.com' }
-```
-
-## 反例
-
-```text
-// outbound 映射发送了 request schema 之外的字段
 ```

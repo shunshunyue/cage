@@ -1,10 +1,43 @@
-# CAGE-DEP-001
+# CAGE-DEP-001：领域声明直接依赖 IO
 
-## 什么时候出现
+[返回错误码册](README.md) · [业务排错](../ai/troubleshooting.md)
 
-命中以下实现中的检查时触发。终端会附具体声明位置、原因和修复方法。
+> 本页由框架生成。正反例为局部声明或操作说明，完整写法见业务开发指南及本项目 domain。
 
-来源：[packages/cli/src/static-check.ts:144](../../packages/cli/src/static-check.ts)
+## 何时出现
+
+阶段：静态检查 / verify。
+
+domain 引入数据库、文件、网络或 HTTP 运行时等越界依赖。
+
+## 修复步骤
+
+1. 读取通过 reads，第三方交给连接器，框架装配放 apps/api；不要把 IO 移进 helper 后继续从 domain 间接调用。
+
+## 正例
+
+```text
+reads: { stock: Inventory }；handler 使用 deps.stock.findOne(...)
+```
+
+## 反例
+
+```text
+import pg from 'pg'; // domain 直接操作数据库
+```
+
+## 修复后验证
+
+重跑 cage check 和 verify，确认边界修复而不是禁用规则。
+
+## 框架内的检查位置
+
+以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
+
+- `packages/cli/src/static-check.ts:146`
+- `packages/lint/dependency-cruiser.cjs:8`
+
+实现片段（位置随框架版本更新）：
 
 ```ts
           findings.push({
@@ -12,23 +45,4 @@
             at: loc(node),
             reason: `声明文件导入了 IO 模块 ${spec}`,
             fix: '需要外部数据就声明 reads；需要通知外部系统就发事件，由连接器的出站映射处理',
-          });
-```
-
-## 怎么修
-
-移除业务层的 IO 或越层依赖。读取放进 reads，外部调用放进 outbound，前端依赖 contracts。
-
-## 正例
-
-```text
-reads: { stock: Inventory }
-// handler 中
-await deps.stock.get(id);
-```
-
-## 反例
-
-```text
-import pg from 'pg'; // domain 中禁止直接访问数据库
 ```

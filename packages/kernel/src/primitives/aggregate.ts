@@ -4,7 +4,7 @@ import { AGGREGATE } from '../brands.js';
 import { declError } from '../errors.js';
 import type { ScopeSpec } from '../scope/index.js';
 import { snake } from '../util/names.js';
-import { type AnyField, type FieldValues, type Fields, isField, objectSchema } from './fields.js';
+import { type AnyField, type FieldValues, type Fields, isField, isRelation, isFile, objectSchema } from './fields.js';
 import { DEFAULT_STATES, isStates, type StatesDef } from './states.js';
 
 /** 每张表都有的系统列 */
@@ -94,6 +94,8 @@ export function aggregate<const N extends string, FI extends FieldInput, SS exte
   const ownerField = sc.ownerField ?? ('createdBy' in fields ? 'createdBy' : undefined);
   for (const f of [sc.deptField, ownerField]) {
     if (f && f !== 'id' && !(f in fields)) throw declError('CAGE-SCOPE-002', `${name} 的范围字段 ${f} 不存在`);
+    if (f && f !== 'id' && isRelation(fields[f])) throw declError('CAGE-REL-001', `${name} 的范围字段必须是主表列，不能使用集合关系 ${f}`);
+    if (f && f !== 'id' && isFile(fields[f])) throw declError('CAGE-FILE-001', `${name} 的范围字段不能使用文件 ${f}`);
   }
   const scope: ScopeSpec = Object.freeze({ ...sc, ownerField });
 

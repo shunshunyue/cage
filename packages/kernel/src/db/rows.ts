@@ -1,6 +1,6 @@
 // 数据库行与快照之间的转换：列名 snake_case ↔ 字段名 camelCase，时间统一为 ISO 字符串。
 import type { AnyAggregate } from '../primitives/aggregate.js';
-import type { Fields } from '../primitives/fields.js';
+import { isRelation, type Fields } from '../primitives/fields.js';
 import { camel, snake } from '../util/names.js';
 
 export const SYSTEM_COLUMNS = ['id', 'tenant_id', 'status', 'version', 'created_at', 'updated_at'];
@@ -41,6 +41,7 @@ export function viewRowToObject(row: Record<string, unknown>): Record<string, an
 export function fieldsToColumns(agg: AnyAggregate, values: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, f] of Object.entries(agg.fields as Fields)) {
+    if (isRelation(f)) continue;
     if (!(k in values)) continue;
     const v = values[k];
     out[snake(k)] = f.sql === 'jsonb' && v !== null && v !== undefined ? JSON.stringify(v) : v ?? null;

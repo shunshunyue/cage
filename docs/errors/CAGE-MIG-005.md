@@ -1,10 +1,42 @@
-# CAGE-MIG-005
+# CAGE-MIG-005：已执行迁移内容被修改
 
-## 什么时候出现
+[返回错误码册](README.md) · [业务排错](../ai/troubleshooting.md)
 
-命中以下实现中的检查时触发。终端会附具体声明位置、原因和修复方法。
+> 本页由框架生成。正反例为局部声明或操作说明，完整写法见业务开发指南及本项目 domain。
 
-来源：[packages/kernel/src/db/migrate.ts:71](../../packages/kernel/src/db/migrate.ts)
+## 何时出现
+
+阶段：migrate。
+
+迁移文件校验和与 sys.schema_migrations 中记录不符。
+
+## 修复步骤
+
+1. 恢复执行时的原文件；结构更新新增迁移。换行引起差异时恢复原始字节并遵守仓库 LF 约定，不改数据库 checksum。
+
+## 正例
+
+```text
+保留 0001_init.sql，新增 0002_add_field.sql
+```
+
+## 反例
+
+```text
+重写 0001，或手工修改迁移历史 checksum
+```
+
+## 修复后验证
+
+在合适数据库上重新 migrate，确认迁移历史及 safe 读写权限，已执行文件保持原样。
+
+## 框架内的检查位置
+
+以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
+
+- `packages/kernel/src/db/migrate.ts:71`
+
+实现片段（位置随框架版本更新）：
 
 ```ts
       if (done.has(migration.name) && done.get(migration.name) !== checksum(migration.sql)) {
@@ -12,21 +44,4 @@
       }
     }
     for (const m of all) {
-      if (done.has(m.name)) continue;
-```
-
-## 怎么修
-
-恢复已经执行的迁移文件，不要修改数据库中的校验和来绕过检查。需要变更结构时新增迁移；若仅受换行转换影响，恢复原始文件字节并使用仓库的 LF 约定。
-
-## 正例
-
-```text
-保留 0001_init.sql，新增 0002_add_field.sql，再运行 cage migrate
-```
-
-## 反例
-
-```text
-修改已执行的 0001_init.sql，或手工重写迁移历史的 checksum
 ```

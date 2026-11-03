@@ -1,9 +1,13 @@
 // 由声明生成数据库结构：业务表、安全视图、行级策略、in_scope 与 mask 函数。
 // 业务表进入迁移历史；安全层（函数、策略、视图）每次整体重建，不写进迁移历史。
 import type { AnyAggregate } from '../primitives/aggregate.js';
-import type { Fields } from '../primitives/fields.js';
+import { isRelation, type Fields } from '../primitives/fields.js';
 import type { Registry } from '../registry.js';
 import { snake } from '../util/names.js';
+import { TRANSFER_MIGRATION } from '../transfer/schema.js';
+import { RUNTIME_MIGRATION } from './runtime-schema.js';
+import { FILE_MIGRATION } from '../files/schema.js';
+import { relationTable } from '../relations.js';
 
 export const q = (ident: string) => `"${ident.replace(/"/g, '""')}"`;
 export const qt = (t: { schema: string; name: string }) => `${q(t.schema)}.${q(t.name)}`;
@@ -28,8 +32,10 @@ export interface TableModel {
   aggregate: string;
   columns: ColumnModel[];
   statusValues: string[];
-  /** 普通索引：名字 → 列 */
-  indexes: { name: string; columns: string[] }[];
+  /** 索引也表达租户复合唯一键，供自动关系表的复合外键引用。 */
+  indexes: { name: string; columns: string[]; unique?: boolean }[];
+  /** 物理关联表不是聚合：没有状态、版本、独立命令和能力点。 */
+  relation?: { field: string; source: string; target: string };
 }
 
 export interface SchemaModel {
@@ -44,6 +50,7 @@ export function tableModel(agg: AnyAggregate, reg: Registry): TableModel {
     { name: 'tenant_id', type: 'uuid', notNull: true },
   ];
   for (const [k, f] of Object.entries(agg.fields as Fields)) {
+    if (isRelation(f)) continue;
     const target = f.ref ? reg.aggregate(f.ref) : undefined;
     columns.push({
       name: snake(k),
@@ -60,13 +67,16 @@ export function tableModel(agg: AnyAggregate, reg: Registry): TableModel {
     { name: 'created_at', type: 'timestamptz', notNull: true },
     { name: 'updated_at', type: 'timestamptz', notNull: true },
   );
-  const indexes: { name: string; columns: string[] }[] = [];
+  const indexes: TableModel['indexes'] = [];
   const scopeCols = [agg.scope.deptField, agg.scope.ownerField].filter((x): x is string => !!x && x !== 'id');
   for (const f of scopeCols) indexes.push({ name: `${t.name}_tenant_${snake(f)}_idx`, columns: ['tenant_id', snake(f)] });
   indexes.push({ name: `${t.name}_status_idx`, columns: ['tenant_id', 'status'] });
   for (const [k, f] of Object.entries(agg.fields as Fields)) {
-    if (f.ref && !scopeCols.includes(k)) indexes.push({ name: `${t.name}_${snake(k)}_idx`, columns: [snake(k)] });
+    if (f.kind === 'ref' && !scopeCols.includes(k)) indexes.push({ name: `${t.name}_${snake(k)}_idx`, columns: [snake(k)] });
   }
+  const participates = reg.aggregates.some((owner) => Object.values(owner.fields as Fields)
+    .some((f) => f.kind === 'manyToMany' && (owner === agg || f.ref === agg.name)));
+  if (participates) indexes.push({ name: `${t.name}_tenant_id_uq`, columns: ['tenant_id', 'id'], unique: true });
   return { schema: t.schema, name: t.name, aggregate: agg.name, columns, statusValues: [...agg.states.values], indexes };
 }
 
@@ -89,6 +99,16 @@ export function schemaModel(reg: Registry): SchemaModel {
     out.push(m);
   };
   for (const m of [...models].sort((a, b) => key(a).localeCompare(key(b)))) visit(m, new Set());
+  // 主表及复合唯一键先就绪，再建立关联表，避免前向外键依赖。
+  for (const owner of reg.aggregates) for (const [field, f] of Object.entries(owner.fields as Fields)) {
+    if (f.kind !== 'manyToMany') continue;
+    const target = reg.aggregate(f.ref!)!;
+    const table = relationTable(owner, field);
+    out.push({ ...table, aggregate: owner.name, relation: {
+      field, source: `${owner.table.schema}.${owner.table.name}`, target: `${target.table.schema}.${target.table.name}`,
+    }, columns: ['tenant_id', 'source_id', 'target_id'].map((name) => ({ name, type: 'uuid', notNull: true })),
+    statusValues: [], indexes: [{ name: `${table.name.slice(0, 52)}_target_idx`, columns: ['tenant_id', 'target_id'] }] });
+  }
   return { version: 1, tables: out };
 }
 
@@ -112,15 +132,30 @@ function statusCheckSql(t: TableModel): string {
 
 export function createTableSql(t: TableModel): string {
   const cols = t.columns.map((c) => `  ${columnSql(t, c, true)}`);
-  cols.push(`  ${statusCheckSql(t)}`);
+  if (t.relation) {
+    cols.push('  PRIMARY KEY (tenant_id, source_id, target_id)', ...relationForeignKeys(t).map((fk) => `  ${fk}`));
+  } else cols.push(`  ${statusCheckSql(t)}`);
   const lines = [`CREATE TABLE IF NOT EXISTS ${qt(t)} (`, cols.join(',\n'), ');'];
   for (const c of t.columns.filter((x) => x.unique)) {
     lines.push(`CREATE UNIQUE INDEX IF NOT EXISTS ${q(`${t.name}_${c.name}_uq`)} ON ${qt(t)} (tenant_id, ${q(c.name)});`);
   }
   for (const i of t.indexes) {
-    lines.push(`CREATE INDEX IF NOT EXISTS ${q(i.name)} ON ${qt(t)} (${i.columns.map(q).join(', ')});`);
+    lines.push(indexSql(t, i));
   }
+  if (t.relation) lines.push(`GRANT DELETE ON ${qt(t)} TO cage_app;`);
   return lines.join('\n');
+}
+
+const tableNameSql = (name: string) => name.split('.').map(q).join('.');
+const indexSql = (t: TableModel, i: TableModel['indexes'][number]) =>
+  `CREATE ${i.unique ? 'UNIQUE ' : ''}INDEX IF NOT EXISTS ${q(i.name)} ON ${qt(t)} (${i.columns.map(q).join(', ')});`;
+
+/** 两个复合外键把租户一致性放进数据库；解绑只删链接，源对象硬删除才级联清理链接。 */
+function relationForeignKeys(t: TableModel): string[] {
+  return [
+    `CONSTRAINT ${q(`${t.name.slice(0, 53)}_source_fk`)} FOREIGN KEY (tenant_id, source_id) REFERENCES ${tableNameSql(t.relation!.source)} (tenant_id, id) ON DELETE CASCADE`,
+    `CONSTRAINT ${q(`${t.name.slice(0, 53)}_target_fk`)} FOREIGN KEY (tenant_id, target_id) REFERENCES ${tableNameSql(t.relation!.target)} (tenant_id, id)`,
+  ];
 }
 
 /**
@@ -176,13 +211,18 @@ export function diffSchemas(prev: SchemaModel | null, next: SchemaModel): string
         out.push(`-- 收缩：字段 ${t.aggregate}.${c.name} 已从声明删除。确认所有读写都已切走后再取消注释（先扩展再收缩）\n-- ALTER TABLE ${qt(t)} DROP COLUMN ${q(c.name)};`);
       }
     }
-    if (JSON.stringify(p.statusValues) !== JSON.stringify(t.statusValues)) {
+    if (!t.relation && JSON.stringify(p.statusValues) !== JSON.stringify(t.statusValues)) {
       const removed = p.statusValues.filter((s) => !t.statusValues.includes(s));
       if (removed.length) out.push(`-- 注意：状态 ${removed.join(', ')} 被删除，先确认没有数据处于这些状态`);
       out.push(`ALTER TABLE ${qt(t)} DROP CONSTRAINT IF EXISTS ${q(`${t.name}_status_check`)};\nALTER TABLE ${qt(t)} ADD ${statusCheckSql(t)};`);
     }
     const pi = new Set(p.indexes.map((i) => i.name));
-    for (const i of t.indexes) if (!pi.has(i.name)) out.push(`CREATE INDEX IF NOT EXISTS ${q(i.name)} ON ${qt(t)} (${i.columns.map(q).join(', ')});`);
+    for (const i of t.indexes) if (!pi.has(i.name)) out.push(indexSql(t, i));
+    if (t.relation && p.relation && JSON.stringify(t.relation) !== JSON.stringify(p.relation)) {
+      out.push(`-- 关联目标变化：请先迁移已有链接，再应用新的外键`);
+      for (const side of ['source', 'target']) out.push(`ALTER TABLE ${qt(t)} DROP CONSTRAINT ${q(`${t.name.slice(0, 53)}_${side}_fk`)};`);
+      for (const fk of relationForeignKeys(t)) out.push(`ALTER TABLE ${qt(t)} ADD ${fk};`);
+    }
   }
   for (const [k, p] of prevMap) {
     if (!nextMap.has(k)) out.push(`-- 收缩：聚合 ${p.aggregate} 已从声明删除。确认后再取消注释\n-- DROP TABLE ${qt(p)};`);
@@ -238,7 +278,7 @@ export function aggregateSafeSql(agg: AnyAggregate): string {
   const owner = agg.scope.ownerField ? q(snake(agg.scope.ownerField)) : 'NULL::uuid';
   const cols: string[] = ['id'];
   for (const [k, f] of Object.entries(agg.fields as Fields)) {
-    if (f.isHidden) continue;
+    if (f.isHidden || isRelation(f)) continue;
     const c = q(snake(k));
     cols.push(f.sensitiveKind ? `sys.mask(${lit(agg.name)}, ${lit(f.sensitiveKind)}, ${c}::text) AS ${c}` : c);
   }
@@ -275,8 +315,31 @@ GRANT SELECT ON safe.audit_log TO cage_read;`;
 
 /** 整个安全层：先删掉旧的 safe 视图，再按声明重建（幂等） */
 export function safeLayerSql(reg: Registry): string {
-  const parts = [IN_SCOPE_SQL, MASK_SQL];
+  // 关系视图依赖两侧主视图，先删除框架标记的旧关系视图（包括已删除声明的关系）。
+  // 不用 CASCADE，防止顺带移除用户自己维护的数据库对象。
+  const parts = [IN_SCOPE_SQL, MASK_SQL, `DO $$ DECLARE v record; BEGIN
+    FOR v IN SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'safe' AND c.relkind = 'v' AND obj_description(c.oid, 'pg_class') = 'cage:relation'
+    LOOP EXECUTE format('DROP VIEW safe.%I', v.relname); END LOOP;
+  END $$;`];
   for (const a of reg.aggregates) parts.push(aggregateSafeSql(a));
+  for (const t of schemaModel(reg).tables) if (t.relation) {
+    const source = t.relation.source.split('.')[1], target = t.relation.target.split('.')[1];
+    const view = `${q('safe')}.${q(t.name)}`;
+    parts.push([
+      `ALTER TABLE ${qt(t)} ENABLE ROW LEVEL SECURITY;`,
+      `DROP POLICY IF EXISTS scope_read ON ${qt(t)};`,
+      `CREATE POLICY scope_read ON ${qt(t)} FOR SELECT TO cage_view_owner USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);`,
+      `DROP POLICY IF EXISTS kernel_rw ON ${qt(t)};`,
+      `CREATE POLICY kernel_rw ON ${qt(t)} TO cage_app USING (true) WITH CHECK (true);`,
+      `CREATE VIEW ${view} WITH (security_barrier) AS SELECT link.source_id, link.target_id FROM ${qt(t)} link`,
+      `JOIN safe.${q(source)} src ON src.id = link.source_id JOIN safe.${q(target)} dst ON dst.id = link.target_id`,
+      `WHERE src.status <> 'deleted' AND dst.status <> 'deleted';`,
+      `COMMENT ON VIEW ${view} IS 'cage:relation';`,
+      `ALTER VIEW ${view} OWNER TO cage_view_owner;`,
+      `GRANT SELECT ON ${view} TO cage_read;`,
+    ].join('\n'));
+  }
   parts.push(SYSTEM_SAFE_SQL);
   return parts.join('\n\n');
 }
@@ -487,6 +550,9 @@ CREATE TABLE IF NOT EXISTS sys.job_state (
 );
 `,
   },
+  TRANSFER_MIGRATION,
+  RUNTIME_MIGRATION,
+  FILE_MIGRATION,
 ];
 
 export const SCHEMA_MIGRATIONS_SQL = `

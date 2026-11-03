@@ -70,6 +70,7 @@ export function toCageError(err: unknown): CageError {
   const anyErr = err as any;
   if (anyErr?.validation || anyErr?.code === 'FST_ERR_VALIDATION') return new CageError('INVALID_INPUT', anyErr.message);
   if (anyErr?.statusCode === 429) return new CageError('RATE_LIMITED');
+  if (anyErr?.statusCode === 413) return new CageError('INVALID_INPUT', '请求体超过大小限制');
   if (anyErr?.statusCode === 403 && /csrf/i.test(String(anyErr?.message))) return new CageError('FORBIDDEN', 'CSRF');
   if (anyErr?.statusCode === 404) return new CageError('NOT_FOUND');
   if (anyErr?.statusCode === 415 || anyErr?.statusCode === 400) return new CageError('INVALID_INPUT', anyErr.message);

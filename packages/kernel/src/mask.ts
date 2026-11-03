@@ -1,6 +1,6 @@
 // 内存掩码：与数据库里的 sys.mask 语义一致，用于命令响应、审计 diff、事件载荷和日志。
 import { type AnyAggregate, hiddenFields, sensitiveFields } from './primitives/aggregate.js';
-import type { SensitiveKind } from './primitives/fields.js';
+import { isRelation, type Fields, type SensitiveKind } from './primitives/fields.js';
 import type { Ctx } from './types.js';
 
 export function maskValue(kind: SensitiveKind | string, val: unknown): unknown {
@@ -34,6 +34,8 @@ export function canUnmask(ctx: Ctx | null, aggName: string, kind: string): boole
 /** 对外呈现快照：去掉隐藏字段；敏感字段按当前主体掩码（ctx 为 null 时一律掩码） */
 export function present(agg: AnyAggregate, snap: Record<string, any>, ctx: Ctx | null): Record<string, any> {
   const out = { ...snap };
+  // 关联集合按需分页读取。命令响应不暴露内部完整 ID 集合，也不隐式读取目标内容。
+  for (const [key, field] of Object.entries(agg.fields as Fields)) if (isRelation(field)) delete out[key];
   for (const k of hiddenFields(agg)) delete out[k];
   for (const [k, kind] of Object.entries(sensitiveFields(agg))) {
     if (k in out && !canUnmask(ctx, agg.name, kind)) out[k] = maskValue(kind, out[k]);

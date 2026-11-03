@@ -12,9 +12,11 @@ export const PRIMITIVES = new Set([
   'command',
   'event',
   'reaction',
+  'reactionEach',
   'query',
   'approval',
   'job',
+  'businessProcess',
   'connector',
   'outbound',
   'inbound',
@@ -22,7 +24,7 @@ export const PRIMITIVES = new Set([
 ]);
 
 const IO_MODULES =
-  /^(node:)?(fs|fs\/promises|net|http|https|http2|child_process|dgram|tls|worker_threads|cluster)(\/|$)|^(pg|kysely|axios|undici|node-fetch|got|@yss123\/cage-http|@yss123\/cage-kernel\/db|@yss123\/cage-kernel\/worker)(\/|$)/;
+  /^(node:)?(fs|fs\/promises|net|http|https|http2|child_process|dgram|tls|worker_threads|cluster)(\/|$)|^(pg|kysely|axios|undici|node-fetch|got|@yss123\/cage-files|@yss123\/cage-http|@yss123\/cage-kernel\/db|@yss123\/cage-kernel\/worker)(\/|$)/;
 
 export interface DeclSite {
   exportName: string;
@@ -254,9 +256,6 @@ export function unexportedFindings(sites: DeclSite[], exported: Set<string>): Fi
       code: 'CAGE-DECL-002',
       at: `${s.file}:${s.line}`,
       reason: `声明 ${s.exportName} 没有从 domain 入口导出，内核和抽取器都看不到它`,
-      fix: `在 domain 的 index.ts 里加上 export * from './${s.file
-        .split('/')
-        .pop()!
-        .replace(/\.tsx?$/, '')}'`,
+      fix: `从所属模块 index.ts 导出 ${s.exportName}，再由 domain 的统一入口转导出；源文件 ${s.file}`,
     }));
 }

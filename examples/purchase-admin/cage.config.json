@@ -1,11 +1,13 @@
 {
   "domain": "packages/domain/src/index.ts",
   "contracts": "packages/contracts/src",
+  "structure": "modular",
   "typecheck": ["packages/domain", "packages/contracts", "apps/api", "apps/web"],
-  "devDbPort": 54329,
   "graph": {
     "title": "采购业务图谱",
     "labels": {
+      "module:purchase": "采购管理",
+      "module:inventory": "库存管理",
       "aggregate:PurchaseOrder": "采购单",
       "aggregate:Inventory": "库存台账",
       "aggregate:InventoryLock": "库存锁",
@@ -13,6 +15,8 @@
       "aggregate:User": "用户",
       "aggregate:Role": "角色",
       "command:PurchaseOrder.create": "新建采购单",
+      "command:PurchaseOrder.setAttachments": "修改采购附件",
+      "field:PurchaseOrder.attachments": "采购附件",
       "command:PurchaseOrder.submit": "提交审批",
       "command:PurchaseOrder.approve": "通过审批",
       "command:PurchaseOrder.reject": "驳回审批",

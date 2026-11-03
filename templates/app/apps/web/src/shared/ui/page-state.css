@@ -1,0 +1,43 @@
+/* 与两套工作台共享的纸面状态卡；状态清楚可读，链接保持可聚焦和可复制。 */
+.route-state {
+  margin: 32px 0;
+  padding: 68px 36px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fdfefb;
+  text-align: center;
+}
+.route-state-mark {
+  display: block;
+  margin-bottom: 20px;
+  color: #7d9866;
+  font:
+    italic 42px Georgia,
+    serif;
+}
+.route-state h1 {
+  font-size: 26px;
+  letter-spacing: -0.5px;
+}
+.route-state p {
+  margin: 16px 0 26px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.9;
+}
+.route-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 16px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #f1f5eb;
+  color: var(--green);
+  font-size: 12px;
+}
+.route-link:hover {
+  background: #e4ecd9;
+}
+.route-state > button {
+  margin-left: 12px;
+}

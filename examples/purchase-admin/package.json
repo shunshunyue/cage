@@ -5,10 +5,7 @@
   "packageManager": "pnpm@10.14.0",
   "scripts": {
     "dev": "cage dev",
-    "db:setup": "cage db setup",
-    "db:up": "cage db up",
-    "db:down": "cage db down",
-    "db:status": "cage db status",
+    "migrate": "cage migrate",
     "verify": "cage verify",
     "gen": "cage gen",
     "build:app": "pnpm --filter @app/domain build && pnpm --filter @app/api build && pnpm --filter @app/web build"

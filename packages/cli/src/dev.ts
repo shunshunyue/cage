@@ -1,14 +1,12 @@
-// 本地开发的进程编排：持久化 Postgres → 生成/迁移 → API、worker、Vite。
-// 配置连接串时使用指定 PostgreSQL；没有连接串时才启动 .cage/postgres 中的内嵌实例。
-import { watch, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { randomBytes } from 'node:crypto';
+// 本地开发只编排 API、worker 和 Vite，数据库由使用方提供。
+// 缺少连接配置就报错，不自动启动数据库；表结构迁移由开发者审查后单独执行。
+import { watch } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFile, type ChildProcess } from 'node:child_process';
-import { startEmbeddedPostgres, withDb, type PgInstance } from '@yss123/cage-testkit/pg';
+import { urlsFromEnv } from '@yss123/cage-kernel';
 import { abs, type CageConfig } from './config.js';
-import { initializeDatabase } from './migrate.js';
 import { binPath, launch, run } from './process.js';
 
 export async function dev(cfg: CageConfig): Promise<number> {
@@ -20,7 +18,7 @@ export async function dev(cfg: CageConfig): Promise<number> {
   };
   // 项目包的 development 导出指向源码，tsx watch 才能观察到 domain 的修改。
   env.NODE_OPTIONS = `${env.NODE_OPTIONS ?? ''} --conditions=development`.trim();
-  let database: PgInstance | undefined;
+  const urls = urlsFromEnv(env);
   const children: ChildProcess[] = [];
   const watchers: ReturnType<typeof watch>[] = [];
   let finish!: (code: number) => void;
@@ -29,7 +27,7 @@ export async function dev(cfg: CageConfig): Promise<number> {
     finish = resolve;
   });
 
-  // 所有退出路径共用一次清理，避免子进程退出事件与 Ctrl+C 同时关闭数据库。
+  // 所有退出路径共用一次清理，避免子进程退出事件与 Ctrl+C 重复关闭应用进程。
   const stop = async (code: number) => {
     if (stopping) return;
     stopping = true;
@@ -51,7 +49,6 @@ export async function dev(cfg: CageConfig): Promise<number> {
           : new Promise<void>((resolve) => child.once('exit', () => resolve())),
       ),
     );
-    await database?.stop();
     finish(code);
   };
   const onSignal = () => {
@@ -60,51 +57,16 @@ export async function dev(cfg: CageConfig): Promise<number> {
   process.once('SIGINT', onSignal);
   process.once('SIGTERM', onSignal);
   try {
-    if (!env.CAGE_APP_DATABASE_URL && !env.DATABASE_URL) {
-      mkdirSync(abs(cfg, '.cage'), { recursive: true });
-      const credentials = abs(cfg, '.cage/dev-credentials.json');
-      const fresh = !existsSync(credentials);
-      const pw = fresh
-        ? {
-            app: randomBytes(24).toString('hex'),
-            read: randomBytes(24).toString('hex'),
-            migrate: randomBytes(24).toString('hex'),
-          }
-        : JSON.parse(readFileSync(credentials, 'utf8'));
-      database = await startEmbeddedPostgres({
-        dir: abs(cfg, '.cage/postgres'),
-        port: cfg.devDbPort,
-        persistent: true,
-      });
-      const databaseName = 'cage_dev';
-      env.CAGE_APP_DATABASE_URL = withDb(database.superUrl, databaseName, {
-        name: 'cage_app',
-        password: pw.app,
-      });
-      env.CAGE_READ_DATABASE_URL = withDb(database.superUrl, databaseName, {
-        name: 'cage_read',
-        password: pw.read,
-      });
-      env.CAGE_MIGRATE_DATABASE_URL = withDb(database.superUrl, databaseName, {
-        name: 'cage_migrate',
-        password: pw.migrate,
-      });
-      if (fresh) {
-        await initializeDatabase(database.superUrl, env.CAGE_MIGRATE_DATABASE_URL, pw);
-        writeFileSync(credentials, JSON.stringify(pw), { mode: 0o600 });
-      }
-    }
     // 抽取器用独立进程，声明改动不会被 Node 的模块缓存吞掉。
     if (await run(cli, ['gen'], cfg.root, env)) throw new Error('声明生成失败');
-    if (await run(cli, ['migrate'], cfg.root, env)) throw new Error('数据库迁移失败');
-    const target = new URL(env.CAGE_APP_DATABASE_URL ?? env.DATABASE_URL!);
+    const target = new URL(urls.app);
     console.log(
-      `数据库 ${target.hostname}:${target.port || '5432'}${target.pathname}（${database ? '内嵌实例' : '外部 PostgreSQL'}）`,
+      `连接数据库 ${target.hostname}:${target.port || '5432'}${target.pathname}；表结构变更请审查后单独运行 pnpm exec cage migrate。`,
     );
-    // 初始化和迁移完成后，API/worker 只需要业务及只读连接。
-    // 超级用户、迁移和测试连接留在编排进程，不传给运行时子进程。
+    // API/worker 只需要业务及只读连接；迁移、测试和旧版管理员凭证不传给运行时。
     const runtimeEnv = { ...env };
     for (const key of [
+      'CAGE_ADMIN_DATABASE_URL',
       'CAGE_SUPER_DATABASE_URL',
       'CAGE_MIGRATE_DATABASE_URL',
       'CAGE_MIGRATE_PASSWORD',
@@ -126,7 +88,7 @@ export async function dev(cfg: CageConfig): Promise<number> {
       });
       return child;
     };
-    // tsx watch 负责 API/worker 热重启；domain 的生成任务串行，避免迁移竞争。
+    // tsx watch 负责 API/worker 热重启；domain 的生成任务串行，避免同时覆盖生成文件。
     start(binPath('tsx'), ['watch', abs(cfg, cfg.apiEntry)]);
     start(binPath('tsx'), ['watch', abs(cfg, cfg.workerEntry)]);
     const req = createRequire(abs(cfg, `${cfg.web}/package.json`));
@@ -141,7 +103,7 @@ export async function dev(cfg: CageConfig): Promise<number> {
         timer = setTimeout(() => {
           pending = pending.then(async () => {
             if (stopping) return;
-            if ((await run(cli, ['gen'], cfg.root, env)) === 0) await run(cli, ['migrate'], cfg.root, env);
+            if ((await run(cli, ['gen'], cfg.root, env)) === 0) console.log('声明已生成；若有表结构变更，请审查迁移后运行 pnpm exec cage migrate。');
           });
         }, 250);
       }),
