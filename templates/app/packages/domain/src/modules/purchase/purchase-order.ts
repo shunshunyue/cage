@@ -31,6 +31,7 @@ export const PurchaseOrder = aggregate('PurchaseOrder', {
     createdBy: ref('User'),
     supplierPhone: text(32).sensitive('phone').optional(),
     amount: money(),
+    reason: text(2000).optional(),
     items: list({ sku: text(64), qty: int() }),
     erpNo: text(64).optional(),
     attachments: files({ maxCount: 10, maxBytes: 2 * 1024 ** 3, accept: ['application/pdf', 'image/jpeg', 'image/png', 'text/plain'] }),
@@ -60,10 +61,25 @@ export const create = command(PurchaseOrder, {
     amount: z.string(),
     items: itemsInput,
     supplierPhone: z.string().optional(),
+    reason: z.string().max(2000).optional(),
     deptId: z.string().uuid().optional(),
     attachments: z.array(z.string().uuid()).max(10).optional(),
   }),
   handler: (o) => o,
+});
+
+// 退回后的说明只在草稿状态修改，保留提交时的版本校验和原始审计。
+export const explainPurpose = command(PurchaseOrder, {
+  from: 'draft', to: null,
+  description: '补充采购用途与必要性，保存后可以重新提交审核',
+  input: z.object({ id: z.string().uuid(), reason: z.string().trim().min(1).max(2000) }),
+  handler: (_draft, input) => ({ reason: input.reason }),
+});
+
+export const returnForChanges = command(PurchaseOrder, {
+  from: 'pending_approval', to: 'draft', invokedBy: 'process',
+  description: '审核材料不足时退回修改，重提后重新进行 AI 和人工审核',
+  handler: (draft) => draft,
 });
 
 // 附件变更与其他业务写入一样受状态、版本、范围和审计约束；审批后不能替换原始材料。

@@ -7,6 +7,7 @@ import { snake } from '../util/names.js';
 import { TRANSFER_MIGRATION } from '../transfer/schema.js';
 import { RUNTIME_MIGRATION } from './runtime-schema.js';
 import { FILE_MIGRATION } from '../files/schema.js';
+import { EVENT_VERSION_MIGRATION } from './event-version-schema.js';
 import { relationTable } from '../relations.js';
 
 export const q = (ident: string) => `"${ident.replace(/"/g, '""')}"`;
@@ -553,6 +554,7 @@ CREATE TABLE IF NOT EXISTS sys.job_state (
   TRANSFER_MIGRATION,
   RUNTIME_MIGRATION,
   FILE_MIGRATION,
+  EVENT_VERSION_MIGRATION,
 ];
 
 export const SCHEMA_MIGRATIONS_SQL = `

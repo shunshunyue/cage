@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { client, currentUser } from '@app/contracts';
 import { useApprovalTasks } from '../modules/approval';
 import { errorMessage } from '../shared/lib/error-message';
+import { AssistantScope } from '../shared/ui/assistant-scope';
 
 export function WorkspaceLayout({ onLogout }: { onLogout: () => void }) {
   const [error, setError] = useState('');
@@ -24,6 +25,10 @@ export function WorkspaceLayout({ onLogout }: { onLogout: () => void }) {
   const tasks = useApprovalTasks();
   const cache = useQueryClient();
   return (
+    <AssistantScope pageKey={location.key} fallback={{
+      context: { page: { id: 'workspace-page', title: page, kind: 'custom', route: location.pathname + location.search } },
+      suggestions: ['我在当前页面可以做什么？', '帮我查看待处理的审批'],
+    }}>
     <div className="workspace">
       <aside>
         <Link className="brand" to="/workspace">
@@ -88,5 +93,6 @@ export function WorkspaceLayout({ onLogout }: { onLogout: () => void }) {
         </div>
       </main>
     </div>
+    </AssistantScope>
   );
 }

@@ -288,6 +288,8 @@ export function extract(reg: Registry, sites: DeclSite[] = [], unsafeCount = 0):
         routable: a.routable,
         onApproved: reg.capabilityOf(a.onApproved),
         onRejected: reg.capabilityOf(a.onRejected),
+        ...(a.onReturned ? { onReturned: reg.capabilityOf(a.onReturned) } : {}),
+        ...(a.automatedBy ? { automatedBy: a.automatedBy } : {}),
         cancelOn: a.cancelOn.map((e) => e.name),
       },
       where(a),
@@ -298,6 +300,7 @@ export function extract(reg: Registry, sites: DeclSite[] = [], unsafeCount = 0):
     for (const event of a.cancelOn) edges.push({ kind: 'cancels', from: event.name, to: name });
     edges.push({ kind: 'binds', from: name, to: reg.capabilityOf(a.onApproved) });
     edges.push({ kind: 'binds', from: name, to: reg.capabilityOf(a.onRejected) });
+    if (a.onReturned) edges.push({ kind: 'binds', from: name, to: reg.capabilityOf(a.onReturned) });
     for (const f of a.routable)
       edges.push({ kind: 'uses', from: name, to: `${a.agg.name}.${f}`, as: '可路由字段' });
   }
@@ -330,6 +333,10 @@ export function extract(reg: Registry, sites: DeclSite[] = [], unsafeCount = 0):
       );
       if (binding) {
         edges.push({ kind: 'binds', from: `route:${v.process}`, to: binding.name });
+        for (const step of v.nodes.flatMap((n: any) => n.kind === 'when' ? n.steps : [n]).filter((n: any) => n.kind === 'ai')) {
+          for (const field of step.context.fields) edges.push({ kind: 'uses', from: `route:${v.process}`, to: `${binding.a.agg.name}.${field}`, as: 'AI 上下文' });
+          for (const query of step.context.queries ?? []) edges.push({ kind: 'queries', from: `route:${v.process}`, to: query });
+        }
         for (const f of v.fieldsUsed as string[])
           edges.push({
             kind: 'uses',

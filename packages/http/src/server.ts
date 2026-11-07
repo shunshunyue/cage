@@ -11,7 +11,7 @@ import fastifyStatic from '@fastify/static';
 import * as adminDomain from '@yss123/cage-admin/domain';
 import { adminRoutes } from '@yss123/cage-admin';
 import { approvalRoutes, type InCodeEngine } from '@yss123/cage-approval';
-import { createKernel, toCageError, urlsFromEnv, type DatabaseUrls, type Kernel } from '@yss123/cage-kernel';
+import { createKernel, runtimeServices, toCageError, urlsFromEnv, type DatabaseUrls, type Kernel } from '@yss123/cage-kernel';
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import { sql } from 'kysely';
 import { authRoutes, csrfRoute, registerAuthHook, Sessions, type AuthOptions } from './auth.js';
@@ -94,6 +94,7 @@ export function createServer(opts: ServerOptions): CageServer {
   // 组织模型永远在注册表里（同一对象重复导出会自动去重）。
   const kernel = createKernel({ domain: [adminDomain, opts.domain], urls, logger: undefined });
   const files = new FileService(kernel, opts.files);
+  const services = runtimeServices(kernel);
   const app = Fastify({
     bodyLimit: 1_048_576, // 请求体最大 1 MB
     trustProxy: opts.trustProxy ?? false,
@@ -113,6 +114,7 @@ export function createServer(opts: ServerOptions): CageServer {
     closing = true;
     clearInterval(fileTimer);
     await files.close();
+    await Promise.all(services.map(service => service.close()));
     await fileCleanup;
   });
   const probes = new Map<'appDb' | 'readDb', Promise<boolean>>();
@@ -213,6 +215,10 @@ export function createServer(opts: ServerOptions): CageServer {
     }
     const engines = kernel.registry.extensions.filter((e) => e.kind === 'ROUTE').map((e) => e.value.engine(kernel) as InCodeEngine);
     if (engines.length) approvalRoutes(app, { kernel, engines, ctxOf: (req) => req.cageCtx });
+    for (const service of services) {
+      await service.ready();
+      await service.http?.(app);
+    }
 
     const ui = opts.admin !== false ? adminUiDir() : null;
     if (ui) {

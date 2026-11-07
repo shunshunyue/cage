@@ -34,14 +34,15 @@ routable: ['managerName'] // 聚合没有该字段
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/kernel/src/primitives/flow.ts:148`
+- `packages/approval/src/route.ts:142`
+- `packages/kernel/src/primitives/flow.ts:154`
 
 实现片段（位置随框架版本更新）：
 
 ```ts
-  for (const f of def.routable) {
-    if (!(f in agg.fields)) throw declError('CAGE-APPR-001', `可路由字段 ${agg.name}.${f} 不存在`);
-  }
-  for (const c of [def.onApproved, def.onRejected]) {
-    if (c.agg !== agg) throw declError('CAGE-APPR-002', `审批结论命令必须属于 ${agg.name}`);
+        for (const field of s.context.fields) if (!binding.agg.fields[field] || binding.agg.fields[field].isHidden)
+          throw declError('CAGE-APPR-001', `AI 上下文字段 ${field} 不存在或不可公开`);
+        for (const query of s.context.queries ?? []) if (!registry.queries.some(q => q.name === query))
+          throw declError('CAGE-REG-001', `AI 步骤引用的查询 ${query} 未导出`);
+      }
 ```

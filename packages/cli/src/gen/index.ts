@@ -17,6 +17,7 @@ import { statesHoldingResources } from '../rules.js';
 import type { Ontology } from '../ontology.js';
 import type { DeclSite } from '../static-check.js';
 import { contractsFiles } from './contracts.js';
+import { runtimeOntology } from '@yss123/cage-ontology';
 import { schemaDiagnostics } from './zod-code.js';
 
 export function stateDiagram(g: Ontology, agg: string): string {
@@ -140,6 +141,7 @@ export function generate(
       `-- 生成物：安全层（函数、行级策略、安全视图），cage migrate 每次整体重建\n${safeLayerSql(reg)}\n`,
     );
     put('capabilities.json', JSON.stringify(reg.capabilityCatalog(), null, 2));
+    put('ai/ontology.json', JSON.stringify(runtimeOntology(reg), null, 2));
     put('routes.json', JSON.stringify(routes(reg), null, 2));
     const md = ['# 状态图（生成物）', ''];
     for (const a of reg.aggregates) {
@@ -236,5 +238,17 @@ export function routes(reg: Registry) {
         url: `/hooks/${e.value.connector.name}/${kebab(e.value.event)}`,
         capability: `验签 ${e.value.verify.secret}`,
       });
+  if (reg.extensions.some(e => e.kind === 'RUNTIME' && e.value.name === 'ai')) {
+    for (const [method, url] of [['GET', '/api/ai/sessions'], ['POST', '/api/ai/sessions'], ['GET', '/api/ai/sessions/:id/runs'],
+      ['POST', '/api/ai/sessions/:id/messages'], ['GET', '/api/ai/runs/:id'], ['GET', '/api/ai/runs/:id/events'],
+      ['POST', '/api/ai/runs/:id/cancel'], ['POST', '/api/ai/runs/:id/interactions/:interactionId'], ['GET', '/api/ai/memory'], ['DELETE', '/api/ai/memory/:id'],
+      ['GET', '/api/ai/personalities'], ['POST', '/api/ai/sessions/:id/personality']])
+      out.push({ method, url, capability: 'Sys.ai.use' });
+    for (const [method, url] of [['GET', '/api/ai/admin/models'], ['POST', '/api/ai/admin/models/:key'], ['POST', '/api/ai/admin/models/:key/test']])
+      out.push({ method, url, capability: 'Sys.ai.models.manage' });
+    for (const [method, url] of [['GET', '/api/ai/admin/personalities'], ['POST', '/api/ai/admin/personalities/:key'],
+      ['POST', '/api/ai/admin/assistant-settings'], ['POST', '/api/ai/admin/personality-preview']])
+      out.push({ method, url, capability: 'Sys.ai.personalities.manage' });
+  }
   return out;
 }

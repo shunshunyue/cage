@@ -10,9 +10,12 @@
   "dependencies": {
     "@app/contracts": "workspace:*",
     "@tanstack/react-query": "^5.87.1",
+    "@yss123/cage-client": "workspace:*",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "react-router-dom": "^7.18.5"
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.18.5",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@types/react": "^19.1.13",

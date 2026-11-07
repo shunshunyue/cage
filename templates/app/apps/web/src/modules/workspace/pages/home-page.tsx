@@ -1,10 +1,14 @@
 import { Link } from 'react-router-dom';
 import { PageHeading } from '../../../shared/ui/page-heading';
+import { AssistantPage } from '../../../shared/ui/assistant-scope';
 
 // 工作台只展示真实可访问的业务入口，不制造演示统计；业务页面各自按 URL 独立加载。
 export function HomePage() {
   return (
     <>
+      <AssistantPage context={{ page: { id: 'workspace', title: '采购工作台', kind: 'dashboard', route: '/workspace' },
+        visibleContent: [{ id: 'workspace-entries', text: '工作台提供采购单、审批待办和库存台账入口。' }],
+      }} suggestions={['我有哪些待处理的审批？', '了解采购单的完整处理流程', '汇总本月我能查看的采购金额']} />
       <PageHeading
         eyebrow="WORKSPACE"
         title="采购工作台"

@@ -2,6 +2,7 @@
 export * from './brands.js';
 export * from './errors.js';
 export * from './types.js';
+export { runtimeServices, type RuntimeDefinition, type RuntimeService } from './runtime.js';
 export {
   Field, text, int, number, money, id, date, datetime, bool, enumOf, ref, hasMany, manyToMany, isRelation, file, files, isFile, list, json, isField, objectSchema,
   SENSITIVE_KINDS, type SensitiveKind, type FieldKind, type FieldMeta, type FilePolicy, type AnyField, type Fields, type FieldValues, type ValueOf,

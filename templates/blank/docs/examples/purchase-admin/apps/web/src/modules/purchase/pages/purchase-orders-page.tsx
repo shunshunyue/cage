@@ -9,6 +9,7 @@ import { PageHeading } from '../../../shared/ui/page-heading';
 import { QueryFailure } from '../../../shared/ui/page-state';
 import { PurchaseOrderForm } from '../components/purchase-order-form';
 import { currency, statusLabels } from '../lib/presentation';
+import { PurchaseAssistantContext } from '../components/purchase-assistant-context';
 
 export function PurchaseOrdersPage({ pendingTasks }: { pendingTasks?: number }) {
   // 可分享、刷新恢复的列表条件进入 URL；弹窗和提交中的临时状态继续留在组件里。
@@ -215,6 +216,9 @@ export function PurchaseOrdersPage({ pendingTasks }: { pendingTasks?: number }) 
         )}
       </section>
       {creating && <PurchaseOrderForm close={() => setCreating(false)} run={run} />}
+      <PurchaseAssistantContext context={{ page: { id: 'purchase-orders', title: '采购单列表', kind: 'list', route: `/procurement/orders?${search}` },
+        view: { aggregate: 'PurchaseOrder', input: { status, page, pageSize: 10 }, visibleIds: orders.data?.items.map(o => o.id) ?? [] },
+      }} suggestions={['汇总本月我有权限查看的采购金额', '采购单的审批规则是什么？']} />
     </>
   );
 }

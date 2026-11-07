@@ -14,6 +14,7 @@
 | `packages/domain/src/workflows/purchase-inventory.ts` | 同事务建锁、异步释放 | acquires/releases 的配对及 map 返回 null 的原因 |
 | `packages/domain/src/modules/purchase/approvals.ts` | 启动/取消审批、条件步骤与选人 | routable、部门负责人、角色 code、结论命令 |
 | `packages/domain/src/integrations/erp.ts` | 出站推单、成功回写、入站回调 | 白名单、secret 名、schema、幂等与 HMAC |
+| `packages/domain/src/integrations/intelligence.ts` | 消费框架托管模型和本体助理 | Admin 配置连接，通用工具由框架生成 |
 | `packages/domain/src/modules/purchase/queries.ts` | 按状态汇总 | reads、安全视图、命名参数 |
 | `packages/domain/src/modules/purchase/jobs.ts` | 过期草稿取消 | reads/calls 和 job 调用身份 |
 | `apps/api/src/main.ts`、`apps/api/src/worker.ts` | 如何启动框架与 worker | 保持薄装配，fake 只用于相应环境 |
@@ -27,7 +28,10 @@
 ```text
 采购员新建 → draft
   → submit → pending_approval + OrderSubmitted（同事务提交）
-  → worker 消费事件 → 按 poRoute 创建经理待办
+  → worker 消费事件 → AI 材料预审
+      → 材料不足：returnForChanges → draft，补充用途后重新提交、从头审核
+      → 疑难材料：在本节点创建人工接管待办
+      → 材料清楚：通过本节点，创建经理待办
   → 经理审批；金额 > 50000 时还有财务步骤
   → 流程完成 → 调用 approve
       → 职责分离、额度、库存检查
@@ -68,13 +72,23 @@ submit 返回成功只表示单据和事件已提交，不表示待办、ERP 或
 | 对象 | 配置要点 |
 | --- | --- |
 | 采购员 | 创建/查看/提交/取消采购单等所需能力，所属部门，以及采购单数据范围 |
-| 经理 | `PurchaseOrder.read/approve/reject`，适当数据范围，`approve` 的 `ceiling` 额度参数 |
+| 智能助理使用人 | 显式授予 `Sys.ai.use`；编辑用途还需 `PurchaseOrder.explainPurpose` |
+| 模型管理者 | `Sys.ai.models.manage`；在 `/admin/#/models` 配置并启用 `main`，部署主密钥见[智能能力指南](intelligence.md) |
+| 助理性格管理者 | `Sys.ai.personalities.manage`；在 `/admin/#/personalities` 编辑预设、自定义性格、设置默认并试聊 |
+| AI 预审角色 | 创建 code 为 `purchase_ai_reviewer` 的角色，授予 `PurchaseOrder.read/returnForChanges` 及覆盖申请范围的数据权限；本例 AI 仅预审，不执行最终 approve |
+| 经理 | `PurchaseOrder.read/approve/reject/returnForChanges`，适当数据范围，`approve` 的 `ceiling` 额度参数 |
 | 部门 | 将采购员所属部门的负责人设为经理；不能为空 |
 | 财务 | 角色 **code** 为 `finance`，给实际用户分配；配置审批所需权限、范围及额度 |
 | 库存台账 | 预先登记与采购明细相同的 sku，数量满足演示检查 |
 | 连接器环境 | fake 阶段使用 worker 注册的 fake；真实环境另配 host 对应密钥及回调签名密钥 |
 
 经理与提单人必须是不同用户。配置“负责人”决定选谁；配置角色能力与范围决定此人能否完成结论命令，两者都需要。金额 **大于** 50,000 才追加财务步骤，恰好 50,000 不满足 gt 条件。
+
+可分别准备“采购办公用品”、说明实际使用场景的完整用途、含“紧急采购”的用途，体验退回、通过本节点和转人工。真实模型的判定应按实际样例验收；故障默认转人工，不能当作正常审查通过。详情页显示历史理由、修改建议及审核轮次；用途编辑框的未保存内容会经 SDK 一起传给助理，服务端重新核对当前单据与权限。
+
+拥有 `Sys.ai.use` 的用户在所有业务页面右下角都有助理入口，点击打开悬浮对话窗，收起后继续执行当前任务。工作台、采购列表/详情、库存和待办分别提供页面语义；列表带筛选与可见记录，详情带单据引用和未保存用途。应用壳只挂载一个 `AssistantScope`，业务页面通过 `AssistantPage` 注册上下文，所以站内切页保留对话，但下一条消息使用新页面的快照。不同页面拥有独立的 `AiPageContext` 身份，旧任务要求补充页面时不能提交新页面代替。登录页和独立的 `/admin/` 不挂载业务助理。
+
+悬浮窗的“相处方式”选择器消费框架 `useAssistant` 的性格目录和切换接口。默认跟随 Admin 设置，也可为当前会话选择其他已启用性格；切换不清空对话，旧回复保留生成时的性格名称。采购范例没有单独的性格表或 Prompt 拼接逻辑，AI 审批继续使用原节点策略。
 
 ## 页面如何使用框架
 

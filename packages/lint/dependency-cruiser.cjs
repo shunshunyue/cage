@@ -23,7 +23,7 @@ module.exports = {
       severity: 'error',
       comment: '[CAGE-DEP-003] 前端只能依赖 @app/contracts',
       from: { path: '^apps/web' },
-      to: { path: '^packages/domain|node_modules/@yss123/cage-(kernel|http|files|admin|connectors|approval|testkit)/' },
+      to: { path: '^packages/domain|node_modules/@yss123/cage-(kernel|http|files|admin|connectors|approval|testkit|ai|ontology)/' },
     },
     {
       name: 'no-generated-imports-from-domain',

@@ -2,5 +2,5 @@
   "name": "@app/domain", "private": true, "type": "module",
   "exports": { ".": { "types": "./dist/index.d.ts", "development": "./src/index.ts", "default": "./dist/index.js" } },
   "scripts": { "build": "tsc -p tsconfig.json", "typecheck": "tsc -p tsconfig.json --noEmit" },
-  "dependencies": { "@yss123/cage-kernel": "workspace:*", "@yss123/cage-admin": "workspace:*", "@yss123/cage-approval": "workspace:*", "@yss123/cage-connectors": "workspace:*", "zod": "^4.1.5" }
+  "dependencies": { "@yss123/cage-kernel": "workspace:*", "@yss123/cage-admin": "workspace:*", "@yss123/cage-approval": "workspace:*", "@yss123/cage-connectors": "workspace:*", "@yss123/cage-ai": "workspace:*", "zod": "^4.1.5" }
 }

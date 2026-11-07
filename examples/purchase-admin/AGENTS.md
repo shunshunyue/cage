@@ -17,6 +17,21 @@
 
 先读项目说明指定的学习资料，默认入口为 `docs/ai/README.md`。第一次读 `architecture.md`、`project-structure.md` 和 `primitives.md`；具体任务读 `recipes.md`，采购全链路读 `purchase-example.md`，错误查 `docs/errors/README.md` 和 `docs/ai/troubleshooting.md`。资料相对该学习目录，项目说明可指定源码仓库中的规范资料位置。
 
+### 原生 AI 能力入口
+
+遇到以下需求，先读 `docs/ai/intelligence.md`，用 `pnpm exec cage capabilities "关键词" --format json` 核对当前安装版本的公开 API，再检查本项目 domain 导出和页面接入。关键词可直接使用下表需求名称；未命中时缩短关键词或查公开符号，不能据此断言能力不存在。
+
+| 需求 | 框架入口与应用职责 |
+| --- | --- |
+| AI审批 / 智能审批 | 现有 `step` 使用 `kind: 'ai'`，支持 pass 通过、return 退回修改、manual 转人工；应用声明策略、结论命令、自动执行角色及接管人 |
+| 业务助理 / 本体助理 | 导出 `ai({ models, assistant })`；框架提供执行循环、按领域声明生成的工具、会话、偏好记忆和 HTTP；应用配置授权及界面 |
+| 页面上下文 / 随页助理 | `useAssistant(client.ai, page)` 配合 `useAiPageContext` / `AiPageContext`；应用上报页面、对象、选中项和草稿，服务端重读并校验业务事实 |
+| 模型管理 / Responses | `managedModel` 接入 Admin 动态配置，支持 Chat Completions / Responses；应用配置部署加密密钥并显式授权管理者 |
+| 性格 / 流式输出 | Admin 管理性格，SDK 提供选择、增量文字与执行进度；应用实现悬浮窗、Markdown 和确认卡片 |
+| 上下文预算 | `ai({ context: ... })` 的配置形状见 `AiContextOptions`；框架按预算选择完整工具或发现模式，历史和本体按需读取 |
+
+前端只使用客户端、协议与契约；后端循环、通用工具和记忆使用框架实现。页面快照和性格不授予权限。分别核对**框架支持**（公开导出）、**项目已启用**（domain 导出、迁移、模型、权限、worker、SDK）和**实际验证通过**（真实角色与模型联调）；空白模板的参考代码不表示已启用。具体接入顺序和验收步骤见该指南，不必将整份指南塞入每次任务上下文。
+
 ### 业务代码放在哪里
 
 | 位置 | 职责 |

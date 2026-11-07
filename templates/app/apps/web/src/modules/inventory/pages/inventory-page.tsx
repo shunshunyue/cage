@@ -4,6 +4,7 @@ import { useCommand } from '../../../shared/hooks/use-command';
 import { Notice } from '../../../shared/ui/notice';
 import { PageHeading } from '../../../shared/ui/page-heading';
 import { QueryFailure } from '../../../shared/ui/page-state';
+import { AssistantPage } from '../../../shared/ui/assistant-scope';
 
 export function InventoryPage() {
   const stock = useInventoryList({ pageSize: 100 });
@@ -26,6 +27,9 @@ export function InventoryPage() {
     );
   return (
     <>
+      <AssistantPage context={{ page: { id: 'inventory', title: '库存台账', kind: 'list', route: '/inventory' },
+        view: { aggregate: 'Inventory', input: { pageSize: 100 }, visibleIds: stock.data.items.map(item => item.id) },
+      }} suggestions={['汇总当前可见的物料库存', '查询库存时有哪些权限限制？']} />
       <PageHeading eyebrow="INVENTORY" title="库存台账" description="查看物料与当前登记数量。" />
       {message && <Notice onClose={clearMessage}>{message}</Notice>}
       <section className="panel">

@@ -33,6 +33,7 @@ export const sod = {
       fields: [field],
       check: (cur: any, ctx: Ctx) => {
         const who = ctx.onBehalfOf ?? ctx.userId;
+        if (!who) return violation('职责分离需要可核验的操作人身份');
         return who && cur[field] === who ? violation(`操作人不能是 ${field} 记录的人（职责分离）`) : ok();
       },
     });

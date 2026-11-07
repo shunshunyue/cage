@@ -7,3 +7,5 @@ export {
 } from './route.js';
 export { InCodeEngine, type TaskView } from './engine.js';
 export { approvalRoutes } from './http.js';
+export { approvalRoleContext, type AiStep, type AiStepOptions, type AiDecision } from './ai.js';
+export type { ApprovalStep } from './route.js';

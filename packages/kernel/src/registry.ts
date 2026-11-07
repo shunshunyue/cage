@@ -1,5 +1,5 @@
 // 注册表：遍历 domain 包的导出，靠品牌标记识别原语，用导出名给命令和反应命名。
-import { CONSUMERS, CONNECTOR, INBOUND, OUTBOUND, ROUTE, SYSTEM_DDL, brandOf } from './brands.js';
+import { CONSUMERS, CONNECTOR, INBOUND, OUTBOUND, ROUTE, SYSTEM_DDL, RUNTIME, MIGRATIONS, brandOf } from './brands.js';
 import { declError } from './errors.js';
 import { type AnyAggregate, sensitiveFields } from './primitives/aggregate.js';
 import type { AnyCommand } from './primitives/command.js';
@@ -31,7 +31,7 @@ export interface CatalogEntry {
 }
 
 export interface RuntimeExtension {
-  kind: 'CONNECTOR' | 'OUTBOUND' | 'INBOUND' | 'ROUTE';
+  kind: 'CONNECTOR' | 'OUTBOUND' | 'INBOUND' | 'ROUTE' | 'RUNTIME';
   name: string;
   value: any;
 }
@@ -47,6 +47,7 @@ export interface Registry {
   readonly businessProcesses: readonly BusinessProcess[];
   readonly extensions: readonly RuntimeExtension[];
   readonly systemDdl: readonly string[];
+  readonly systemMigrations: readonly { name: string; sql: string }[];
   aggregate(name: string): AnyAggregate | undefined;
   /** 按能力点或命令对象找命令 */
   command(ref: string | AnyCommand): RegisteredCommand | undefined;
@@ -80,12 +81,13 @@ export function buildRegistry(domains: object | object[], opts: RegistryOptions 
   const businessProcesses: BusinessProcess[] = [];
   const extensions: RuntimeExtension[] = [];
   const systemDdl: string[] = [];
+  const systemMigrations: { name: string; sql: string }[] = [];
 
   for (const mod of mods) {
     for (const [exportName, v] of Object.entries(mod)) {
       if (!v || (typeof v !== 'object' && typeof v !== 'function')) continue;
       if (names.has(v)) continue; // 同一个对象被重复导出：保留第一个名字
-      const brand = brandOf(v);
+      const brand = (v as any)[RUNTIME] ? 'RUNTIME' : brandOf(v);
       if (!brand) continue;
       names.set(v, exportName);
       switch (brand) {
@@ -123,12 +125,19 @@ export function buildRegistry(domains: object | object[], opts: RegistryOptions 
         case 'OUTBOUND':
         case 'INBOUND':
         case 'ROUTE':
+        case 'RUNTIME':
           extensions.push({ kind: brand, name: exportName, value: v });
           break;
         default:
           break;
       }
       const ddl = (v as any)[SYSTEM_DDL];
+      const migrations = (v as any)[MIGRATIONS]?.() ?? [];
+      for (const migration of migrations) {
+        const previous = systemMigrations.find(m => m.name === migration.name);
+        if (previous && previous.sql !== migration.sql) throw declError('CAGE-REG-002', `框架迁移 ${migration.name} 定义冲突`);
+        if (!previous) systemMigrations.push(migration);
+      }
       if (typeof ddl === 'function') {
         const text = String(ddl());
         if (!systemDdl.includes(text)) systemDdl.push(text);
@@ -183,7 +192,7 @@ export function buildRegistry(domains: object | object[], opts: RegistryOptions 
       throw declError('CAGE-REACT-003', `${key} 的步骤必须全部声明互不重复的 order`);
   }
   for (const { a, name } of approvals) {
-    if (!cmdSet.has(a.onApproved) || !cmdSet.has(a.onRejected)) {
+    if (!cmdSet.has(a.onApproved) || !cmdSet.has(a.onRejected) || (a.onReturned && !cmdSet.has(a.onReturned))) {
       throw declError('CAGE-REG-001', `审批绑定 ${name} 的结论命令没有从 domain 导出`);
     }
   }
@@ -213,7 +222,7 @@ export function buildRegistry(domains: object | object[], opts: RegistryOptions 
   }
 
   const registry: Registry = {
-    aggregates, commands, events, reactions, queries, approvals, jobs, businessProcesses, extensions, systemDdl,
+    aggregates, commands, events, reactions, queries, approvals, jobs, businessProcesses, extensions, systemDdl, systemMigrations,
     aggregate: (name) => byAgg.get(name),
     command: (ref) => (typeof ref === 'string' ? byCap.get(ref) : byCmd.get(ref)),
     capabilityOf: (cmd) => {
@@ -247,11 +256,13 @@ export function buildRegistry(domains: object | object[], opts: RegistryOptions 
         { capability: 'Sys.ops.manage', kind: 'system', description: '重放或丢弃死信、启停定时任务' },
       );
       for (const e of opts.extraCapabilities ?? []) out.push(e);
+      for (const e of extensions.filter(e => e.kind === 'RUNTIME')) out.push(...e.value.capabilities);
       return out.sort((x, y) => x.capability.localeCompare(y.capability));
     },
     consumerProviders: () =>
       extensions.map((e) => e.value).filter((v) => typeof v?.[CONSUMERS] === 'function'),
   };
+  for (const extension of extensions) extension.value.validate?.(registry);
   return Object.freeze(registry);
 }
 
@@ -268,9 +279,9 @@ export function registryFingerprint(registry: Registry): string {
       constraints: cmd.constraints.map((constraint) => ({ name: constraint.name, check: fn(constraint.check) })), emits: cmd.emits.map((event) => ({ event: event.event.name, map: fn(event.map) })) })),
     reactions: registry.reactions.map(({ r, name }) => ({ name, event: r.event.name, command: registry.capabilityOf(r.command), tx: r.tx, order: r.order, collection: r.collection, map: fn(r.map) })),
     queries: registry.queries.map((query) => ({ name: query.name, reads: query.reads.map((a) => a.name), input: schema(query.input), sql: query.sql, build: fn(query.build), audit: query.audit })),
-    approvals: registry.approvals.map(({ a, name }) => ({ name, process: a.process, start: a.start.name, approved: registry.capabilityOf(a.onApproved), rejected: registry.capabilityOf(a.onRejected) })),
+    approvals: registry.approvals.map(({ a, name }) => ({ name, process: a.process, start: a.start.name, routable: a.routable, cancelOn: a.cancelOn.map(e => e.name), approved: registry.capabilityOf(a.onApproved), rejected: registry.capabilityOf(a.onRejected), returned: a.onReturned && registry.capabilityOf(a.onReturned), automatedBy: a.automatedBy })),
     jobs: registry.jobs.map((job) => ({ name: job.name, cron: job.cron, run: fn(job.run) })),
-    extensions: registry.extensions.map((extension) => ({ kind: extension.kind, name: extension.name })),
+    extensions: registry.extensions.map((extension) => ({ kind: extension.kind, name: extension.name, spec: extension.kind === 'ROUTE' ? extension.value.nodes : extension.kind === 'RUNTIME' ? extension.value.spec : undefined })),
   };
   return createHash('sha256').update(stableStringify(spec)).digest('hex');
 }

@@ -1,0 +1,8 @@
+{
+  "name": "@yss123/cage-ontology", "version": "0.2.0", "type": "module", "description": "Cage 运行时本体与受控能力发现",
+  "main": "dist/index.js", "types": "dist/index.d.ts", "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "files": ["dist"], "scripts": { "build": "tsc -p tsconfig.json", "typecheck": "tsc -p tsconfig.json --noEmit" },
+  "dependencies": { "@yss123/cage-kernel": "workspace:*", "zod": "^4.1.5" }, "license": "MIT", "engines": { "node": ">=24" },
+  "repository": { "type": "git", "url": "git+https://github.com/shunshunyue/cage.git", "directory": "packages/ontology" },
+  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" }
+}

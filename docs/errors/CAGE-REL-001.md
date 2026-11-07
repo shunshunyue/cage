@@ -48,10 +48,10 @@ list({ members: manyToMany('User') }); // JSON 明细中不能声明关系
 - `packages/kernel/src/primitives/fields.ts:181`
 - `packages/kernel/src/primitives/fields.ts:188`
 - `packages/kernel/src/primitives/fields.ts:224`
-- `packages/kernel/src/registry.ts:146`
-- `packages/kernel/src/registry.ts:150`
-- `packages/kernel/src/registry.ts:156`
-- `packages/kernel/src/registry.ts:164`
+- `packages/kernel/src/registry.ts:155`
+- `packages/kernel/src/registry.ts:159`
+- `packages/kernel/src/registry.ts:165`
+- `packages/kernel/src/registry.ts:173`
 
 实现片段（位置随框架版本更新）：
 

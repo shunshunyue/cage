@@ -19,6 +19,7 @@ export function PurchaseOrderForm({ close, run }: { close: () => void; run: RunC
         purchaseOrder.create({
           amount: String(data.get('amount')),
           supplierPhone: String(data.get('phone')) || undefined,
+          reason: String(data.get('reason')) || undefined,
           items: [{ sku: String(data.get('sku')), qty: Number(data.get('qty')) }],
           attachments,
         }),
@@ -56,6 +57,7 @@ export function PurchaseOrderForm({ close, run }: { close: () => void; run: RunC
             <input name="phone" type="tel" maxLength={32} />
           </label>
           <p className="muted">保存后可在列表提交审批，创建人和部门会自动填写。</p>
+          <label>采购用途与必要性<textarea name="reason" rows={3} maxLength={2000} placeholder="说明具体用途；提交后先进行 AI 材料预审" /></label>
           <AttachmentUpload command="PurchaseOrder.create" field="attachments" policy={PurchaseOrderFileFields.attachments} value={attachments} onChange={setAttachments} onBusyChange={setUploading} />
           <button className="primary" disabled={busy || uploading}>
             {busy ? '保存中…' : '保存草稿'}

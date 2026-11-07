@@ -34,14 +34,20 @@ route('po-approval', [])
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/approval/src/route.ts:97`
+- `packages/approval/src/bridge.ts:11`
+- `packages/approval/src/engine.ts:63`
+- `packages/approval/src/route.ts:57`
+- `packages/approval/src/route.ts:59`
+- `packages/approval/src/route.ts:110`
+- `packages/approval/src/route.ts:137`
+- `packages/approval/src/route.ts:139`
 
 实现片段（位置随框架版本更新）：
 
 ```ts
-  if (!/^[a-z][a-z0-9-]*$/.test(process)) throw declError('CAGE-APPR-005', `流程名 ${process} 必须是小写短横线`);
-  if (nodes.length === 0) throw declError('CAGE-APPR-006', `流程 ${process} 至少需要一个步骤`);
-  const fields = new Set<string>();
-  for (const n of nodes) {
-    const steps = n.kind === 'step' ? [n] : n.steps;
+  const cmd = r.outcome === 'approved' ? binding.a.onApproved : r.outcome === 'returned' ? binding.a.onReturned : binding.a.onRejected;
+  if (!cmd) throw new Error('[CAGE-APPR-006] 审批未绑定退回修改命令');
+  let ctx: Ctx;
+  if (r.lastApprover) {
+    const user = await k.contextFor(r.lastApprover, r.tenantId);
 ```

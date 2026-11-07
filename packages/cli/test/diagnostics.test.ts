@@ -148,3 +148,32 @@ it('public discovery finds the installed owner signature instead of claiming the
   const report = publicCapabilities(cfg, '本人');
   expect(report.capabilities).toContainEqual(expect.objectContaining({ name: 'scope', public: true, signatures: [expect.stringContaining('ownerField')] }));
 });
+
+it.each([
+  ['AI审批', ['ai', 'step', 'AiStepOptions']],
+  ['AI 审批', ['step', 'AiStepOptions']],
+  ['业务助理', ['ai', 'useAssistant']],
+  ['页面上下文', ['AiPageContext', 'useAiPageContext']],
+  ['随页助理', ['AiPageContext', 'useAssistant']],
+  ['模型管理', ['managedModel']],
+  ['Responses', ['responsesModel', 'managedModel']],
+  ['性格', ['useAssistant', 'AiPersonality']],
+  ['上下文预算', ['ai', 'AiContextOptions']],
+])('需求“%s”能发现已安装的 AI 公开 API 并进入本地指南', (query, names) => {
+  const cfg = loadConfig(fileURLToPath(new URL('../../../examples/purchase-admin/', import.meta.url)));
+  const report = publicCapabilities(cfg, query);
+  for (const name of names) {
+    const capability = report.capabilities.find(item => item.name === name);
+    expect(capability, `${query}: ${name}`).toMatchObject({ public: true, guide: 'docs/ai/intelligence.md' });
+    expect(capability!.signatures.length).toBeGreaterThan(0);
+    expect(capability!.source.file).toMatch(/\.d\.ts$/);
+  }
+  // 词表只能召回真实导出，不能给应用一个并不存在的新原语。
+  expect(report.capabilities.some(item => item.name === 'aiStep')).toBe(false);
+  if (query === 'AI审批') {
+    const step = report.capabilities.find(item => item.name === 'step')!;
+    expect(step.package).toBe('@yss123/cage-approval');
+    expect(step.signatures).toContainEqual(expect.stringContaining('AiStepOptions'));
+    expect(report.capabilities.some(item => item.key === '@yss123/cage-kernel#step')).toBe(false);
+  }
+});

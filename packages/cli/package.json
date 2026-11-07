@@ -27,6 +27,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@yss123/cage-ontology": "workspace:*",
     "@yss123/cage-admin": "workspace:*",
     "@clack/prompts": "^1.8.1",
     "@yss123/cage-kernel": "workspace:*",

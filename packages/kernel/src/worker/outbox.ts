@@ -10,6 +10,7 @@ export interface OutboxRow {
   event: string;
   aggregate: string;
   aggregate_id: string;
+  aggregate_version?: number | null;
   payload: Record<string, any>;
   actor: { kind?: string; id?: string; userId?: string | null; onBehalfOf?: string | null } | null;
   trace: Record<string, string> | null;

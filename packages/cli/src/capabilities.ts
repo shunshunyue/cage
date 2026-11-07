@@ -6,8 +6,32 @@ import ts from 'typescript';
 import { abs, type CageConfig } from './config.js';
 import { VERSION } from './version.js';
 
-const modules = ['kernel', 'approval', 'connectors', 'client', 'admin', 'files'] as const;
-const topics: Record<string, { words: string; guide: string }> = {
+const modules = ['kernel', 'approval', 'connectors', 'client', 'admin', 'files', 'ai', 'ai-protocol', 'ontology'] as const;
+// 关键词负责把需求指向真实公开符号；签名仍来自当前安装包，不能用词表伪造可用 API。
+const topics: Record<string, { words: string; guide: string; limitations?: string[] }> = {
+  ai: { words: '智能助理 业务助理 本体助理 全能助理 AI审批 AI 审批 智能审批 运行时 执行循环 loop 工具 会话 记忆 上下文预算', guide: 'intelligence.md',
+    limitations: ['须从 domain 入口导出并完成迁移、模型配置、角色授权和 worker 启动；框架支持不代表应用已启用。'] },
+  AiContextOptions: { words: '上下文预算 上下文窗口 大本体 按需加载 工具发现 工具搜索 历史 记忆 token', guide: 'intelligence.md' },
+  chatModel: { words: '模型接入 Chat Completions 流式输出 fake', guide: 'intelligence.md' },
+  responsesModel: { words: '模型接入 Responses 接口协议 会话接续 previous_response_id 服务端压缩', guide: 'intelligence.md',
+    limitations: ['Responses 接口可用不等于网关支持接续或压缩；接续历史仍占上下文与输入用量。'] },
+  managedModel: { words: '模型管理 模型配置 动态配置 密钥 admin HTTP HTTPS Chat Completions Responses', guide: 'intelligence.md',
+    limitations: ['Admin 管理需显式授予 Sys.ai.models.manage，并配置部署加密密钥；连接测试不代表工具和业务联调通过。'] },
+  '@yss123/cage-approval#step': { words: '审批步骤 AI审批 AI 审批 智能审批 通过 退回修改 转人工', guide: 'intelligence.md',
+    limitations: ['AI 使用 step 的 kind: ai 重载；handoff 指定本步骤接管人，角色与结论命令仍须授权。'] },
+  AiStepOptions: { words: 'AI审批 AI 审批 智能审批 审核策略 退回修改 转人工', guide: 'intelligence.md' },
+  AiDecision: { words: 'AI审批 AI 审批 智能审批 三态裁决 通过 退回修改 转人工', guide: 'intelligence.md' },
+  useAssistant: { words: '智能助理 业务助理 本体助理 全能助理 随页助理 会话 前端 SDK 性格 流式输出 悬浮窗 Markdown', guide: 'intelligence.md',
+    limitations: ['SDK 提供状态与动作；悬浮窗、Markdown 和交互卡片由应用实现，不能等待发送 Promise 完成后才展示增量文字。'] },
+  AiClient: { words: '业务助理 随页助理 前端 SDK 会话 记忆 性格 流式输出 模型管理', guide: 'intelligence.md' },
+  AiPageContext: { words: '页面上下文 随页助理 当前页面 快照 选中项 草稿 标签页', guide: 'intelligence.md' },
+  useAiPageContext: { words: '页面上下文 随页助理 当前页面 快照 选中项 草稿 标签页', guide: 'intelligence.md',
+    limitations: ['应用主动提供语义快照，SDK 不抓取整个 DOM；服务端按当前身份重新读取并校验业务对象。'] },
+  PageContext: { words: '页面上下文 随页助理 当前页面 快照 选中项 草稿 标签页', guide: 'intelligence.md' },
+  AiPersonality: { words: '性格 人设 表达风格 默认预设 admin', guide: 'intelligence.md',
+    limitations: ['性格只影响助理表达，不改变权限、工具或审批策略；管理需 Sys.ai.personalities.manage。'] },
+  AiPersonalityInput: { words: '性格 人设 表达风格 自定义配置', guide: 'intelligence.md' },
+  runtimeOntology: { words: '领域本体 业务本体 本体助理 自动工具 运行时', guide: 'intelligence.md' },
   file: { words: '文件 附件 上传 单文件', guide: 'files.md' },
   files: { words: '文件 附件 上传 多文件', guide: 'files.md' },
   FileService: { words: '文件 断点续传 分片 上传 存储', guide: 'files.md' },
@@ -23,6 +47,10 @@ const topics: Record<string, { words: string; guide: string }> = {
   query: { words: '查询 报表 安全读取', guide: 'primitives.md' },
 };
 const examples: Record<string, string> = {
+  ai: "export const intelligence = ai({ models: { main: managedModel('main') }, assistant: { model: 'main', confirmWrites: true } })",
+  managedModel: "models: { main: managedModel('main') } // ai() 的配置片段；连接信息在 Admin 保存",
+  '@yss123/cage-approval#step': "step('材料预审', { kind: 'ai', model: 'main', instructions: '资料不足时转人工，并说明缺失信息。', context: { fields: ['reason'] }, handoff: approver.role('reviewer') })",
+  useAssistant: 'const assistant = useAssistant(client.ai, page); // page 由 useAiPageContext 提供，按 streamingText / progress 渲染',
   scope: "scope.self('applicantId'); scope.deptSubtree('deptId', 'applicantId')",
   reaction: "reaction(OrderApproved, { command: reserve, tx: 'same', map: event => ({ id: event.stockId }) })",
   reactionEach: "reactionEach(Allocated, { command: reserve, tx: 'same', order: 2, maxItems: 20, orderBy: 'id', items: event => event.devices, map: item => ({ id: item.id }) })",
@@ -63,14 +91,16 @@ export function publicCapabilities(cfg: CageConfig, query = '') {
       if (!declaration) return [];
       const name = symbol.name;
       const description = ts.displayPartsToString(target.getDocumentationComment(checker));
-      const topic = topics[name];
+      // 内核日志和审批路由都导出 step；同名符号的用法必须按包限定。
+      const key = `${pkg.name}#${name}`, topic = topics[key] ?? topics[name];
+      const example = examples[key] ?? examples[name];
       if (needle && !`${name} ${description} ${topic?.words ?? ''}`.normalize('NFKC').toLowerCase().includes(needle)) return [];
       const type = checker.getTypeOfSymbolAtLocation(target, declaration);
       const signatures = checker.getSignaturesOfType(type, ts.SignatureKind.Call).map(s => checker.signatureToString(s, declaration, ts.TypeFormatFlags.NoTruncation));
-      return [{ key: `${pkg.name}#${name}`, package: pkg.name, version: pkg.version, name, public: true, description,
+      return [{ key, package: pkg.name, version: pkg.version, name, public: true, description,
         signatures: signatures.length ? signatures : [declaration.getText().slice(0, 6000)],
-        guide: `docs/ai/${topic?.guide ?? 'README.md'}`, example: examples[name] ? { code: examples[name], context: '组合片段；声明中的业务符号须来自当前项目，完整可运行例子见 guide' } : undefined,
-        limitations: topic ? ['能力和数据范围仍由实际授权决定；按照当前签名与指南使用。'] : [],
+        guide: `docs/ai/${topic?.guide ?? 'README.md'}`, example: example ? { code: example, context: '组合片段；声明中的业务符号须来自当前项目，完整可运行例子见 guide' } : undefined,
+        limitations: topic ? ['能力和数据范围仍由实际授权决定；按照当前签名与指南使用。', ...(topic.limitations ?? [])] : [],
         source: { file: declaration.getSourceFile().fileName, line: declaration.getSourceFile().getLineAndCharacterOfPosition(declaration.getStart()).line + 1 } }];
     });
   });

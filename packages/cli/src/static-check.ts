@@ -21,6 +21,7 @@ export const PRIMITIVES = new Set([
   'outbound',
   'inbound',
   'route',
+  'ai',
 ]);
 
 const IO_MODULES =

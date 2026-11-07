@@ -47,6 +47,11 @@ function scan(directory: string): void {
 }
 
 const families: Record<string, { title: string; stage: string; verify: string }> = {
+  AI: {
+    title: '智能运行时',
+    stage: '领域声明 / 模型与运行预算配置',
+    verify: '重跑 cage check、迁移与相关测试，再以真实角色验证助理和审批；fake 成功不代表真实模型联调完成。',
+  },
   FILE: {
     title: '文件字段与上传',
     stage: '字段声明 / 私有文件服务配置',

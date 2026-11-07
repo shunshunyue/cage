@@ -36,9 +36,9 @@ transitions: [{ from: 'draft', to: 'missing', mode: 'automatic', label: '继续'
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
 - `packages/kernel/src/primitives/business-process.ts:58`
-- `packages/kernel/src/registry.ts:206`
-- `packages/kernel/src/registry.ts:209`
-- `packages/kernel/src/registry.ts:212`
+- `packages/kernel/src/registry.ts:215`
+- `packages/kernel/src/registry.ts:218`
+- `packages/kernel/src/registry.ts:221`
 
 实现片段（位置随框架版本更新）：
 

@@ -1,0 +1,9 @@
+{
+  "name": "@yss123/cage-ai", "version": "0.2.0", "type": "module", "description": "Cage 自研 AI 运行时、本体助理与智能审批执行器",
+  "main": "dist/index.js", "types": "dist/index.d.ts", "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "files": ["dist"], "scripts": { "build": "tsc -p tsconfig.json", "typecheck": "tsc -p tsconfig.json --noEmit" },
+  "dependencies": { "@yss123/cage-kernel": "workspace:*", "@yss123/cage-approval": "workspace:*", "@yss123/cage-connectors": "workspace:*", "@yss123/cage-ontology": "workspace:*", "@yss123/cage-ai-protocol": "workspace:*", "fastify": "^5.6.0", "kysely": "^0.28.5", "zod": "^4.1.5" },
+  "license": "MIT", "engines": { "node": ">=24" },
+  "repository": { "type": "git", "url": "git+https://github.com/shunshunyue/cage.git", "directory": "packages/ai" },
+  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" }
+}

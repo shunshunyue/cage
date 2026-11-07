@@ -18,6 +18,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
+  "dependencies": { "@yss123/cage-ai-protocol": "workspace:*" },
   "peerDependencies": {
     "@tanstack/react-query": "^5.0.0",
     "react": ">=18",

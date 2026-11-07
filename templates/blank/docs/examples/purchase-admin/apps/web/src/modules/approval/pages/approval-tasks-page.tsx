@@ -5,12 +5,16 @@ import { useCommand } from '../../../shared/hooks/use-command';
 import { Notice } from '../../../shared/ui/notice';
 import { PageHeading } from '../../../shared/ui/page-heading';
 import { useApprovalTasks } from '../hooks/use-approval-tasks';
+import { AssistantPage } from '../../../shared/ui/assistant-scope';
 
 export function ApprovalTasksPage({ orderUrl }: { orderUrl: (id: string) => string }) {
   const tasks = useApprovalTasks();
   const { run, busy, message, clearMessage } = useCommand();
   return (
     <>
+      <AssistantPage context={{ page: { id: 'approval-inbox', title: '审批待办', kind: 'list', route: '/approvals' },
+        visibleContent: [{ id: 'pending-tasks', text: tasks.data ? `当前待处理审批 ${tasks.data.length} 项，以重新查询的待办为准。` : '审批待办正在读取或暂时不可用。' }],
+      }} suggestions={['查看当前待我处理的审批', '通过、驳回和退回修改有什么区别？']} />
       <PageHeading eyebrow="APPROVAL INBOX" title="审批待办" description="处理分配给你的审批任务。" />
       {message && <Notice onClose={clearMessage}>{message}</Notice>}
       <section className="panel">
@@ -37,6 +41,7 @@ export function ApprovalTasksPage({ orderUrl }: { orderUrl: (id: string) => stri
               >
                 驳回
               </button>
+              <button disabled={busy} onClick={() => run(() => client.post(`/api/approval/tasks/${task.id}/return`), '已退回修改')}>退回修改</button>
               <button
                 disabled={busy}
                 className="primary"

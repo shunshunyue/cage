@@ -12,6 +12,13 @@ export interface ErrorGuide {
 }
 
 export const errorGuides: Record<string, ErrorGuide> = {
+  'CAGE-AI-001': {
+    title: '智能运行时声明无效',
+    when: '模型引用未配置、重复启用 AI 运行时，或上下文预算、重试、并发、超时、队列参数非法。',
+    fix: ['在 domain 顶层导出一个 ai({ models, assistant }) 声明，审批 step 的 model 引用同名模型。', '预算与并发为正整数；maxModelRetries 为 0 至 8，context.maxTools 最多 128（包含通用工具）。并发最多 32，单次运行 timeoutMs 最多 300000。API 与 worker 使用相同声明和模型配置。'],
+    positive: "ai({ models: { main: provider }, assistant: { model: 'main', limits: { maxSteps: 8 } } })",
+    negative: "ai({ models: {}, assistant: { model: 'missing', limits: { maxSteps: 0 } } })",
+  },
   'CAGE-FILE-001': {
     title: '文件字段或上传配置无效',
     when: '文件缺少明确的大小/MIME 限制，多文件数量无效，文件嵌入 JSON/事件/范围字段，或存储分片配置超出适配器限制。',

@@ -5,3 +5,4 @@ export * from './modules/purchase/index.js';
 export * from './workflows/purchase-inventory.js';
 export * from './workflows/purchase-process.js';
 export * from './integrations/erp.js';
+export * from './integrations/intelligence.js';

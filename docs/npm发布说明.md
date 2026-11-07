@@ -1,6 +1,6 @@
 # Cage 的 npm 发包步骤
 
-更新日期：2026-11-02。本文针对本仓库的十个 npm 包，使用 PowerShell、Node.js 24 和 pnpm 10。当前已发布版本为 `0.2.0`（latest），验收见[发布记录](release-0.2.0.md)；下面首版操作保留供历史参考，路径和版本按当前目标替换。
+更新日期：2026-11-05。本文针对本仓库的公开框架包，使用 PowerShell、Node.js 24 和 pnpm 10。当前已发布版本为 `0.2.0`（latest），验收见[发布记录](release-0.2.0.md)；下面首版操作保留供历史参考，路径和版本按当前目标替换。新增原生 AI 相关包目前为工作区实现，下次发布须统一升级版本，不能覆盖已发布的 `0.2.0`。
 
 ## 1. 已确定的发布信息
 
@@ -28,6 +28,10 @@ GitHub 保存源码、范例、模板、测试和文档；npm 保存经过构建
 | `@yss123/cage-approval` | 审批路由、待办和适配 |
 | `@yss123/cage-connectors` | 第三方出入站与连接器运行时 |
 | `@yss123/cage-client` | 前端请求、权限判断和 hooks |
+| `@yss123/cage-files` | 私有文件存储与上传会话 |
+| `@yss123/cage-ai` | 持久 Agent 循环、领域助理与 AI 审批执行 |
+| `@yss123/cage-ai-protocol` | 浏览器安全的 AI 协议和输入校验 |
+| `@yss123/cage-ontology` | 运行时本体生成与能力检索 |
 | `@yss123/cage-cli` | cage 命令、图谱、生成、模板和错误码 |
 | `@yss123/cage-testkit` | 测试数据库与测试辅助能力 |
 | `@yss123/cage-lint` | ESLint 与依赖边界规则 |

@@ -47,6 +47,11 @@ export async function api<T>(method: 'GET' | 'POST', url: string, body?: unknown
     body: method === 'POST' ? JSON.stringify(body ?? {}) : undefined,
   });
   const data = await response.json();
+  checkResponse(response, data, url);
+  return data as T;
+}
+
+function checkResponse(response: Response, data: any, url: string): void {
   if (!response.ok) {
     if (response.status === 401 && url !== '/auth/login') {
       state.me = null;
@@ -54,12 +59,37 @@ export async function api<T>(method: 'GET' | 'POST', url: string, body?: unknown
       state.csrf = null;
       window.dispatchEvent(new Event('cage:session-expired'));
     }
-    const detail =
-      data.domainCode || data.detail?.message || (typeof data.detail === 'string' ? data.detail : '');
+    // 参数校验使用 issues 数组。丢弃它会让所有字段错误都退化成“请检查填写内容”。
+    const fields: Record<string, string> = { baseUrl: 'API 基地址', model: '模型名称', apiKey: 'API Key', apiFormat: '接口协议', contextWindowTokens: '上下文窗口', responsesCompaction: '服务端自动压缩', timeoutMs: '调用超时', label: '显示名称', version: '配置版本', description: '性格描述', avatar: '头像', address: '称呼', examples: '说话示例', defaultKey: '默认性格' };
+    const detail = data.domainCode || data.detail?.message || (Array.isArray(data.detail)
+      ? data.detail.map((issue: { path?: string; message?: string }) => `${fields[issue.path ?? ''] ?? issue.path ?? '参数'}：${issue.message ?? '格式无效'}`).join('；')
+      : typeof data.detail === 'string' ? data.detail : '');
     const message = `${errors[data.code] ?? '服务暂时无法处理请求'}${detail ? `：${detail}` : ''}`;
     throw new ApiError(data.code, message);
   }
-  return data as T;
+}
+
+/** 管理预览逐段更新，沿用登录、CSRF 和错误提示；不将模型文本作为 HTML 插入。 */
+export async function postEvents<T>(url: string, body: unknown, onEvent: (event: T) => void, signal: AbortSignal): Promise<void> {
+  if (!state.csrf) state.csrf = (await api<{ token: string }>('GET', '/auth/csrf')).token;
+  const response = await fetch(url, { method: 'POST', credentials: 'include', signal,
+    headers: { 'content-type': 'application/json', accept: 'text/event-stream', 'x-csrf-token': state.csrf!, 'idempotency-key': crypto.randomUUID() }, body: JSON.stringify(body) });
+  if (!response.ok) checkResponse(response, await response.json(), url);
+  if (!response.body || !response.headers.get('content-type')?.includes('text/event-stream')) throw new Error('试聊连接未建立，请重试');
+  const reader = response.body.getReader(), decoder = new TextDecoder(); let buffer = '';
+  try {
+    for (;;) {
+      const part = await reader.read(); if (part.done) break;
+      buffer += decoder.decode(part.value, { stream: true });
+      if (buffer.length > 1_000_000) throw new Error('试聊返回内容过大');
+      let boundary: RegExpExecArray | null;
+      while ((boundary = /\r?\n\r?\n/.exec(buffer))) {
+        const block = buffer.slice(0, boundary.index); buffer = buffer.slice(boundary.index + boundary[0].length);
+        const value = block.split(/\r?\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n');
+        if (value) onEvent(JSON.parse(value) as T);
+      }
+    }
+  } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
 
 export const can = (capability: string) => Boolean(state.me?.capabilities.includes(capability));

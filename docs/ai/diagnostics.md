@@ -5,11 +5,16 @@
 ```powershell
 pnpm exec cage capabilities 本人 --format json
 pnpm exec cage capabilities reactionEach --format json
+pnpm exec cage capabilities "AI审批" --format json
+pnpm exec cage capabilities "页面上下文" --format json
+pnpm exec cage capabilities "性格" --format json
 pnpm exec cage context "设备归还" --format json
 pnpm exec cage doctor --format json
 ```
 
 公开能力报告包含包版本、真实签名、公开导出名、声明位置与本地学习指南。未安装的包标为未检查；未命中关键词不能证明能力不存在。完整例子见 [原语](primitives.md) 和 [任务配方](recipes.md)。
+
+原生智能化可用“AI审批”“业务助理”“随页助理”“模型管理”“性格”“Responses”“上下文预算”等关键词检索，结果指向[智能化指南](intelligence.md)。例如 AI 审批返回现有 `step` 的重载及 `AiStepOptions`，不是另造 `aiStep` 原语。公开能力可被检索，不代表本应用已经导出 `ai()`、执行迁移、配置模型或授予角色权限；接着核对项目启用状态，最后进行实际功能验证。
 
 `doctor` 复用 `check`、`gen --check`，输出统一的 `schemaVersion / observedAt / checks / findings / registration / routes`。每个检查包含 `status / source / reason / next`。`pass` 表示相应证据通过，`fail` 表示已发现问题，`unknown` 表示未检查；`complete: false` 不能作为完整验收通过。注册报告列出声明位置、domain 入口、注册节点和对应路由，集合反应还包含上限、排序键、顺序和事务。
 

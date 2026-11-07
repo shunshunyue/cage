@@ -1,5 +1,5 @@
 // 启动时根据注册表输出一份 OpenAPI 文档；前端 SDK 由 cage gen 从声明里的 Zod schema 生成。
-import { hiddenFields, isRelation, type Fields, type Kernel } from '@yss123/cage-kernel';
+import { hiddenFields, isRelation, runtimeServices, type Fields, type Kernel } from '@yss123/cage-kernel';
 import { z } from 'zod';
 import type { RouteInfo } from './routes.js';
 
@@ -116,5 +116,6 @@ export function buildOpenApi(k: Kernel, routes: RouteInfo[], info: { title?: str
     }
     (paths[url] ??= {})[r.method.toLowerCase()] = op;
   }
+  for (const service of runtimeServices(k)) for (const [path, operations] of Object.entries(service.openapi?.() ?? {})) paths[path] = { ...paths[path], ...operations };
   return { openapi: '3.1.0', info: { title: info.title ?? 'cage api', version: info.version ?? '0.0.0' }, paths, components: { schemas } };
 }

@@ -37,14 +37,14 @@ deptLeader('deptId')：给该部门设置负责人；role('finance')：给实际
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/approval/src/engine.ts:64`
+- `packages/approval/src/engine.ts:73`
 
 实现片段（位置随框架版本更新）：
 
 ```ts
     if (who.length === 0) {
-      throw new Error(`[CAGE-APPR-007] 流程 ${this.route.process} 第 ${index + 1} 步「${s.title}」找不到审批人，请在 /admin 配置部门负责人或角色`);
+      throw new Error(`[CAGE-APPR-007] 流程 ${this.route.process} 第 ${index + 1} 步「${title}」找不到审批人，请在 /admin 配置部门负责人或角色`);
     }
     for (const assignee of new Set(who)) {
-      await tx.insertInto('flow.approval_task').values({ instance_id: instanceId, tenant_id: tenantId, step: index, title: s.title, assignee }).execute();
+      await tx.insertInto('flow.approval_task').values({ instance_id: instanceId, tenant_id: tenantId, step: index, title, assignee }).execute();
 ```

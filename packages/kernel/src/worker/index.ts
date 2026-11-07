@@ -1,6 +1,7 @@
 // worker 进程：投递 outbox、执行反应、启动审批、跑定时任务、调用第三方。与 api 同一份代码和镜像，只是启动命令不同。
 import { sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
+import { runtimeServices } from '../runtime.js';
 import type pg from 'pg';
 import { dedicatedClient, urlsFromEnv, type DatabaseUrls } from '../db/connect.js';
 import { createKernel, type Kernel } from '../kernel.js';
@@ -63,6 +64,7 @@ export function workerManifest(k: Kernel, opts: Pick<WorkerOptions, 'approvalEng
 
 /** 不启动循环，只创建可手动驱动的 worker（测试用） */
 export function createWorker(k: Kernel, opts: WorkerOptions = {}): Omit<WorkerHandle, 'stop'> {
+  const services = runtimeServices(k);
   const consumers = buildConsumers(k, opts);
   const manifest = describeConsumers(k, consumers);
   const max = opts.maxAttempts ?? MAX_ATTEMPTS;
@@ -75,7 +77,9 @@ export function createWorker(k: Kernel, opts: WorkerOptions = {}): Omit<WorkerHa
       let n = 0;
       for (let i = 0; i < maxRounds; i++) {
         const rows = await claimBatch(k, opts.concurrency ?? 8);
-        if (rows.length === 0) break;
+        const extra = (await Promise.all(services.map(service => service.tick()))).reduce((a, b) => a + b, 0);
+        n += extra;
+        if (rows.length === 0 && extra === 0) break;
         await Promise.all(rows.map((r) => deliver(k, r, consumers, max)));
         n += rows.length;
       }
@@ -96,6 +100,7 @@ export async function startWorker(opts: WorkerOptions = {}): Promise<WorkerHandl
   let wake: (() => void) | null = null;
   const timers: NodeJS.Timeout[] = [];
   const controller = new AbortController();
+  const services = runtimeServices(k);
   const active = new Map<string, Promise<void>>();
   const deliveries = new Set<number>();
   const state: WorkerSnapshot = {
@@ -129,6 +134,7 @@ export async function startWorker(opts: WorkerOptions = {}): Promise<WorkerHandl
   let listener: pg.Client | null = null;
   let lockConn: pg.Client | null = null;
   try {
+    for (const service of services) await service.ready();
     listener = await dedicatedClient(appUrl, 'cage-worker-listen');
     await listener.query('LISTEN cage_outbox');
     state.listenerHealthy = true;
@@ -141,6 +147,7 @@ export async function startWorker(opts: WorkerOptions = {}): Promise<WorkerHandl
     await heartbeat();
   } catch (e) {
     state.status = 'error';
+    await Promise.allSettled(services.map(service => service.close()));
     await listener?.end().catch(() => {});
     await lockConn?.end().catch(() => {});
     if (!opts.kernel) await k.close();
@@ -174,6 +181,12 @@ export async function startWorker(opts: WorkerOptions = {}): Promise<WorkerHandl
       wake = null;
     }
   })();
+
+  for (const [index, service] of services.entries()) {
+    const run = () => launch(`runtime:${index}`, () => service.tick(controller.signal));
+    run();
+    timers.push(setInterval(run, poll));
+  }
 
   timers.push(setInterval(() => launch('sweep', () => sweepStale(k)), 60_000));
   const housekeeping = async () => {
@@ -219,6 +232,7 @@ export async function startWorker(opts: WorkerOptions = {}): Promise<WorkerHandl
       const cleanup = (async () => {
         await loop;
         await Promise.allSettled([...active.values()]);
+        await Promise.all(services.map(service => service.close()));
         // 仍在执行的 scheduler Promise 完成后才允许关闭 session，释放跨实例锁。
         await listener!.end();
         await lockConn?.end();

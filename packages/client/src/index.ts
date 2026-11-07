@@ -3,6 +3,8 @@
 import { useMutation, useQuery, useQueryClient, type QueryKey, type UseQueryOptions } from '@tanstack/react-query';
 import { useSyncExternalStore } from 'react';
 import type { z } from 'zod';
+import { AiClient, type ApprovalHistory } from './ai.js';
+export * from './ai.js';
 import { FileUploadTask, type FileUploadOptions, type UploadTarget, type UploadSession, type UploadPart, type FileInfo } from './files.js';
 export * from './files.js';
 
@@ -59,6 +61,7 @@ function uuid(): string {
 }
 
 export class CageClient {
+  readonly ai = new AiClient(this);
   private csrfToken: string | null = null;
   private session: SessionSnapshot = { user: null, capabilities: [], revision: 0 };
   private listeners = new Set<(snapshot: SessionSnapshot, reason: SessionReason) => void>();
@@ -184,6 +187,24 @@ export class CageClient {
     });
   }
 
+  /** 流消费与普通请求共用会话取消、401 和超时处理；正文不走 JSON 响应解析。 */
+  async stream(path: string, query: Record<string, unknown>, consume: (body: ReadableStream<Uint8Array>) => Promise<void>, options: RequestOptions = {}): Promise<CageResult<void>> {
+    return this.request({ timeoutMs: 60_000, ...options }, async (signal, revision) => {
+      const res = await this.f(this.url(path, query), { credentials: 'include', signal, headers: { accept: 'text/event-stream' } });
+      if (!res.ok) return this.handle<void, never>(res, revision);
+      if (!res.body || !res.headers.get('content-type')?.includes('text/event-stream')) return { ok: false, code: 'NETWORK', status: res.status };
+      await consume(res.body);
+      return { ok: true, data: undefined };
+    });
+  }
+
+  async delete<T>(path: string, options: RequestOptions = {}): Promise<CageResult<T>> {
+    return this.request(options, async (signal, revision) => {
+      const res = await this.f(this.url(path), { method: 'DELETE', credentials: 'include', signal, headers: { 'x-csrf-token': await this.csrf(false, signal) } });
+      return this.handle<T, never>(res, revision);
+    });
+  }
+
   async login(username: string, password: string) {
     this.clearSession('account-switch');
     const revision = this.session.revision;
@@ -240,6 +261,10 @@ export class CageClient {
     const r = await this.post('/auth/logout');
     if (r.ok) this.clearSession('logout');
     return r;
+  }
+
+  approvalHistory(aggregate: string, id: string, options?: RequestOptions) {
+    return this.get<ApprovalHistory[]>(`/api/approval/history/${encodeURIComponent(aggregate)}/${encodeURIComponent(id)}`, undefined, options);
   }
 }
 

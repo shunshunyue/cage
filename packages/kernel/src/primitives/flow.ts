@@ -131,6 +131,10 @@ export interface Approval<A extends AnyAggregate = AnyAggregate> {
   /** 通过与驳回分别落到哪个命令（必须 invokedBy: process） */
   readonly onApproved: AnyCommand;
   readonly onRejected: AnyCommand;
+  /** 退回修改独立于最终驳回；重新提交会创建新审批轮次。 */
+  readonly onReturned?: AnyCommand;
+  /** 自动节点使用的角色 code；权限与范围从当前角色授权解析。 */
+  readonly automatedBy?: string;
 }
 
 export function approval<A extends AnyAggregate>(
@@ -142,12 +146,14 @@ export function approval<A extends AnyAggregate>(
     routable: (keyof FieldsOf<A> & string)[];
     onApproved: AnyCommand;
     onRejected: AnyCommand;
+    onReturned?: AnyCommand;
+    automatedBy?: string;
   },
 ): Approval<A> {
   for (const f of def.routable) {
     if (!(f in agg.fields)) throw declError('CAGE-APPR-001', `可路由字段 ${agg.name}.${f} 不存在`);
   }
-  for (const c of [def.onApproved, def.onRejected]) {
+  for (const c of [def.onApproved, def.onRejected, ...(def.onReturned ? [def.onReturned] : [])]) {
     if (c.agg !== agg) throw declError('CAGE-APPR-002', `审批结论命令必须属于 ${agg.name}`);
     if (!c.invokedBy.includes('process')) {
       throw declError('CAGE-APPR-003', `审批结论命令必须声明 invokedBy: 'process'`);
@@ -162,6 +168,8 @@ export function approval<A extends AnyAggregate>(
     routable: Object.freeze([...def.routable]),
     onApproved: def.onApproved,
     onRejected: def.onRejected,
+    onReturned: def.onReturned,
+    automatedBy: def.automatedBy,
   });
 }
 

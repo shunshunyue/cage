@@ -63,7 +63,7 @@ export async function runMigrations(opts: {
     await client.query('select pg_advisory_lock($1)', [MIGRATION_LOCK]);
     await client.query(SCHEMA_MIGRATIONS_SQL);
     const done = new Map<string, string>((await client.query('select name, checksum from sys.schema_migrations')).rows.map((r) => [r.name, r.checksum]));
-    const all = [...SYSTEM_MIGRATIONS, ...opts.registry.systemDdl.map((sql, i) => ({ name: `cage:ext_${checksum(sql)}_${i}`, sql })), ...opts.migrations];
+    const all = [...SYSTEM_MIGRATIONS, ...opts.registry.systemDdl.map((sql, i) => ({ name: `cage:ext_${checksum(sql)}_${i}`, sql })), ...opts.registry.systemMigrations, ...opts.migrations];
     // 在执行任何新迁移之前核对历史内容。否则同名文件被改写后会被直接跳过，
     // 本地结构快照看起来已更新，真实数据库却仍保持旧结构，下一次发布才会出错。
     for (const migration of all) {

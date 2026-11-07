@@ -7,8 +7,19 @@ import { renderRoles } from '../modules/roles/index.js';
 import { renderAudit } from '../modules/audit/index.js';
 import { renderOperations, renderSync } from '../modules/operations/index.js';
 import { loginPage } from '../modules/auth/index.js';
+import { renderModels } from '../modules/models/index.js';
+import { renderPersonalities } from '../modules/personalities/index.js';
 
 const pages = {
+  personalities: {
+    title: '助理性格', description: '设置助理的语气、表达习惯和默认性格，随时试聊。',
+    glyph: 'users', category: '运行与记录', render: renderPersonalities, need: ['Sys.ai.personalities.manage'],
+  },
+  models: {
+    title: 'AI 模型',
+    description: '为智能审批与业务助理配置模型连接，保存后后续调用自动生效。',
+    glyph: 'grid', category: '运行与记录', render: renderModels, need: ['Sys.ai.models.manage'],
+  },
   tasks: {
     title: '我的待办',
     description: '集中处理分配给你的审批任务，让每一步协作及时推进。',

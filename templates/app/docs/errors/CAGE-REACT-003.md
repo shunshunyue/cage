@@ -37,7 +37,7 @@ reactionEach(Allocated, { command: acquire, items: e => e.assets, maxItems: 20, 
 
 - `packages/kernel/src/primitives/collection.ts:36`
 - `packages/kernel/src/primitives/flow.ts:54`
-- `packages/kernel/src/registry.ts:183`
+- `packages/kernel/src/registry.ts:192`
 
 实现片段（位置随框架版本更新）：
 

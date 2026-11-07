@@ -34,7 +34,7 @@ export function budget(
     for (const match of readFileSync(primitivesFile, 'utf8').matchAll(
       /export const (\w+) = Symbol\.for\(/g,
     )) {
-      if (['CONSUMERS', 'SYSTEM_DDL'].includes(match[1])) continue;
+      if (['CONSUMERS', 'SYSTEM_DDL', 'RUNTIME', 'MIGRATIONS'].includes(match[1])) continue;
       vocabulary.add(families[match[1]] ?? match[1].toLowerCase());
     }
   }

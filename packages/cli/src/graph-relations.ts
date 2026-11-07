@@ -15,9 +15,10 @@ export interface RelationExplanation {
 
 // 只读取路由 JSON 中与字段有关的结构，浏览器无需加载审批引擎。
 interface RouteStep {
-  kind: 'step';
+  kind: 'step' | 'ai';
   title: string;
-  approver: { kind: string; field?: string };
+  approver?: { kind: string; field?: string };
+  handoff?: { kind: string; field?: string };
 }
 interface RouteWhen {
   kind: 'when';
@@ -166,8 +167,8 @@ export function explainEdge(
         const nodes = from.attrs.nodes as (RouteStep | RouteWhen)[];
         const conditions = nodes.filter((n): n is RouteWhen => n.kind === 'when' && n.cond.field === field);
         const steps = nodes
-          .flatMap((n) => (n.kind === 'step' ? [n] : n.steps))
-          .filter((s) => s.approver.kind === 'deptLeader' && s.approver.field === field);
+          .flatMap((n) => (n.kind !== 'when' ? [n] : n.steps))
+          .filter((s) => (s.approver ?? s.handoff)?.kind === 'deptLeader' && (s.approver ?? s.handoff)?.field === field);
         const operators: Record<string, string> = {
           gt: '大于',
           gte: '大于等于',
@@ -316,7 +317,8 @@ export function explainEdge(
         );
       const approved = from.attrs.onApproved === to.id;
       const rejected = from.attrs.onRejected === to.id;
-      const outcome = approved && rejected ? '结束' : approved ? '通过' : '驳回';
+      const returned = from.attrs.onReturned === to.id;
+      const outcome = approved && rejected ? '结束' : approved ? '通过' : returned ? '退回修改' : '驳回';
       return result(
         `${outcome}后执行`,
         '审批结论回写',
@@ -325,6 +327,7 @@ export function explainEdge(
         [
           approved ? `${from.id}.onApproved → ${to.id}` : '',
           rejected ? `${from.id}.onRejected → ${to.id}` : '',
+          returned ? `${from.id}.onReturned → ${to.id}` : '',
         ].filter(Boolean),
       );
     }

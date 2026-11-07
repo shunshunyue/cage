@@ -1,7 +1,8 @@
 // 代码内封闭路由：一小组固定的组合子（step、when、gt、approver.*），和范围组合子一样只能从里面选，
 // 所以抽取器能读懂：改 amount 的口径时，影响分析会把这条路由列出来。
-import { ROUTE, SYSTEM_DDL, declError, type Kernel } from '@yss123/cage-kernel';
+import { ROUTE, SYSTEM_DDL, MIGRATIONS, declError, type Kernel, type Registry } from '@yss123/cage-kernel';
 import { InCodeEngine } from './engine.js';
+import { APPROVAL_AI_MIGRATION, type AiStep, type AiStepOptions } from './ai.js';
 
 export type Approver =
   | { kind: 'deptLeader'; field: string }
@@ -42,16 +43,26 @@ export interface Step {
 export interface When {
   kind: 'when';
   cond: Condition;
-  steps: Step[];
+  steps: ApprovalStep[];
 }
 
-export type RouteNode = Step | When;
+export type ApprovalStep = Step | AiStep;
+export type RouteNode = ApprovalStep | When;
 
-export function step(title: string, who: Approver, opts: { mode?: 'any' | 'all' } = {}): Step {
+export function step(title: string, who: Approver, opts?: { mode?: 'any' | 'all' }): Step;
+export function step(title: string, who: AiStepOptions): AiStep;
+export function step(title: string, who: Approver | AiStepOptions, opts: { mode?: 'any' | 'all' } = {}): ApprovalStep {
+  if (who.kind === 'ai') {
+    if (!who.model?.trim() || !who.instructions?.trim() || !who.handoff || !who.context?.fields.length)
+      throw declError('CAGE-APPR-006', 'AI 步骤需要模型、审核要求、上下文字段和接管规则');
+    for (const value of Object.values(who.limits ?? {})) if (!Number.isSafeInteger(value) || value! <= 0)
+      throw declError('CAGE-APPR-006', 'AI 步骤运行预算必须是正整数');
+    return Object.freeze({ ...who, title, context: { fields: [...who.context.fields], queries: [...(who.context.queries ?? [])] } });
+  }
   return { kind: 'step', title, approver: who, mode: opts.mode ?? 'any' };
 }
 
-export function when(cond: Condition, ...steps: Step[]): When {
+export function when(cond: Condition, ...steps: ApprovalStep[]): When {
   return { kind: 'when', cond, steps };
 }
 
@@ -70,10 +81,10 @@ export function evalCondition(c: Condition, vars: Record<string, unknown>): bool
 }
 
 /** 按流程变量展开出实际要走的步骤 */
-export function resolveSteps(nodes: readonly RouteNode[], vars: Record<string, unknown>): Step[] {
-  const out: Step[] = [];
+export function resolveSteps(nodes: readonly RouteNode[], vars: Record<string, unknown>): ApprovalStep[] {
+  const out: ApprovalStep[] = [];
   for (const n of nodes) {
-    if (n.kind === 'step') out.push(n);
+    if (n.kind !== 'when') out.push(n);
     else if (evalCondition(n.cond, vars)) out.push(...n.steps);
   }
   return out;
@@ -88,6 +99,8 @@ export interface Route {
   /** 代码内引擎（worker 与 HTTP 层使用） */
   readonly engine: (k: Kernel) => InCodeEngine;
   readonly [SYSTEM_DDL]: () => string;
+  readonly [MIGRATIONS]: () => readonly { name: string; sql: string }[];
+  validate(registry: Registry): void;
 }
 
 const engines = new WeakMap<Kernel, Map<string, InCodeEngine>>();
@@ -97,9 +110,12 @@ export function route(process: string, nodes: RouteNode[]): Route {
   if (nodes.length === 0) throw declError('CAGE-APPR-006', `流程 ${process} 至少需要一个步骤`);
   const fields = new Set<string>();
   for (const n of nodes) {
-    const steps = n.kind === 'step' ? [n] : n.steps;
+    const steps = n.kind !== 'when' ? [n] : n.steps;
     if (n.kind === 'when') fields.add(n.cond.field);
-    for (const s of steps) if (s.approver.kind === 'deptLeader') fields.add(s.approver.field);
+    for (const s of steps) {
+      const selector = s.kind === 'ai' ? s.handoff : s.approver;
+      if (selector.kind === 'deptLeader') fields.add(selector.field);
+    }
   }
   const r: Route = Object.freeze({
     [ROUTE]: true as const,
@@ -114,6 +130,20 @@ export function route(process: string, nodes: RouteNode[]): Route {
       return e;
     },
     [SYSTEM_DDL]: () => FLOW_DDL,
+    [MIGRATIONS]: () => [APPROVAL_AI_MIGRATION],
+    validate: (registry: Registry) => {
+      const aiSteps = nodes.flatMap(n => n.kind === 'when' ? n.steps : [n]).filter((s): s is AiStep => s.kind === 'ai');
+      if (!aiSteps.length) return;
+      if (!registry.extensions.some(e => e.kind === 'RUNTIME' && e.value.name === 'ai')) throw declError('CAGE-APPR-006', 'AI 审批必须启用 cage-ai 运行时');
+      const binding = registry.approvalByProcess(process)?.a;
+      if (!binding?.onReturned || !binding.automatedBy) throw declError('CAGE-APPR-006', `AI 审批 ${process} 必须绑定 onReturned 和 automatedBy`);
+      for (const s of aiSteps) {
+        for (const field of s.context.fields) if (!binding.agg.fields[field] || binding.agg.fields[field].isHidden)
+          throw declError('CAGE-APPR-001', `AI 上下文字段 ${field} 不存在或不可公开`);
+        for (const query of s.context.queries ?? []) if (!registry.queries.some(q => q.name === query))
+          throw declError('CAGE-REG-001', `AI 步骤引用的查询 ${query} 未导出`);
+      }
+    },
   });
   return r;
 }

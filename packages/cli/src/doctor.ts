@@ -53,7 +53,7 @@ export async function doctor(cfg: CageConfig, options: { runtimeUrl?: string; co
   }
   const source = options.runtimeUrl ? 'GET /api/sys/diagnostics' : 'not-inspected';
   const extensions = result.registry?.systemDdl.map((sql, index) => `cage:ext_${createHash('sha256').update(sql).digest('hex').slice(0, 16)}_${index}`) ?? [];
-  const migrations = [...SYSTEM_MIGRATIONS.map(m => m.name), ...extensions, ...readMigrations(abs(cfg, cfg.migrations)).map(m => m.name)];
+  const migrations = [...SYSTEM_MIGRATIONS.map(m => m.name), ...extensions, ...(result.registry?.systemMigrations.map(m => m.name) ?? []), ...readMigrations(abs(cfg, cfg.migrations)).map(m => m.name)];
   const applied = runtime?.migrations?.applied;
   const pending = applied ? migrations.filter(name => !applied.includes(name)) : undefined;
   add('migration', pending ? pending.length ? 'fail' : 'pass' : 'unknown', source, pending ? `${pending.length} 个未执行项目迁移` : runtimeReason, ['审查迁移后显式 cage migrate'], { files: migrations, pending });
@@ -61,7 +61,7 @@ export async function doctor(cfg: CageConfig, options: { runtimeUrl?: string; co
   const roleRequired = result.registry ? new Set([
     ...result.registry.commands.filter(c => c.cmd.invokedBy.includes('user')).map(c => c.capability),
     ...result.registry.aggregates.map(a => `${a.name}.read`),
-    ...result.registry.approvals.flatMap(({ a }) => [result.registry!.capabilityOf(a.onApproved), result.registry!.capabilityOf(a.onRejected)]),
+    ...result.registry.approvals.flatMap(({ a }) => [result.registry!.capabilityOf(a.onApproved), result.registry!.capabilityOf(a.onRejected), ...(a.onReturned ? [result.registry!.capabilityOf(a.onReturned)] : [])]),
   ]) : undefined;
   const missing = configured && roleRequired ? [...roleRequired].filter(c => !configured.includes(c)) : undefined;
   add('authorization', missing ? missing.length ? 'fail' : 'pass' : 'unknown', source, missing ? '检查用户入口、读取和审批结论是否配置角色；内部任务命令不要求授予用户' : runtimeReason, ['管理员按角色、范围与额度显式配置业务授权'], { unconfigured: missing, optionalUnconfigured: configured && result.registry?.capabilityCatalog().filter(c => !roleRequired?.has(c.capability) && !configured.includes(c.capability)).map(c => c.capability) });

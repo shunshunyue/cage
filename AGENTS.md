@@ -14,6 +14,7 @@
 8. [本体查询与 AI 上下文](docs/ai/ontology-context.md)：开发前按中文需求查节点、关系与源码，判断候选证据和覆盖边界。
 9. [业务前端路由与浏览器验收](docs/ai/routing.md)：多页面 URL、登录回跳、系统管理共存、SPA 部署与实际浏览器验收。
 10. [能力发现与状态诊断](docs/ai/diagnostics.md)：公开签名、注册与构建状态、进程证据、执行时间线、授权解释与命名基线。
+11. [原生智能助理与 AI 审批](docs/ai/intelligence.md)：智能审批三态、领域助理、Admin 模型与性格配置、随页上下文、流式 SDK 和上下文预算。遇到相关需求先核对现有框架能力及应用启用状态。
 
 这些文档描述当前实现；技术方案中的规划不能直接当作已存在的 API。API 有疑问时核对相应包的 `src/index.ts` 和声明实现，不发明配置项、命令或导出。
 
@@ -26,6 +27,7 @@
 - **读侧**通过 `safe.*` 安全视图和只读账号查询，落实数据范围与敏感字段掩码。
 - **事件与反应**连接业务行为。`tx: 'same'` 与主命令共同提交；默认 outbox 由 worker 异步执行。标签 `acquires/releases` 仅用于静态资源配对，实际动作仍由命令完成。
 - **审批与第三方**最终回到领域命令。流程选人不等于授予能力，连接器不允许绕过命令直接写表。
+- **原生 AI**由 `ai()` 导出启用，AI 审批使用现有 `step` 的 `kind: 'ai'` 类型。框架负责执行循环、工具、会话与偏好记忆、流式接口和 SDK；应用负责策略、授权、页面快照与界面。给业务项目提供能力入口时修改 CLI 的 `sync.ts` 托管区、`capabilities.ts` 检索提示和 `docs/ai`，再同步模板；框架支持、应用启用、实际验证要分别说明。
 
 ## 到哪里修改
 
@@ -38,6 +40,7 @@
 | 审批路由、适配器、待办 | `packages/approval/src` | 决定步骤与执行人，结论通过命令落实 |
 | 连接器声明、验签、出站与 fake | `packages/connectors/src` | 管理外部 IO 边界 |
 | 客户端与 hooks | `packages/client/src` | 网络协议、类型化结果、界面能力判断 |
+| 原生 AI 运行时与本体 | `packages/ai/src`、`packages/ontology/src`、`packages/ai-protocol/src` | 持久循环、工具、记忆、审查执行；协议可供前端使用，运行时不得进入浏览器 |
 | 抽取、图规则、生成器、门禁、脚手架 | `packages/cli/src` | 静态分析与开发工具，不复制运行时业务逻辑 |
 | 测试环境、lint 规则 | `packages/testkit`、`packages/lint` | 真实 PostgreSQL 验证及依赖边界 |
 | 标准业务实现 | `examples/purchase-admin` | 演示如何消费框架，遵守其应用 AGENTS.md |

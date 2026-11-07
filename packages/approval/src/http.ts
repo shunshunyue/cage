@@ -15,7 +15,12 @@ export function approvalRoutes(app: FastifyInstance, opts: { kernel: Kernel; eng
     const lists = await Promise.all(opts.engines.map((e) => e.tasksOf(ctx.userId!, ctx.tenantId, status)));
     return lists.flat().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   });
-  for (const outcome of ['approve', 'reject'] as const) {
+  app.get('/api/approval/history/:aggregate/:id', async req => {
+    const ctx = user(req), params = req.params as { aggregate: string; id: string };
+    await opts.kernel.read.get(params.aggregate, params.id, ctx);
+    return (await Promise.all(opts.engines.map(engine => engine.history(params.aggregate, params.id, ctx)))).flat();
+  });
+  for (const outcome of ['approve', 'reject', 'return'] as const) {
     app.post(`/api/approval/tasks/:id/${outcome}`, async (req) => {
       const ctx = user(req);
       const id = (req.params as any).id as string;
@@ -24,7 +29,7 @@ export function approvalRoutes(app: FastifyInstance, opts: { kernel: Kernel; eng
       for (const e of opts.engines) {
         const owns = await opts.kernel.app.selectFrom('flow.approval_task as t').innerJoin('flow.approval_instance as i', 'i.id', 't.instance_id')
           .select('t.id').where('t.id', '=', id).where('i.process', '=', e.route.process).executeTakeFirst();
-        if (owns) return e.decide(id, ctx.userId!, ctx.tenantId, outcome === 'approve' ? 'approved' : 'rejected', comment);
+        if (owns) return e.decide(id, ctx.userId!, ctx.tenantId, outcome === 'approve' ? 'approved' : outcome === 'return' ? 'returned' : 'rejected', comment);
       }
       throw cageError('NOT_FOUND');
     });

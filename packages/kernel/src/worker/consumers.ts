@@ -16,6 +16,8 @@ export interface ApprovalEngine {
     tenantId: string;
     /** 只包含声明过的 routable 字段 */
     vars: Record<string, unknown>;
+    subjectVersion?: number;
+    eventId?: number;
     tx: Transaction<any>;
   }): Promise<{ instanceId: string }>;
   cancel(input: { process: string; businessKey: string; tenantId: string; tx: Transaction<any> }): Promise<void>;
@@ -62,7 +64,7 @@ export function approvalConsumers(k: Kernel, engines: Record<string, ApprovalEng
       event: a.start.name,
       async handle(row, tx) {
         const vars = await routableVars(k, a, row, tx);
-        await engine.start({ process: a.process, businessKey: row.aggregate_id, tenantId: row.tenant_id, vars, tx });
+        await engine.start({ process: a.process, businessKey: row.aggregate_id, tenantId: row.tenant_id, vars, tx, subjectVersion: row.aggregate_version ?? undefined, eventId: row.id });
       },
     });
     for (const ev of a.cancelOn) {

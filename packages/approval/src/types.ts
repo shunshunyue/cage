@@ -7,9 +7,10 @@ export interface ApprovalOutcome {
   tenantId: string;
   /** 单据 id */
   businessKey: string;
-  outcome: 'approved' | 'rejected';
+  outcome: 'approved' | 'rejected' | 'returned';
   /** 最后一位审批人：结论命令以流程身份执行，代表这个人（职责分离、额度按他判断） */
-  lastApprover: string;
+  lastApprover?: string;
+  expectedVersion?: number;
 }
 
 export interface ApprovalAdapter extends ApprovalEngine {

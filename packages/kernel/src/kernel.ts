@@ -149,6 +149,13 @@ export class Kernel {
     return (r.next ?? r.replay) as Record<string, any>;
   }
 
+  /** 可选服务在同一事务登记执行回执时使用；只返回可交付字段，避免泄漏内部快照。 */
+  async executePresentedIn(tx: Transaction<any>, ref: string | AnyCommand, raw: unknown, ctx: Ctx): Promise<Record<string, any>> {
+    const rc = this.resolve(ref);
+    const result = await this.run(tx, rc, raw, ctx, 0);
+    return result.presented ?? present(rc.cmd.agg, result.replay as Record<string, any>, ctx);
+  }
+
   /** 批量写入：每一行都完整走 12 关；默认逐行独立提交，可选整批原子。批量没有快捷路径。 */
   async executeBatch(ref: string | AnyCommand, rows: unknown[], ctx: Ctx, opts: { atomic?: boolean } = {}): Promise<BatchResult[]> {
     const rc = this.resolve(ref);
@@ -398,6 +405,7 @@ export class Kernel {
           event: ev.name,
           aggregate: cmd.agg.name,
           aggregate_id: next.id,
+          aggregate_version: next.version,
           payload: JSON.stringify(payload),
           actor: JSON.stringify({ kind: ctx.actor?.kind, id: ctx.actor?.id, userId: ctx.userId, onBehalfOf: ctx.onBehalfOf ?? null }),
           trace: JSON.stringify(carrier),

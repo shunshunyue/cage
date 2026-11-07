@@ -95,7 +95,7 @@ export function sampleFromSchema(schema: z.ZodType, seed = 'fake'): unknown {
 // ---------------- 调用 ----------------
 
 export class ConnectorError extends Error {
-  constructor(message: string, readonly status: number | null, readonly retryable: boolean, readonly outcome: 'rejected' | 'unknown' = 'rejected') {
+  constructor(message: string, readonly status: number | null, readonly retryable: boolean, readonly outcome: 'rejected' | 'unknown' = 'rejected', readonly providerCode?: string) {
     super(message);
     this.name = 'ConnectorError';
   }

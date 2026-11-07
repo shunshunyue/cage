@@ -46,6 +46,7 @@ it.each(['blank', 'purchase'] as const)('%s 模板交付完整本地教材，且
   const root = createApp(join(temporary, 'ai-business-guide-' + template), undefined, template);
   const agents = readFileSync(join(root, 'AGENTS.md'), 'utf8');
   expect(agents).toContain('docs/ai/README.md');
+  expect(agents).toContain('docs/ai/intelligence.md');
   expect(agents).toContain('项目自己的业务约定');
   expect(agents).toContain(managedBlock);
   expect(agents).not.toContain('../../docs/');
@@ -57,6 +58,8 @@ it.each(['blank', 'purchase'] as const)('%s 模板交付完整本地教材，且
     'docs/ai/primitives.md',
     'docs/ai/workflow.md',
     'docs/ai/ontology-context.md',
+    'docs/ai/intelligence.md',
+    'docs/ai/diagnostics.md',
     'docs/ai/recipes.md',
     'docs/ai/purchase-example.md',
     'docs/ai/troubleshooting.md',
@@ -73,6 +76,7 @@ it.each(['blank', 'purchase'] as const)('%s 模板交付完整本地教材，且
     'workflows/purchase-inventory.ts',
     'modules/purchase/approvals.ts',
     'integrations/erp.ts',
+    'integrations/intelligence.ts',
   ])
     expect(existsSync(join(root, reference, 'packages/domain/src', name)), name).toBe(true);
   const migration = readFileSync(join(root, 'db/migrations/0001_init.sql'), 'utf8');
@@ -85,6 +89,7 @@ it.each(['blank', 'purchase'] as const)('%s 模板交付完整本地教材，且
     expect(contracts).not.toContain('PurchaseOrder');
     expect(contracts).toContain('User.read');
     expect(readFileSync(join(root, 'apps/api/src/worker.ts'), 'utf8')).not.toContain('fakeConnector');
+    expect(readFileSync(join(root, 'packages/domain/src/index.ts'), 'utf8')).not.toContain('intelligence');
   } else {
     expect(migration).toContain('purchase_order');
     expect(contracts).toContain('PurchaseOrder.read');

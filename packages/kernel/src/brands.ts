@@ -21,6 +21,9 @@ export const ROUTE = Symbol.for('cage.route');
 export const CONSUMERS = Symbol.for('cage.consumers');
 // 运行时扩展点：带这个标记的声明对象可以提供框架自己的系统表 DDL
 export const SYSTEM_DDL = Symbol.for('cage.systemDdl');
+// 基础设施扩展，不增加领域原语：服务自行提供迁移、HTTP 与后台处理器。
+export const RUNTIME = Symbol.for('cage.runtime');
+export const MIGRATIONS = Symbol.for('cage.migrations');
 
 export const ALL_BRANDS = {
   AGGREGATE, STATES, COMMAND, EVENT, REACTION, QUERY, APPROVAL, JOB, BUSINESS_PROCESS, UNSAFE,

@@ -14,7 +14,8 @@ interface RouteCondition {
   op: 'gt' | 'gte' | 'lt' | 'lte' | 'eq' | 'ne' | 'in';
   value: string | number | boolean | (string | number)[];
 }
-type RouteNode = RouteStep | { kind: 'when'; cond: RouteCondition; steps: RouteStep[] };
+interface AiRouteStep { kind: 'ai'; title: string; handoff: RouteStep['approver'] }
+type RouteNode = RouteStep | AiRouteStep | { kind: 'when'; cond: RouteCondition; steps: (RouteStep | AiRouteStep)[] };
 
 export interface ApprovalTask {
   number: number;
@@ -74,7 +75,9 @@ export function approvalFlowForStep(
     return `${field}${op[condition.op]}${value}`;
   };
   let number = 0;
-  const task = (item: RouteStep): ApprovalTask => ({
+  const task = (item: RouteStep | AiRouteStep): ApprovalTask => item.kind === 'ai' ? {
+    number: ++number, title: item.title, actor: 'AI 审核', rule: '通过继续；退回修改结束本轮；转人工由本节点接管人处理', mode: 'any',
+  } : ({
     number: ++number,
     title: item.title,
     actor:
@@ -90,7 +93,7 @@ export function approvalFlowForStep(
     approval,
     route,
     groups: (route.attrs.nodes as RouteNode[]).map((item) =>
-      item.kind === 'step'
+      item.kind !== 'when'
         ? { tasks: [task(item)] }
         : { condition: conditionName(item.cond), tasks: item.steps.map(task) },
     ),

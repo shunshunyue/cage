@@ -46,10 +46,11 @@ for (const application of applications) {
   const agents = readFileSync(join(application, 'AGENTS.md'), 'utf8');
   if (
     !agents.includes('docs/ai/README.md') ||
+    !agents.includes('docs/ai/intelligence.md') ||
     !agents.includes('docs/errors/README.md') ||
     !agents.includes('<!-- cage:end -->')
   ) {
-    throw new Error('模板 AGENTS.md 必须包含本地学习入口、错误码入口与完整托管区');
+    throw new Error('模板 AGENTS.md 必须包含本地学习入口、原生智能化入口、错误码入口与完整托管区');
   }
 }
 

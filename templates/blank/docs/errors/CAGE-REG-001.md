@@ -34,20 +34,21 @@ export * from './inventory.js'; export * from './purchase-order.js';
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
+- `packages/approval/src/route.ts:144`
 - `packages/kernel/src/kernel.ts:118`
-- `packages/kernel/src/registry.ts:162`
-- `packages/kernel/src/registry.ts:168`
-- `packages/kernel/src/registry.ts:173`
-- `packages/kernel/src/registry.ts:187`
-- `packages/kernel/src/registry.ts:191`
-- `packages/kernel/src/registry.ts:221`
+- `packages/kernel/src/registry.ts:171`
+- `packages/kernel/src/registry.ts:177`
+- `packages/kernel/src/registry.ts:182`
+- `packages/kernel/src/registry.ts:196`
+- `packages/kernel/src/registry.ts:200`
+- `packages/kernel/src/registry.ts:230`
 
 实现片段（位置随框架版本更新）：
 
 ```ts
-    if (!rc) {
-      throw new Error(`[CAGE-REG-001] 找不到命令 ${typeof ref === 'string' ? ref : ref.agg.name + '.?'}，它是否从 domain 导出了？`);
-    }
-    return rc;
-  }
+        for (const query of s.context.queries ?? []) if (!registry.queries.some(q => q.name === query))
+          throw declError('CAGE-REG-001', `AI 步骤引用的查询 ${query} 未导出`);
+      }
+    },
+  });
 ```
