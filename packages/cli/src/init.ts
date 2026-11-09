@@ -1,3 +1,8 @@
+/**
+ * 使用管理员连接为既有 PostgreSQL 数据库准备 Cage 运行账号并生成本地配置。
+ * 先校验已有账号是否可复用，否则创建独立随机密码角色、设置权限，再将分角色连接与 Cookie 密钥写回 .env。
+ * 不创建数据库、不管理服务；连接与密码只进入配置文件，错误输出受控，集群已有共享角色时不擅自重置密码。
+ */
 // 首次接入已有 PostgreSQL：管理员只提供一次连接，框架负责账号、授权和本地凭证。
 // 建库、容器生命周期和业务表迁移仍由各自流程负责，启动应用不会隐式调用本模块。
 import { randomBytes } from 'node:crypto';
@@ -11,6 +16,9 @@ import { databaseConnectionError } from './migrate.js';
 const accounts = { APP: 'cage_app', READ: 'cage_read', MIGRATE: 'cage_migrate' } as const;
 type Account = keyof typeof accounts;
 type Connections = Record<Account, string>;
+/**
+ * 把缺值和脚手架 REPLACE_WITH_ 占位视为尚未配置；其余文本仍需后续 URL 和实际连接校验。
+ */
 const configured = (value: string | undefined): value is string => !!value && !value.includes('REPLACE_WITH_');
 
 /** 校验保存的账号能真正登录；重复 init 不以“文件存在”代替初始化成功。 */
@@ -54,11 +62,23 @@ function completedEnv(source: string, urls: Connections): string {
   return content.trimEnd() + '\n';
 }
 
+/**
+ * 账号准备结果，只含创建/复用状态与 .env 路径，不返回连接密码。
+ */
 export interface InitResult {
+  /** created 本次创建账号，reused 复用已有凭据且不重置密码。 */
   status: 'created' | 'reused';
+  /** 最终应用 .env 绝对路径，不包含凭据内容。 */
   envFile: string;
 }
 
+/**
+ * 准备或验证分角色连接，再把凭据安全交付本地配置。
+ * @param cfg 决定 .env 与模板环境文件路径。
+ * @param env 显式环境优先于文件，默认 process.env。
+ * @returns created 或 reused 与配置路径。
+ * @throws 配置、共享角色、连接或交付失败；提交前回滚，提交后替换失败保留凭据草稿。
+ */
 export async function initProject(cfg: CageConfig, env: NodeJS.ProcessEnv = process.env): Promise<InitResult> {
   const envFile = abs(cfg, '.env');
   const source = existsSync(envFile) ? readFileSync(envFile, 'utf8')

@@ -11,10 +11,15 @@ import type { AnyCommand } from '../primitives/command.js';
 import type { Job, JobApi } from '../primitives/flow.js';
 import { hash32 } from '../util/names.js';
 
+/** 计算给定时间之后的下一周期，不枚举历史遗漏周期；无效 cron 由解析器抛错。 */
 export function nextRun(cron: string, after: Date): Date {
   return CronExpressionParser.parse(cron, { currentDate: after }).next().toDate();
 }
 
+/**
+ * 为一次租户任务构造受限上下文；只能读 j.reads、调用 j.calls 中同一声明对象。
+ * 每次 call 独立经过内核事务，整个 job 不是一笔大事务；业务需自行设计多步重试与幂等。
+ */
 export function jobApi(k: Kernel, j: Job, tenantId: string, now: Date): JobApi {
   const caps = j.calls.map((c) => k.registry.capabilityOf(c));
   const ctx = systemCtx({ kind: 'job', name: j.name, tenantId, capabilities: caps });
@@ -44,6 +49,11 @@ export function jobApi(k: Kernel, j: Job, tenantId: string, now: Date): JobApi {
 /** 执行一次任务（拿到锁才执行）；返回是否执行了 */
 const running = new WeakMap<Kernel, Set<string>>();
 
+/**
+ * 同步登记本实例运行标记，再取得专用连接的会话咨询锁；二者分别防同进程重入和跨实例重叠。
+ * force 可忽略停用/已跑周期，但仍不能绕过互斥。拿锁后逐租户执行并汇总最后错误。
+ * 只有任务 Promise 真正结束才释放锁；返回 true 表示本轮执行过，不表示每个租户业务均成功。
+ */
 export async function tick(k: Kernel, j: Job, lockConn: pg.Client, scheduledAt: Date, force = false): Promise<boolean> {
   const active = running.get(k) ?? new Set<string>();
   running.set(k, active);

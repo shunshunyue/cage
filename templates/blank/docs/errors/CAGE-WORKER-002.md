@@ -35,9 +35,9 @@ worker 收到未知事件或缺少声明要求的消费者，消息不能静默�
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/connectors/src/runtime.ts:263`
-- `packages/kernel/src/worker/outbox.ts:39`
-- `packages/kernel/src/worker/outbox.ts:94`
+- `packages/connectors/src/runtime.ts:289`
+- `packages/kernel/src/worker/outbox.ts:40`
+- `packages/kernel/src/worker/outbox.ts:106`
 
 实现片段（位置随框架版本更新）：
 

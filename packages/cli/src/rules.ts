@@ -1,10 +1,21 @@
+/**
+ * 分析阶段的领域图规则集合，检查组织模型、状态可达性、资源配对及事件兼容。
+ * 规则消费本体而不执行命令，生成带错误码的 Finding；提供旧基线时才检查跨版本事件载荷。
+ * 静态资源标签、SQL 文本和状态图只是结构证据，实际事务、权限与 map 分支仍由运行时及业务测试验证。
+ */
 // 图规则：每条规则是一个函数，输入本体图，输出带错误码和修复方法的问题列表。
 import type { Finding } from './findings.js';
 import { checkBusinessProcesses } from './process-rules.js';
 import type { OntEdge, OntNode, Ontology } from './ontology.js';
 
+/**
+ * 将已有节点源码位置转成诊断定位，缺少文件时返回 undefined，不虚构跨包路径。
+ */
 const at = (n?: OntNode) => (n?.file ? `${n.file}:${n.line ?? 1}` : undefined);
 
+/**
+ * 为当前本体建立 kind+id 节点索引及按边方向筛选器，避免同名类别混淆；不缓存跨次分析状态。
+ */
 function index(g: Ontology) {
   const byId = new Map(g.nodes.map((n) => [`${n.kind}:${n.id}`, n]));
   const get = (kind: string, id: string) => byId.get(`${kind}:${id}`);
@@ -15,6 +26,11 @@ function index(g: Ontology) {
 }
 
 /** 状态 → 进入时获得的资源：命令迁移到 S、发出事件、事件触发标注了 acquires 的反应 */
+/**
+ * 沿迁移→事件→反应→命令的 acquires 标签归纳持有状态。
+ * @param g 本体图。
+ * @returns 状态、资源名和来源命令；只说明静态配对，不保证 map 每次执行。
+ */
 export function statesHoldingResources(g: Ontology): { state: string; resource: string; via: string }[] {
   const { out } = index(g);
   const held: { state: string; resource: string; via: string }[] = [];
@@ -31,6 +47,9 @@ export function statesHoldingResources(g: Ontology): { state: string; resource: 
   return held;
 }
 
+/**
+ * 沿给定命令发出的事件查找直接反应 releases 标签；只认声明配对，不执行释放动作或递归证明任意程序。
+ */
 function releasesOnPath(g: Ontology, via: string, resource: string): boolean {
   const { out } = index(g);
   for (const ev of out('emits', via)) {
@@ -42,6 +61,11 @@ function releasesOnPath(g: Ontology, via: string, resource: string): boolean {
 }
 
 /** CAGE-PAIR-002：进入某状态时获得了资源，从该状态出发的每一条迁移都必须释放它，或进入一个同样持有它的状态 */
+/**
+ * 检查离开持有状态的迁移是否声明释放，或进入同样持有资源的状态。
+ * @param g 当前图。
+ * @returns CAGE-PAIR-002 问题；标签一致不等于真实库存等业务动作已验证。
+ */
 export function checkPairing(g: Ontology): Finding[] {
   const { get } = index(g);
   const findings: Finding[] = [];
@@ -66,6 +90,11 @@ export function checkPairing(g: Ontology): Finding[] {
 }
 
 /** CAGE-STATE-010：每个状态都能从初始状态到达；CAGE-STATE-011：非终态必须有出边 */
+/**
+ * 从新建或初始状态计算可达性，并检查非终态出边。
+ * @param g 当前图。
+ * @returns 状态规则问题；默认 active/deleted 生命周期按框架约定特别处理。
+ */
 export function checkStates(g: Ontology): Finding[] {
   const { get } = index(g);
   const findings: Finding[] = [];
@@ -113,6 +142,11 @@ export function checkStates(g: Ontology): Finding[] {
 }
 
 /** CAGE-SENS-001：敏感字段不得原样进入事件载荷 */
+/**
+ * 检查事件同名载荷字段是否保留聚合敏感标记。
+ * @param g 当前图。
+ * @returns 可能进入 outbox 的敏感字段诊断；任意自定义映射仍须业务审查。
+ */
 export function checkSensitiveEvents(g: Ontology): Finding[] {
   const { get, out } = index(g);
   const findings: Finding[] = [];
@@ -139,6 +173,11 @@ export function checkSensitiveEvents(g: Ontology): Finding[] {
 }
 
 /** CAGE-APPR-010：invokedBy 为 process 的命令必须有审批绑定或反应调用它，否则没有人能调用 */
+/**
+ * 检查仅流程/外部可调用的命令是否有声明调用入口。
+ * @param g 当前图。
+ * @returns 缺流程入口错误或缺外部入口警告；有入口不表示已授权。
+ */
 export function checkProcessCommands(g: Ontology): Finding[] {
   const { into } = index(g);
   const findings: Finding[] = [];
@@ -167,6 +206,11 @@ export function checkProcessCommands(g: Ontology): Finding[] {
 }
 
 /** CAGE-QUERY-003：手写 SQL 只能引用 reads 里聚合的安全视图 */
+/**
+ * 从 SQL 文本检查 safe 视图与 reads 对应关系及显式基表引用。
+ * @param g 当前图。
+ * @returns 文本可识别的读取问题；不是完整 SQL 解析器，运行时只读账号仍是边界。
+ */
 export function checkQueries(g: Ontology): Finding[] {
   const { get } = index(g);
   const findings: Finding[] = [];
@@ -210,6 +254,11 @@ export function checkQueries(g: Ontology): Finding[] {
 }
 
 /** CAGE-ORG-001：domain 必须包含框架自带的组织模型 */
+/**
+ * 确认 domain 注册了 User、Dept、Role 三个框架组织聚合。
+ * @param g 当前图。
+ * @returns 缺少时单条 CAGE-ORG-001，否则空数组；不初始化组织数据。
+ */
 export function checkOrg(g: Ontology): Finding[] {
   const has = (id: string) => g.nodes.some((n) => n.kind === 'aggregate' && n.id === id);
   return has('User') && has('Dept') && has('Role')
@@ -224,6 +273,12 @@ export function checkOrg(g: Ontology): Finding[] {
 }
 
 /** CAGE-EVENT-002：事件载荷只允许向后兼容的变更（只能新增可选字段） */
+/**
+ * 比较同名事件字段的删除、类型改变及新增必填项。
+ * @param base 旧本体，代表可能仍有在途事件的声明。
+ * @param head 新本体。
+ * @returns 可识别的载荷兼容问题，不改写已入 outbox 的事件。
+ */
 export function checkEventCompat(base: Ontology, head: Ontology): Finding[] {
   const findings: Finding[] = [];
   const b = new Map(base.nodes.filter((n) => n.kind === 'event').map((n) => [n.id, n]));
@@ -262,6 +317,12 @@ export function checkEventCompat(base: Ontology, head: Ontology): Finding[] {
   return findings;
 }
 
+/**
+ * 汇总当前结构规则，存在基线时再加入事件兼容检查。
+ * @param g 当前本体。
+ * @param base 可选旧本体。
+ * @returns 按规则顺序拼接的发现，不修改图或尝试自动修复。
+ */
 export function runRules(g: Ontology, base?: Ontology | null): Finding[] {
   return [
     ...checkBusinessProcesses(g),

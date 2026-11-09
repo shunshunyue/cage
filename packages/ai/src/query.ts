@@ -1,13 +1,24 @@
+/**
+ * 把模型提交的有限查询计划编译到已授权聚合的 safe 视图。
+ * 由助理查询工具调用，字段来自注册表、值使用参数绑定；不接受任意 SQL、关联表或隐藏字段，结果在审计成功后才交给模型。
+ */
 import { cageError, snake, isRelation, canUnmask, type Kernel, type Ctx, type AnyField } from '@yss123/cage-kernel';
 import { queryPlanSchema } from '@yss123/cage-ai-protocol';
 import { sql } from 'kysely';
 import { parse } from './security.js';
 
 /** NL2Query 编译到有限查询计划；标识符来自注册表，值永远参数化，执行账号只能读 safe。 */
+/**
+ * 验证查询计划与聚合 read 能力，并构造受限投影、过滤、排序和分组指标。
+ * 隐藏字段、关系和 JSON 不参与计划；对敏感字段做过滤/排序/汇总要求解掩码能力，sum/avg 仅支持数值字段。
+ * 在安全只读事务内设置 5 秒语句超时，取 limit+1 行判断截断；随后可靠写入用途审计，审计失败不交付已查询数据。
+ * 返回来源、前 limit 行与 truncated 标记；结果受当前租户/范围约束，不能把截断页当作完整统计。
+ */
 export async function queryPlan(kernel: Kernel, ctx: Ctx, input: unknown): Promise<unknown> {
   const plan = parse(queryPlanSchema, input), agg = kernel.registry.aggregate(plan.aggregate);
   if (!agg || !ctx.capabilities.has(`${agg.name}.read`)) throw cageError('FORBIDDEN');
   const system: Record<string, string> = { id: 'id', status: 'status', version: 'version', createdAt: 'created_at', updatedAt: 'updated_at' };
+  // 标识符只从系统字段和注册字段映射；对敏感值做过滤/排序/汇总可能泄漏信息，因此 operation 额外要求解掩码权。
   const field = (name: string, operation = false): string => {
     if (Object.hasOwn(system, name)) return system[name];
     const f: AnyField | undefined = agg.fields[name];

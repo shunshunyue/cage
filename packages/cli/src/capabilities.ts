@@ -1,3 +1,8 @@
+/**
+ * 按当前安装包的声明文件建立公开能力目录，供 agent 查真实签名与本地指南。
+ * 依次尝试领域、契约、Web、项目及 CLI 的依赖边界，用 TypeScript 类型检查器解析公开导出。
+ * 关键词提示只帮助召回，不创造不存在的 API；未解析到包或声明文件时记录未检查，不据此判定框架不支持。
+ */
 // Public capability discovery reads installed declarations, never framework implementation bodies.
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -41,7 +46,19 @@ const topics: Record<string, { words: string; guide: string; limitations?: strin
   scope: { words: '本人 owner 部门 数据范围 授权', guide: 'architecture.md' },
   reaction: { words: '跨对象 事务 事件 反应 原子', guide: 'primitives.md' },
   reactionEach: { words: '批量 集合 多条 上限 顺序 事务', guide: 'diagnostics.md' },
-  approver: { words: '审批 选人 部门负责人 角色', guide: 'primitives.md' },
+  approver: { words: '审批 选人 部门负责人 角色 单据字段 人员数组', guide: 'approvals.md' },
+  '@yss123/cage-approval#parallel': { words: '审批 并行 网关 AND 分叉 汇合 多部门 分支 同时 联合会审', guide: 'approvals.md',
+    limitations: ['结构化 AND 分支同时开始，全部活动分支完成后继续；when 仍按启动快照求值，不支持任意跳转或运行中修改路线。'] },
+  '@yss123/cage-approval#branch': { words: '审批 并行 分支 内部顺序 嵌套 条件 AND 汇合', guide: 'approvals.md' },
+  InCodeEngine: { words: '复杂OA 审批 转办 转签 委派 归还 加签 前签 后签 并行必签 候选 领取 释放 claim unclaim 任务 操作历史 revision', guide: 'approvals.md',
+    limitations: ['候选领取由 assignment 声明，任务操作由 actions 开放；自然分钟 SLA 需 approvalOperations；parallel/branch 支持结构化 AND，并非任意流程图，不支持指定节点退回或管理员人员恢复。'] },
+  approvalOperations: { words: '审批 流程 时限 SLA 到期 临期 超时 提醒 站内通知 催办 已读 我的申请', guide: 'approvals.md',
+    limitations: ['显式导出运行时并迁移、启动 worker；step.sla 按自然分钟计时，route.reminders 限定申请人。没有工作日历、自动升级或外部通知。'] },
+  ApprovalNotice: { words: '审批 流程 提醒 站内通知 临期 超时 催办 已读', guide: 'approvals.md' },
+  TaskActionPolicy: { words: '审批 转办 委派 归还 加签 节点政策', guide: 'approvals.md' },
+  TaskActionInput: { words: '审批任务 输入 版本 原因 转办 委派 加签 前签 后签 领取 释放', guide: 'approvals.md' },
+  ApprovalTaskAction: { words: '前端 SDK 审批 转办 委派 归还 加签 候选 领取 释放', guide: 'approvals.md' },
+  CageClient: { words: '客户端 SDK 审批 转办 委派 归还 加签 操作历史 时限 提醒 催办 已读', guide: 'approvals.md' },
   connector: { words: '第三方 ERP 外呼 外部', guide: 'primitives.md' },
   command: { words: '命令 写入 校验 业务操作', guide: 'primitives.md' },
   query: { words: '查询 报表 安全读取', guide: 'primitives.md' },
@@ -55,9 +72,19 @@ const examples: Record<string, string> = {
   reaction: "reaction(OrderApproved, { command: reserve, tx: 'same', map: event => ({ id: event.stockId }) })",
   reactionEach: "reactionEach(Allocated, { command: reserve, tx: 'same', order: 2, maxItems: 20, orderBy: 'id', items: event => event.devices, map: item => ({ id: item.id }) })",
   approver: "step('部门负责人', approver.deptLeader('deptId'))",
+  '@yss123/cage-approval#parallel': "parallel('联合会审', branch('业务', step('业务审核', approver.role('reviewer'))), branch('财务', step('财务审核', approver.role('finance'))))",
+  '@yss123/cage-approval#branch': "branch('法务', step('合同核查', approver.role('legal')), step('法务复核', approver.role('legal_lead')))",
+  approvalOperations: 'export const approvalOps = approvalOperations(); // 再在人工 step 声明 sla、route 声明 reminders，并从 domain 入口导出',
   query: "query('recentOrders', { reads: [Order], input: z.object({}), sql: 'select id from safe.order limit 20' })",
 };
 
+/**
+ * 读取安装版本的公开导出签名，按关键词筛选可用 API 的证据。
+ * 查询只做归一化后的连续文本包含判断，不进行同义词推理；无结果和未检查包都不能说明能力不存在。
+ * @param cfg 用于定位应用不同包的依赖解析边界。
+ * @param query 公开名称、JSDoc 或维护的业务词条；空字符串返回全部已发现符号。
+ * @returns 包检查状态、真实签名、声明位置和本地 guide；不加载运行时实现或修改文件。
+ */
 export function publicCapabilities(cfg: CageConfig, query = '') {
   const requests = [createRequire(abs(cfg, cfg.domain)), createRequire(abs(cfg, `${cfg.contracts}/index.ts`)), createRequire(abs(cfg, `${cfg.web}/package.json`)), createRequire(abs(cfg, 'package.json')), createRequire(import.meta.url)];
   const packages = modules.flatMap<{ name: string; version: string | null; entry: string | null }>(module => {

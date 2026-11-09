@@ -34,15 +34,15 @@ event('OrderChanged', { phone: text().sensitive('phone') })
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/cli/src/rules.ts:115`
-- `packages/cli/src/rules.ts:129`
+- `packages/cli/src/rules.ts:144`
+- `packages/cli/src/rules.ts:163`
 
 实现片段（位置随框架版本更新）：
 
 ```ts
 
 /** CAGE-SENS-001：敏感字段不得原样进入事件载荷 */
-export function checkSensitiveEvents(g: Ontology): Finding[] {
-  const { get, out } = index(g);
-  const findings: Finding[] = [];
+/**
+ * 检查事件同名载荷字段是否保留聚合敏感标记。
+ * @param g 当前图。
 ```

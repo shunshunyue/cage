@@ -1,3 +1,8 @@
+/**
+ * 从本体声明生成通用性质测试及 Vitest 配置，由 cage test 和 verify 驱动。
+ * 按能力、状态、范围、审计、幂等、掩码和不变量生成代码，真实执行委托 cage-testkit。
+ * 生成器不能推断所有合法业务夹具；生成用例允许显式 skip，生成数量不等于已覆盖业务需求。
+ */
 // 派生测试生成器：遍历本体图，按固定模板为每个能力点、每个范围组合子、每条非法迁移生成测试。
 // 生成到 generated/tests，不入库，每次运行前重新生成。
 import { existsSync, mkdirSync, readdirSync, writeFileSync, unlinkSync } from 'node:fs';
@@ -5,15 +10,28 @@ import { join, relative } from 'node:path';
 import { abs, type CageConfig } from './config.js';
 import type { Ontology, OntNode } from './ontology.js';
 
+/**
+ * 生成性质测试的目录索引，供影响分析按主体挑选候选；不是测试执行结果。
+ */
 export interface DerivedTest {
+  /** 派生测试相对 generated/tests 目录的文件名，调用者结合配置解析完整路径。 */
   file: string;
+  /** 验证类别与主体组合的测试名，用于报告及候选选择。 */
   name: string;
   /** 这个测试守护的本体节点（影响分析据此挑选要运行的测试） */
   subject: string;
 }
 
+/**
+ * 把主体和测试名称编码成合法 TS 字符串字面量，不将业务文案作为生成代码拼接执行。
+ */
 const q = (s: string) => JSON.stringify(s);
 
+/**
+ * 生成每个测试文件的共享 setup/teardown 代码，使用领域入口建立 testkit 环境。
+ * @param domainImport 生成目录到 domain 的导入路径。
+ * @returns 源码行数组；仅拼接文本，不初始化数据库。
+ */
 function header(domainImport: string): string[] {
   return [
     '// 生成物：派生测试（cage test 每次运行前重新生成，不要手改）',
@@ -28,10 +46,25 @@ function header(domainImport: string): string[] {
   ];
 }
 
+/**
+ * 筛选当前本体中的命令节点，作为派生验证的主体集合。
+ */
 const commands = (g: Ontology) => g.nodes.filter((n) => n.kind === 'command');
+/**
+ * 只为声明允许 user 的命令生成用户能力验证，内部流程命令不补造用户入口。
+ */
 const userInvokable = (c: OntNode) => (c.attrs.invokedBy as string[]).includes('user');
+/**
+ * 从命令能力标识取得聚合前缀，与抽取器使用的 Aggregate.command 命名约定一致。
+ */
 const aggOf = (c: OntNode) => c.id.split('.')[0];
 
+/**
+ * 按本体生成通用性质用例文本及 subject 索引。
+ * @param cfg 决定生成目录和领域导入相对路径。
+ * @param g 当前本体，提供用户调用能力、状态、范围和不变量。
+ * @returns 待写文件内容与用例索引；不写盘、不执行测试，skip 处理留在生成用例里。
+ */
 export function deriveTests(
   cfg: CageConfig,
   g: Ontology,
@@ -152,6 +185,12 @@ export function deriveTests(
   return { files, tests };
 }
 
+/**
+ * 写入本轮派生测试，先清理当前生成器拥有的固定文件名。
+ * @param cfg 决定 generated/tests 位置。
+ * @param files deriveTests 产生的文件映射。
+ * @returns 测试目录绝对路径；用户额外文件不会被递归删除，IO 失败直接抛出。
+ */
 export function writeDerived(cfg: CageConfig, files: Record<string, string>): string {
   const dir = abs(cfg, join(cfg.generated, 'tests'));
   // 只清理本生成器拥有的测试文件，不递归删除配置指向的整个目录。
@@ -165,6 +204,12 @@ export function writeDerived(cfg: CageConfig, files: Record<string, string>): st
   return dir;
 }
 
+/**
+ * 生成用于本次测试进程的 Vitest 配置字符串。
+ * @param cfg 应用根与派生测试位置。
+ * @param only derived 仅派生、project 仅项目，省略时两者都包含。
+ * @returns 使用 testkit 全局准备的配置源码；超时单位为毫秒，不在此处启动测试。
+ */
 export function vitestConfig(cfg: CageConfig, only?: 'derived' | 'project'): string {
   const include =
     only === 'derived'

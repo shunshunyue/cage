@@ -1,106 +1,183 @@
 # Cage
 
-用 TypeScript 声明聚合、命令、权限、审批和第三方映射。写入经过内核，查询经过 PostgreSQL 安全视图，工具链负责生成和检查。
+**为 AI 开发而设计，为智能应用而生。**
 
-**使用入口：** [中文使用说明](docs/使用说明.md)（启动、数据库、图谱、命令、新建项目） · [设计实现对照表](docs/design-coverage.md)（完成项、差异与待办）。核心开发链路已可用，整份 v0.1 设计及生产验收尚未全部完成。
+Cage 是一个主要面向 **AI 编程智能体**使用的 TypeScript 业务框架。它把业务对象、操作、规则与流程组织成结构化声明，为 AI 提供可检索的上下文、明确的开发入口和可验证的反馈，并让应用中的智能助理与智能审批沿用同一套业务模型。
 
-**维护者发布：** [npm 发包步骤](docs/npm发布说明.md)。源码仓库为 <https://github.com/shunshunyue/cage>，npm 包使用 `@yss123/cage-*`，创建工具为 `@yss123/create-cage-app`，许可证为 [MIT](LICENSE)。
+![Cage：AI 通过结构化业务模型构建智能应用，米白色框架与少量青柠色智能节点相互连接](docs/images/readme/hero.webp)
 
-## 通过 npm 创建项目
+[开始使用](#开始使用) · [AI 开发指南](docs/ai/README.md) · [架构与执行模型](docs/ai/architecture.md) · [原生智能能力](docs/ai/intelligence.md) · [采购范例](examples/purchase-admin)
 
-本文对应 `0.2.0`：双模板选择、已有数据库初始化、中文管理界面及本体 AI 上下文。发布状态与验收结果见[发布记录](docs/release-0.2.0.md)。
+## 为什么要为 AI 设计一个业务框架
 
-`pnpm create @yss123/cage-app@0.2.0 my-app` 交互选择模板；脚本中使用 `pnpm create @yss123/cage-app@0.2.0 my-app --template blank` 或 `--template purchase`。业务项目只依赖 npm 包，不需要框架源码目录。
+AI 开发业务系统，需要知道现有能力在哪里、业务之间如何关联、哪些规则必须遵守，以及如何确认修改有效。业务越复杂，这些信息越容易分散在路由、数据库、页面和后台任务中。
 
-## 本地运行
+Cage 将这些信息组织成明确的开发入口。人提出业务目标、确认关键规则并验收结果，AI 围绕声明、上下文与工具完成实现，框架负责执行通用机制。
 
-要求 Node.js 24+、pnpm 10，以及已经存在、可连接的 PostgreSQL 数据库。数据库可以是本机安装、已有容器或远程服务，框架不管理它的生命周期。
+| 设计目标 | Cage 提供什么 |
+| --- | --- |
+| **能力有据可查** | 检索当前版本的公开签名、声明位置与使用指南；项目自带 `AGENTS.md`、标准范例和错误码册 |
+| **业务关系可以追溯** | 从声明抽取本体图，按需求查对象、操作、关联原因与源码位置 |
+| **业务规则有统一执行入口** | 通过命令落实权限、状态、范围、版本、事务等规则，通过安全读侧查询 |
+| **修改有明确反馈** | 生成契约和迁移草稿，检查声明与依赖，诊断注册、构建和运行状态 |
 
-```powershell
-pnpm install
-pnpm build
-cd examples/purchase-admin
-# 首次配置时复制；已有 .env 时直接编辑，保留现有值。
-Copy-Item .env.example .env
-# 编辑 .env，只填写 CAGE_ADMIN_DATABASE_URL，连接已有数据库。
-pnpm exec cage init
-# init 自动创建账号、生成密码并填写 .env。
-pnpm gen
-# 审查迁移后执行：
-pnpm migrate
-pnpm exec cage bootstrap --credentials-file .cage/admin-credentials.json
-pnpm dev
+> 让 AI 有依据地理解业务，有边界地修改业务，有证据地验证结果。
+
+## 一份业务声明，贯通开发与运行
+
+Cage 的中心是一份可执行的业务规格。用 TypeScript 声明业务对象的字段、关系、状态和约束，再通过命令、事件、反应、审批与连接器表达业务行为。
+
+同一份声明构建注册表、能力目录与 HTTP 路由，生成前端契约、安全 SQL 和迁移草稿，同时为本体图谱和 AI 上下文提供结构依据。
+
+![同一份 TypeScript 业务声明分别支撑应用运行、生成产物和 AI 上下文](docs/images/readme/business-model.svg)
+
+业务对象在 Cage 中称为**聚合**：它把需要共同遵守规则的数据、状态和操作放在一起。例如采购单既包含金额、明细和部门，也定义何时能提交、批准或取消。
+
+下面的取消命令节选自[采购领域声明](examples/purchase-admin/packages/domain/src/modules/purchase/purchase-order.ts)。`PurchaseOrder` 和 `OrderCancelled` 已在该模块声明，`command`、`emit` 来自 `@yss123/cage-kernel`。
+
+```ts
+/**
+ * 取消草稿、待审批或已批准的采购单；其他状态由内核拒绝。
+ * 事件保留取消前状态，供审批关闭和库存释放的订阅者判断后续动作。
+ * handler 返回当前业务内容，目标状态、权限、版本及事务提交由内核处理。
+ * 已批准单据的库存释放由异步反应执行，不保证在本次取消返回前完成。
+ */
+export const cancel = command(PurchaseOrder, {
+  from: ['draft', 'pending_approval', 'approved'],
+  to: 'cancelled',
+  emits: [emit(OrderCancelled, (order, _input, previous) => ({
+    orderId: order.id,
+    previousStatus: previous.status,
+  }))],
+  handler: (order) => order,
+});
 ```
 
-数据库连接统一配置在业务项目根目录的 `.env`，每项用途见 [配置示例](examples/purchase-admin/.env.example)。首次只填管理员连接，`cage init` 自动建立账号、生成密码、写入三个业务连接及 Cookie 密钥，成功后移除文件中的管理员连接。三个业务连接指向同一个数据库，分别使用写入、只读和迁移账号。连接池和事务由框架提供。
+从这段声明可以读出允许的状态、目标状态和业务事件；关联的审批、反应与释放命令则定义后续行为。AI 可以沿关系定位这些实现，开发者也能在图谱中查看它们。新增操作仍需从 domain 入口导出，并由管理员显式授权。
 
-- 日常启动执行 `pnpm dev`；表结构变化审查后执行 `pnpm migrate`。启动不建库，也不自动执行迁移。
-- Web 地址以终端为准；配置示例使用 <http://localhost:15173>，系统管理为 <http://localhost:3000/admin/>。
-- 迁移后显式 `cage bootstrap` 初始化组织，凭据交付到新的受限文件；API 日常启动不输出密码。数据库账号与网页登录账号不同。
-- 本地 ERP 使用 fake，数据库连接是真实 PostgreSQL；数据库测试使用独立、可丢弃的集群。
+前端通过生成契约和客户端调用业务能力。页面、交互和具体业务计算由应用实现，数据库结构变化以审查后的迁移落地。完整模式见[原语与最小业务](docs/ai/primitives.md)和[对象关系](docs/ai/relations.md)。
 
-账号权限与本机已有连接记录见 [数据库接入说明](docs/local-postgres.md)。
+## AI 如何使用 Cage 开发业务
 
-## 从模板创建
+以“调整采购单取消规则，并核对取消后的库存释放”为例，AI 先定位已有声明和关联流程，再修改实现、生成产物并验证结果。
 
-维护框架或试用尚未发布的本地修改时，先构建框架，再创建独立业务项目：
+![AI 从需求出发，检索上下文、修改业务、生成并审查，最后根据检查和实际验证结果继续迭代](docs/images/readme/ai-development.svg)
+
+在应用根目录，开发工具可以直接使用这些入口：
 
 ```powershell
-node packages/cli/bin/cage.js create ../my-app --framework-path F:/cage
-# ↑↓ 选择“空白业务项目”或“采购示例项目”，Enter 确认；也可显式指定 --template blank 或 purchase。
-cd ../my-app
+# 找到当前应用的业务入口、关系与源码。
+pnpm exec cage context "采购单取消与库存释放"
+
+# 查询当前安装版本提供的公开 API。
+pnpm exec cage capabilities "reaction" --format json
+
+# 修改前保存本体基线，修改后查看结构影响。
+pnpm exec cage snapshot save before-cancel-change
+# 在此完成声明、业务实现及相关页面的修改。
+pnpm exec cage impact --snapshot before-cancel-change --format json
+
+# 检查声明，生成契约与迁移草稿，再诊断注册和产物状态。
+pnpm exec cage check
+pnpm gen
+pnpm exec cage doctor
+```
+
+`context` 帮助找到业务，`capabilities` 核对框架能力，`impact` 比较本体变化，`doctor` 提供诊断证据。结构检查之后，还需要审查生成差异、运行相关测试并验收实际业务；诊断中的 `unknown` 表示尚无验证证据。
+
+每个脚手架项目都携带本地学习资料。可以把这样的任务交给 AI 编程工具：
+
+> 先读根目录 AGENTS.md 和 docs/ai/README.md，检索相关能力与业务上下文。为当前应用实现设备借用：申请、审批、领用和归还。先核对业务规则，再修改领域声明与页面，生成并审查契约和迁移，完成权限、状态与业务流程验证，分别报告通过、跳过和未执行的项目。
+
+日常业务开发使用已安装的框架包和项目内资料即可。进一步了解[本体与 AI 上下文](docs/ai/ontology-context.md)、[能力发现与诊断](docs/ai/diagnostics.md)和[业务任务配方](docs/ai/recipes.md)。
+
+## 让每个应用拥有原生智能的基础
+
+开发阶段，AI 使用 Cage 理解和构建业务；运行阶段，应用中的 AI 基于同一套业务定义发现能力、获取上下文并参与执行。
+
+**业务模型提供上下文，业务命令提供行动入口，执行规则约束每一次操作。**
+
+| 智能能力 | 如何进入业务 |
+| --- | --- |
+| **业务助理** | 从注册表发现当前用户获授权的对象、查询和命令，读取业务数据，并按确认策略执行操作 |
+| **随页上下文** | 页面通过 SDK 提供当前对象、选中项、筛选和未保存草稿，服务端重新核验相关访问权限 |
+| **AI 审批** | 在现有审批流程中配置 AI 节点，支持通过、退回修改或转人工，最终结论由领域命令落实 |
+| **持续交互** | 框架提供持久会话、工具执行、流式接口、偏好记忆和上下文预算，应用组合自己的交互界面 |
+
+应用从 domain 入口导出 `ai()`，完成系统迁移，配置部署加密密钥、模型、策略与角色权限，再接入客户端。模型管理由框架 Admin 提供；页面上下文与助理界面由应用实现。空白模板需显式启用 AI，采购范例可作为完整接入参考。
+
+例如，用户可以让助理查看采购单及审批记录，核对材料，或在确认后提交获授权的操作。AI 审批可先检查申请材料，再交给人工处理；模型故障时按节点配置转人工或记录失败。实际效果需要结合应用规则、真实模型和角色进行验收。
+
+![采购范例中的随页业务助理，以及同一单据先退回修改、重新提交后通过 AI 与人工审批的真实界面](docs/images/readme/intelligent-application.webp)
+
+*采购范例实机截图：左侧为随页业务助理，右侧为 AI 与人工审批记录。界面由应用实现，运行与执行能力由框架提供。*
+
+接入方式与验证步骤见[原生智能助理与 AI 审批](docs/ai/intelligence.md)。
+
+## 智能行动遵守业务规则
+
+Cage 将页面、流程和 AI 发起的业务操作接入统一执行体系。应用开放哪些能力，由声明与授权决定；一次操作能否成立，由实际业务规则决定。
+
+- **写入走命令。** 内核校验输入、身份、能力、数据范围、状态和版本，执行约束与业务计算，再提交记录、审计和 outbox。新增能力需显式授权。
+- **读取走安全视图。** PostgreSQL 只读账号通过 `safe.*` 查询，落实数据范围与敏感字段掩码；助理读工具沿用这条路径。
+- **协作通过事件和流程。** 反应可以选择同事务执行或 outbox 异步处理；审批结论回到领域命令，外部 IO 由连接器承接。
+- **AI 写入有确认与回执。** 助理写操作默认需要用户确认，并继续接受服务端授权与版本校验；持久执行记录用于交互、恢复与结果核对。
+
+图谱和静态检查提供声明关系与结构证据，业务测试验证具体行为。外部系统的幂等与恢复取决于实际协议，模型判断质量需要应用评测。详见[架构与执行模型](docs/ai/architecture.md)。
+
+## 开始使用
+
+需要 **Node.js 24+、pnpm 10 和一个已存在、可连接的 PostgreSQL 数据库**。框架提供数据库连接与事务管理，初始化负责准备账号和配置。
+
+```powershell
+pnpm create @yss123/cage-app@0.3.0 my-app
+cd my-app
 pnpm install
-Copy-Item .env.example .env
-# 填写 CAGE_ADMIN_DATABASE_URL；多个应用同时运行时分别配置 Web/API 空闲端口。
+```
+
+交互选择模板，也可在创建命令后追加 `--template blank` 或 `--template purchase`：
+
+| 模板 | 适合用途 | 初始内容 |
+| --- | --- | --- |
+| `blank` | 让 AI 从你的业务需求开始开发 | 登录、组织、权限与系统管理；本地开发指南和采购参考源码 |
+| `purchase` | 先运行完整业务，学习框架用法 | 采购、审批、库存协作、ERP fake 连接器及业务页面 |
+
+复制 `.env.example` 为 `.env`，按文件说明填写 `CAGE_ADMIN_DATABASE_URL`，连接已准备好的数据库。然后执行：
+
+```powershell
+# 准备数据库账号与本地配置，构建应用并生成产物。
 pnpm exec cage init
 pnpm build:app
 pnpm gen
-# 审查迁移后执行：
+
+# 审查 db/migrations 中的迁移后执行。
 pnpm migrate
 pnpm exec cage bootstrap --credentials-file .cage/admin-credentials.json
 pnpm dev
 ```
 
-生成项目通过依赖使用框架，数据库配置位于新项目的 `.env`，不复制框架源码。详细接入步骤见[使用说明第 9 节](docs/使用说明.md#9-从模板创建独立项目)。
+打开终端打印的 Web 地址。初始登录凭据由 `bootstrap` 写入指定的受限文件，交付后移除；日常启动使用 `pnpm dev`，结构变更经审查后显式迁移。
 
-空白模板保留登录、组织权限、系统管理、数据库配置和 AI 指南，没有采购或库存业务表；采购模板包含完整采购链路。空白模板的采购参考代码位于 `docs/examples/purchase-admin`，只供学习。CI/管道中必须明确指定目录和 `--template`，避免交互等待。
+启用智能能力时，继续完成模型配置、权限和界面接入。详细启动与部署步骤见[中文使用说明](docs/使用说明.md)，数据库配置见[接入说明](docs/local-postgres.md)。
 
-## 让 Codex 等编程工具开发业务
+## 继续了解
 
-当前源码的脚手架把三份协作材料直接放进产物：根目录 `AGENTS.md`、`docs/ai` 业务开发指南与本地标准范例、`docs/errors` 错误码册。入口见[模板 AGENTS](templates/app/AGENTS.md)和[模板业务指南](templates/app/docs/ai/README.md)，用户无需克隆框架仓库。
+| 你想了解什么 | 阅读入口 |
+| --- | --- |
+| AI 从哪里开始开发 | [学习入口](docs/ai/README.md) · [开发步骤](docs/ai/workflow.md) · [业务任务配方](docs/ai/recipes.md) |
+| 业务如何表达与执行 | [架构](docs/ai/architecture.md) · [原语](docs/ai/primitives.md) · [对象关系](docs/ai/relations.md) |
+| AI 如何查业务和排错 | [本体上下文](docs/ai/ontology-context.md) · [诊断工具](docs/ai/diagnostics.md) · [错误码册](docs/errors/README.md) |
+| 如何构建智能应用 | [助理与 AI 审批](docs/ai/intelligence.md) · [审批流程](docs/ai/approvals.md) |
+| 如何组织页面和业务模块 | [工程目录](docs/ai/project-structure.md) · [路由与浏览器验收](docs/ai/routing.md) |
+| 如何实现完整业务 | [采购范例导读](docs/ai/purchase-example.md) · [范例源码](examples/purchase-admin) |
+| 文件与数据交换 | [私有文件](docs/ai/files.md) · [导入导出](docs/ai/transfers.md) |
 
-可以直接给编程工具下达：“先读 AGENTS.md，按 docs/ai/README.md 和 recipes.md，实现我的业务需求。”资料覆盖普通管理对象、单据审批、资源占用与释放、查询报表、第三方、业务页导入导出，以及生成、迁移、授权和验证。
+在应用根目录运行 `pnpm exec cage graph` 可打开本体图谱工作台，查看业务对象、流程、关系解释与源码；`pnpm exec cage --help` 查看工具命令。
 
-开发前可运行 `pnpm exec cage context "需求关键词"` 获取相关业务、关系解释、源码与验证候选，必要时使用 `graph search/inspect/path`；详细流程见[本体与 AI 上下文](docs/ai/ontology-context.md)。
+## 版本与参与开发
 
-当前源码新增公开能力检索、统一状态诊断、执行时间线、授权解释、命名快照与有界集合反应。用法见[能力发现与诊断](docs/ai/diagnostics.md)，反馈实施与验证范围见[本轮改进记录](docs/feedback-refactor.md)。这些修改尚未发布到 npm。
+上面的创建命令固定使用 **0.3.0**；包列表、发布内容与该版本验收范围见[发布记录](docs/release-0.3.0.md)。本页设计说明及深层指南面向当前源码，后续能力是否已进入安装版本，应以该版本公开签名与发布记录为准。
 
-维护者修改规范文档后运行 `pnpm docs:errors`、`pnpm template:sync`、`pnpm docs:check`，再构建 CLI。维护脚本统一使用 TypeScript，可运行 `pnpm typecheck:scripts`。
+维护框架请先读 [AGENTS.md](AGENTS.md)。仓库使用 TypeScript、pnpm workspace、Node.js 24 和 PostgreSQL，按职责拆分内核、HTTP、审批、连接器、客户端、AI、本体与工具链。源码开发运行 `pnpm install`、`pnpm build`，再按改动范围执行检查；完整范例运行方式见[范例 README](examples/purchase-admin/README.md)。
 
-## 工具链
-
-本体图谱 Web 工作台随 `@yss123/cage-cli` 分发，独立项目同样可用。在项目根目录运行：
-
-```powershell
-cd F:/cage/examples/purchase-admin
-pnpm exec cage graph
-# 地址被占用时可以指定：pnpm exec cage graph --port 15419
-```
-
-打开终端输出的 <http://127.0.0.1:15418>。默认“对象与字段”把每个业务对象呈现为绿色表头的卡片，卡片内按声明顺序展示字段标识、中文含义、类型、必填/引用标记，底部显示字段数、状态数和实际表名。引用线从具体字段行连到目标对象表头；点击字段看详情，拖动表头移动整张卡片。左侧选择业务对象或包含系统组织模型，搜索能定位隐藏对象及长画布中的字段。
-
-“业务流程”查看命令、事件、审批等协作关系；“完整本体”保留所有节点类型的技术视图。卡片模式的“聚焦关联”只保留当前对象的直接引用，聚焦字段时只展示这个字段的引用。卡片展示 domain 声明字段，不等同于数据库完整物理列清单；关系基数来自 ref/hasMany/manyToMany 声明，集合关系标记为非主表列。业务对象在框架中称为**聚合**：把需要统一遵守业务规则的数据、状态和命令作为整体管理，不一定只对应一张表。完整用法见[对象关系](docs/ai/relations.md)。
-
-连线会显示“包含字段”“确定审批人”“启动审批”等中文关系名。点击线、线上的标签，或节点详情中的“解释”，查看**为什么连接、连接有什么用、箭头怎么读、声明依据及源码位置**。概览仅标注选中节点的关系，其他连线悬停可见；聚焦后只展示当前节点的直接关系。比如“采购审批分支 → 所属部门”说明部门经理审批按部门找负责人，而“采购审批流程 → 所属部门”仅表示允许审批读取该字段。虚线归属和查询文本匹配会明确说明推导依据，不能当作执行记录。
-
-修改 domain 后点击“重新抽取”，服务会在新进程中重新加载声明，同时更新 `.cage/ontology.json`。图规则问题可在页面查看；抽取失败会保留上次成功结果并显示错误。实线是声明关系，虚线是为浏览补充的归属关系。可下载原始 JSON，页面不修改业务声明，不需要数据库。服务仅监听本机，终端按 `Ctrl+C` 关闭。
-
-页面优先显示中文名称，英文标识作为辅助信息保留，搜索支持两种名称。图谱复用声明已有的 `description`；项目也可在 `cage.config.json` 的 `graph` 中设置 `title` 和 `labels`，如 `"labels": { "aggregate:PurchaseOrder": "采购单", "command:PurchaseOrder.approve": "通过审批" }`。显示名独立于本体图哈希，不改数据库、路由和权限标识；没有名称的自定义节点保持原标识，不自动猜译。
-
-`cage --help` 列出所有命令。`gen` 生成契约、状态图、安全 SQL 和迁移草稿；`verify` 运行门禁并写 `.cage/verify.json`；`sync` 只更新 AGENTS.md 托管区；`upgrade --dry-run` 查看版本清单和 codemod 变化。
-
-没有 Git 基线时，先运行 `cage analyze`，把 `.cage/ontology.json` 保存到项目自有路径，再通过 `cage impact --base-file <保存的图>` 比较。Git 模式使用 `--base <提交>`。
-
-生产部署连接已经准备好的数据库和账号；在独立迁移任务中执行 `cage migrate`，再启动 API/worker。迁移账号只配置给迁移任务，业务运行时使用写入和只读账号。
-
-详细设计见仓库中的技术实施方案；本轮验收及限制见 [docs/implementation-status.md](docs/implementation-status.md)。
+[GitHub](https://github.com/shunshunyue/cage) · [问题反馈](https://github.com/shunshunyue/cage/issues) · [发布说明](docs/npm发布说明.md) · [MIT 许可证](LICENSE)

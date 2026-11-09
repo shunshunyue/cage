@@ -1,3 +1,8 @@
+/**
+ * 本地开发进程编排入口，连接应用已配置数据库并启动 API、worker 与 Vite。
+ * 首次生成声明产物，随后用 tsx watch 重启服务，并串行处理领域变更触发的生成任务。
+ * 不安装或创建数据库、不执行迁移；退出时关闭 watcher 和本次子进程，Windows 通过进程树回收 watch 子进程。
+ */
 // 本地开发只编排 API、worker 和 Vite，数据库由使用方提供。
 // 缺少连接配置就报错，不自动启动数据库；表结构迁移由开发者审查后单独执行。
 import { watch } from 'node:fs';
@@ -9,6 +14,12 @@ import { urlsFromEnv } from '@yss123/cage-kernel';
 import { abs, type CageConfig } from './config.js';
 import { binPath, launch, run } from './process.js';
 
+/**
+ * 启动并持有本地开发进程，等待退出后完成资源清理。
+ * @param cfg API、worker、Web 和 domain 的应用布局。
+ * @returns 正常中止返回零，生成或子进程异常返回失败码/抛错；完成前回收本次子进程。
+ * 运行态移除管理员、迁移和测试连接，只传业务与读连接；热生成串行化不等于数据库迁移。
+ */
 export async function dev(cfg: CageConfig): Promise<number> {
   const cli = fileURLToPath(new URL('../bin/cage.js', import.meta.url));
   const env: NodeJS.ProcessEnv = {

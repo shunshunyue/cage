@@ -10,7 +10,9 @@ import * as domain from './fixtures/relations.js';
 
 let env: TestEnv, server: CageServer, alice: TestUser, bob: TestUser, outsider: TestUser;
 let dept: string, otherDept: string;
+/** 派生测试与手写场景复用同一组完整关系声明，避免派生造数把关系字段误当作不可执行输入。 */
 const generatedTests = derived(domain);
+/** 准备同部门与范围外用户，HTTP 服务使用相同测试库；拆出 read 账号验证数据库安全视图边界。 */
 beforeAll(async () => {
   await generatedTests.setup();
   env = generatedTests.env();
@@ -23,12 +25,16 @@ beforeAll(async () => {
   server = createServer({ domain, urls: { app: env.urls.app, read: env.urls.read }, bootstrap: false, logger: false, csrf: false });
   await server.ready();
 });
+/** 先关 HTTP 的额外连接，再由派生测试拥有者清理环境，避免同一数据库重复销毁。 */
 afterAll(async () => { await server?.close(); if (env) await generatedTests.teardown(); });
 
+/** 通过 alice 的真实范围创建便笺；extra 用于切换归属或自关联，默认不预先添加成员。 */
 const create = async (members: string[] = [], extra: Record<string, unknown> = {}) =>
   env.kernel.execute('Note.create', { title: '关系便笺', members, ...extra }, await alice.ctx());
+/** 仅测试断言通过管理连接观察真实中间表，稳定排序使集合断言不依赖 PostgreSQL 返回顺序。 */
 const ids = async (id: string) => (await env.query('select target_id from core.note__members where source_id = $1 order by target_id', [id])).map((r) => r.target_id);
 
+/** 验证索引/同租户外键、完整替换、旧关系保留和回滚；SQL 故障造数仅用于攻击边界或构造反例。 */
 describe('关系存储与写入', () => {
   it('真实中间表使用组合主键和同租户外键，主表没有虚拟列；ref.unique 保证至多一对一', async () => {
     const note = await create([bob.id]);
@@ -115,6 +121,10 @@ describe('关系存储与写入', () => {
   });
 });
 
+/**
+ * hasMany 由子对象外键变化驱动，分页读必须同时检查源与目标范围，并保留目标掩码。
+ * 迁移场景额外建临时库执行旧结构→新关系 SQL，再重建安全层；不是只比较生成文本。
+ */
 describe('关系读取与迁移', () => {
   it('关系命令的派生用例不会误跳过，性质检查使用带关联集合的完整快照', async () => {
     expect(await generatedTests.capabilityDenied('Note.create')).toMatchObject({ code: 'FORBIDDEN' });

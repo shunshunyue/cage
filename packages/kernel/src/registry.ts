@@ -13,50 +13,82 @@ import { stableStringify } from './util/names.js';
 import { z } from 'zod';
 
 export interface RegisteredCommand {
+  /** 原始命令声明，保留聚合、输入与 handler 等执行规格。 */
   readonly cmd: AnyCommand;
   /** 命令名（导出名或显式 name） */
   readonly name: string;
   /** 能力点：聚合名.命令名 */
   readonly capability: string;
+  /** 发现声明时使用的 domain 导出名，用于诊断及来源定位；可与显式命令名不同。 */
   readonly exportName: string;
 }
 
+/** 可授予能力的目录条目；目录声明不等于任何用户/角色已获得该能力。 */
 export interface CatalogEntry {
+  /** 稳定能力字符串，如聚合.read 或聚合.命令名；显示文字不能替代此标识。 */
   capability: string;
+  /** 区分命令、读取、导出、敏感明文及系统能力，以便工具和管理界面分类。 */
   kind: 'command' | 'read' | 'export' | 'unmask' | 'system';
+  /** 能力所属聚合名；独立系统能力可省略。 */
   aggregate?: string;
+  /** 来自声明的可选公开说明，不参与授权判定。 */
   description?: string;
   /** 命令的调用方限制，管理界面据此提示 */
   invokedBy?: readonly string[];
 }
 
+/** 可选包通过品牌协议进入注册表，内核保存描述，实际装配由 HTTP/worker 对应适配器完成。 */
 export interface RuntimeExtension {
+  /** 扩展声明品牌种类，决定由连接器、审批或运行时适配器解释。 */
   kind: 'CONNECTOR' | 'OUTBOUND' | 'INBOUND' | 'ROUTE' | 'RUNTIME';
+  /** 从 domain 导出确定的扩展名称，供诊断和装配引用。 */
   name: string;
+  /** 扩展包拥有的声明对象，内核只按品牌协议接入，不复制其业务逻辑。 */
   value: any;
 }
 
+/**
+ * 当前 domain 导出的运行规格及索引，API、worker、DDL 和 CLI 应使用同一份版本。
+ * 对象身份用于识别重复 re-export 和引用关系；字符串 capability 用于协议调用及授权。
+ */
 export interface Registry {
+  /** 已去重且校验过的聚合声明集合，用于路由、schema 与读侧。 */
   readonly aggregates: readonly AnyAggregate[];
+  /** 命令声明及解析后的名称/能力索引，不包含未导出的模块局部变量。 */
   readonly commands: readonly RegisteredCommand[];
+  /** 可被 emits 引用的事件声明，载荷与版本由声明决定。 */
   readonly events: readonly AnyEvent[];
+  /** 已命名反应与原始声明，执行顺序由规则决定，不能按数组书写位置推断事务顺序。 */
   readonly reactions: readonly { r: AnyReaction; name: string }[];
+  /** 已注册只读查询声明；运行时仍校验 reads 能力及输入。 */
   readonly queries: readonly AnyQuery[];
+  /** 聚合审批声明与导出名，实际选人由对应审批路由实现。 */
   readonly approvals: readonly { a: Approval; name: string }[];
+  /** 已注册定时任务规格；注册不等于调度器正在运行。 */
   readonly jobs: readonly Job[];
+  /** 用于业务图谱和规则检查的流程说明，不代替真实命令/事件执行。 */
   readonly businessProcesses: readonly BusinessProcess[];
+  /** 可选包声明的统一接入口，实际服务由宿主装配。 */
   readonly extensions: readonly RuntimeExtension[];
+  /** 框架及扩展提供的系统建表片段，用于准备 schema，不在建注册表时执行。 */
   readonly systemDdl: readonly string[];
+  /** 扩展提供的具名系统迁移，数据库应用与历史校验在迁移层进行。 */
   readonly systemMigrations: readonly { name: string; sql: string }[];
+  /** 按注册聚合名查询，未知返回 undefined。 */
   aggregate(name: string): AnyAggregate | undefined;
   /** 按能力点或命令对象找命令 */
   command(ref: string | AnyCommand): RegisteredCommand | undefined;
+  /** 取得已注册命令的能力字符串；陌生命令抛出声明错误而非生成临时权限。 */
   capabilityOf(cmd: AnyCommand): string;
   /** 任意原语对象的导出名 */
   nameOf(v: object): string | undefined;
+  /** 返回订阅指定事件的反应，供内核与 worker 筛选并执行。 */
   reactionsFor(eventName: string): { r: AnyReaction; name: string }[];
+  /** 按聚合查找其审批声明，没有配置时返回 undefined。 */
   approvalFor(aggName: string): { a: Approval; name: string } | undefined;
+  /** 按流程标识查审批声明，供路由与引擎装配校验。 */
   approvalByProcess(process: string): { a: Approval; name: string } | undefined;
+  /** 派生全部可用能力的目录；返回可授予项，不意味着任何账号已获授权。 */
   capabilityCatalog(): CatalogEntry[];
   /** 带 CONSUMERS 标记的声明对象（连接器出站映射等） */
   consumerProviders(): any[];
@@ -68,6 +100,12 @@ export interface RegistryOptions {
 }
 
 /** 遍历一个或多个 domain 模块的导出，建立注册表。 */
+/**
+ * 分三阶段建立注册表：收集品牌声明和扩展迁移，校验跨声明引用/命名/步骤顺序，建立查询索引。
+ * 同一对象重复导出保留首次名称，不同对象撞聚合名或能力名则立即失败；引用到未导出的实现也拒绝。
+ * 完成基础一致性后执行可选扩展 validate，防止服务在启动或消费事件时才发现缺失配置。
+ * 此过程不连数据库，但扩展的元数据回调必须保持声明期无业务副作用。
+ */
 export function buildRegistry(domains: object | object[], opts: RegistryOptions = {}): Registry {
   const mods = Array.isArray(domains) ? domains : [domains];
   const names = new Map<object, string>();
@@ -269,6 +307,10 @@ export function buildRegistry(domains: object | object[], opts: RegistryOptions 
 export { CONNECTOR, INBOUND, OUTBOUND, ROUTE };
 
 /** 同一编译产物的声明指纹，用于发现 API/worker 加载版本错配；不是任意 JS 等价性证明。 */
+/**
+ * 按稳定键序列化结构、schema 和执行回调源码再做 SHA-256；源码文本变化可能影响结果。
+ * 指纹只比较进程实际装载规格，不能证明任意两段 JavaScript 语义等价，也不代表数据库已迁移。
+ */
 export function registryFingerprint(registry: Registry): string {
   const fn = (value: unknown) => typeof value === 'function' ? String(value) : value;
   const schema = (value: z.ZodType) => z.toJSONSchema(value, { io: 'input', unrepresentable: 'any' });

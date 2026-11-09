@@ -1,3 +1,8 @@
+/**
+ * AI 工具发现与上下文接续的真实数据库回归，重点检查工具 schema、授权变化、页面更新和本地历史恢复。
+ * fetch 返回受控 Responses SSE，记录请求以检验远端接续协议；不访问外部模型服务。
+ * 构造多命令与较小工具预算触发发现模式，故障插入到持久化边界，断言已确认写入不会因恢复重复执行。
+ */
 import { randomBytes, randomUUID } from 'node:crypto';
 import { beforeAll, afterAll, afterEach, expect, it, vi } from 'vitest';
 import { z } from 'zod';
@@ -7,8 +12,14 @@ import { ai, AiRuntime, managedModel } from '@yss123/cage-ai';
 import { readContext } from '../../ai/src/context-read.js';
 import { createTestEnv, type TestEnv, type TestUser } from '../src/index.js';
 
+/**
+ * 本人范围的证据记录，长 reason 用于触发上下文预算边界，count 观察命令是否重复执行。
+ */
 const Record = aggregate('EvidenceRecord', { fields: { createdBy: ref('User'), reason: text(50_000), count: int() }, states: states('draft'), scope: scope.self('createdBy') });
 const create = command(Record, { name: 'create', from: 'new', to: 'draft', input: z.object({ reason: z.string(), count: z.number().int() }), handler: o => o });
+/**
+ * 十二个具有枚举及最小长度校验的更新命令，最后一个用特定中文描述验证搜索能加载完整 schema。
+ */
 const operations = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`update${i}`, command(Record, {
   name: `update${i}`, from: 'draft', to: null, description: i === 11 ? '登记核验标记' : `更新第 ${i} 个标记`,
   input: z.object({ id: z.uuid(), code: z.enum(['A', 'B']), reason: z.string().min(15) }), handler: o => ({ ...o, count: o.count + 1 }),
@@ -27,11 +38,23 @@ beforeAll(async () => {
 });
 afterEach(() => vi.restoreAllMocks());
 afterAll(async () => { await runtime?.close(); await env?.close(); vi.unstubAllEnvs(); });
+/**
+ * 编码 Responses function_call 项，arguments 必须是 JSON 字符串，call_id 用于与工具输出配对。
+ */
 const call = (name: string, args: unknown, callId = randomUUID()) => ({ type: 'function_call', id: `fc_${callId}`, call_id: callId, name, arguments: JSON.stringify(args) });
+/**
+ * 构造已完成的 assistant output_text 项，供协议解析及本地恢复读取。
+ */
 const message = (value: string) => ({ type: 'message', id: `msg_${randomUUID()}`, role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: value, annotations: [] }] });
+/**
+ * 将模型输出封装为 response.completed SSE 帧，ID 和用量用于验证跨轮接续及预算记录。
+ */
 const response = (output: unknown[], id = `resp_${randomUUID()}`) => new Response(`data: ${JSON.stringify({ type: 'response.completed', response: {
   id, status: 'completed', output, usage: { input_tokens: 500, output_tokens: 50 },
 } })}\n\n`, { headers: { 'content-type': 'text/event-stream' } });
+/**
+ * 拦截全部 fetch 并断言目标是测试地址，按请求次序调用脚本并保存请求体供后续证据断言。
+ */
 const mock = (fn: (body: any, index: number) => Response | Promise<Response>) => {
   const requests: any[] = [];
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
@@ -40,7 +63,13 @@ const mock = (fn: (body: any, index: number) => Response | Promise<Response>) =>
   });
   return requests;
 };
+/**
+ * 直接读取测试库的运行行，核对工具选择已持久化；不替代正常 run API 的授权行为。
+ */
 const savedRun = async (id: string) => (await env.query('select * from sys.ai_run where id=$1', [id]))[0];
+/**
+ * 显式驱动一次调度，再以指定用户读取运行并要求 succeeded；默认 runtime/user 可被恢复场景替换。
+ */
 const complete = async (id: string, service = runtime, who = user) => {
   await service.tick(); const result = await service.run(await who.ctx(), id);
   expect(result.status, JSON.stringify(result)).toBe('succeeded'); return result;

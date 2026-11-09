@@ -1,3 +1,7 @@
+/**
+ * 异步运行运维页面，读取 outbox 汇总、未处理死信和注册任务状态。
+ * 运维读取与管理能力分开，重放/丢弃与启停任务通过系统接口执行；界面不直接操作数据库。
+ */
 import { api, can, run } from '../../shared/api.js';
 import { badge, field, formatTime, h, icon, modal, panel, table } from '../../shared/dom.js';
 import { capabilityName, eventName, jobName, statusName } from '../../shared/labels.js';
@@ -26,6 +30,10 @@ interface Job {
   lastStatus: string | null;
 }
 
+/**
+ * 并行取得运行快照并渲染统计、队列、死信和任务列表。
+ * Sys.ops.manage 控制动作按钮，成功请求后重新加载数据；重放仅表示重新投递，不保证远端业务最终成功。
+ */
 export async function renderOperations(main: HTMLElement) {
   const [summary, dead, jobs] = await Promise.all([
     api<Summary>('GET', '/api/sys/ops/summary'),
@@ -201,6 +209,10 @@ export async function renderOperations(main: HTMLElement) {
     ),
   );
 
+  /**
+   * 打开针对单条死信的确认操作，提交 discard 后按成功结果刷新页面。
+   * 丢弃会改变后续事件处理条件，因此需要用户明确选择，不能作为自动修复失败的默认动作。
+   */
   function discard(item: DeadLetter) {
     const confirm = h('input', { type: 'checkbox', required: true });
     const save = h('button', { class: 'danger', type: 'submit' }, '确认丢弃事件');
@@ -225,6 +237,9 @@ export async function renderOperations(main: HTMLElement) {
     const dialog = modal('丢弃死信事件', form);
   }
 }
+/**
+ * 以既有计数生成运行统计卡，warning 仅决定视觉提示，不改变后台任务状态。
+ */
 function stat(label: string, value: number, glyph: string, warning = false) {
   return h(
     'div',

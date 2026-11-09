@@ -1,8 +1,16 @@
+/**
+ * 采购工作台首页，提供采购、审批和库存的固定业务入口，不伪造业务统计。
+ * 实际记录与待办在对应页面通过生成契约读取，系统管理由独立页面负责。
+ */
 import { Link } from 'react-router-dom';
 import { PageHeading } from '../../../shared/ui/page-heading';
 import { AssistantPage } from '../../../shared/ui/assistant-scope';
 
-// 工作台只展示真实可访问的业务入口，不制造演示统计；业务页面各自按 URL 独立加载。
+// 工作台展示实际配置的业务入口，不制造演示统计；访问权限由目标路由及接口检查。
+/**
+ * 渲染导航卡片，链接进入各模块独立 URL。
+ * 本页不按能力隐藏卡片，进入页面后仍需通过路由守卫和服务端检查。
+ */
 export function HomePage() {
   return (
     <>

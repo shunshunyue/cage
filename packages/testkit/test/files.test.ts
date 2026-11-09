@@ -10,8 +10,11 @@ import { createTestEnv, type TestEnv, type TestUser } from '../src/index.js';
 import * as domain from './fixtures/files.js';
 
 let env: TestEnv, server: CageServer, owner: TestUser, colleague: TestUser, outsider: TestUser, directory: string, cookie: string, csrf: string;
+/** 对客户端实际发送片计算小写 SHA-256，故障场景可故意让摘要与流内容不同。 */
 const hash = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
+/** 小分片配置降低测试成本，仍使用真实磁盘适配器；重建 FileService 必须复用同一路径才能恢复会话。 */
 const options = () => ({ domain, urls: env.urls, logger: false as const, admin: false, files: { directory, partBytes: 64 * 1024, maxFileBytes: 2 * 1024 ** 2 } });
+/** 独立库和随机临时目录隔离元数据/字节；保留实际 CSRF 流程，区分上传者、同部门和范围外用户。 */
 beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), 'cage-files-test-'));
   env = await createTestEnv({ domain });
@@ -27,14 +30,18 @@ beforeAll(async () => {
   expect(login.statusCode).toBe(200);
   cookie = [csrfCookie, cookies(login.headers['set-cookie'])].filter(Boolean).join('; ');
 });
+/** 先等服务取消在途 IO，再关数据库；递归删除前确认目标仍在系统临时目录内。 */
 afterAll(async () => {
   await server?.close(); await env?.close();
   if (directory && resolve(directory).startsWith(resolve(tmpdir()) + sep)) await rm(directory, { recursive: true, force: true, maxRetries: 3 });
 });
+/** 提取响应 Cookie 的键值部分供下一次注入请求使用，不把属性误作请求 Cookie。 */
 function cookies(raw: string | string[] | undefined) { return [raw].flat().filter(Boolean).map(value => String(value).split(';')[0]).join('; '); }
+/** 只创建元数据会话；extra 精确控制目标命令/字段/MIME 等反例，不替上传字节或绑定领域对象。 */
 async function begin(bytes: Buffer, extra: Record<string, unknown> = {}, service = server.files) {
   return service.begin({ command: 'Document.create', field: 'attachments', filename: '材料.txt', contentType: 'text/plain', bytes: bytes.length, ...extra }, await owner.ctx(), randomUUID());
 }
+/** 按服务器返回片尺寸完整上传并合并到 ready；返回仍未绑定的临时文件，绑定需另执行业务命令。 */
 async function upload(bytes: Buffer, extra: Record<string, unknown> = {}, service = server.files) {
   const session = await begin(bytes, extra, service), ctx = await owner.ctx();
   for (let number = 1; number <= session.partCount; number++) {
@@ -70,6 +77,7 @@ it('分片 HTTP 受登录/CSRF 约束，超过普通 JSON 大小的二进制通�
   expect(invalid.statusCode).toBe(416);
 });
 
+/** 用新服务实例读取持久化进度，证明续传依据数据库确认片，不能依赖进程内缓存或客户端发送进度。 */
 it('校验失败只重传失败分片，幂等片号不允许改变内容；新服务实例恢复确认清单', async () => {
   const bytes = Buffer.alloc(150_000, 'b'), session = await begin(bytes), ctx = await owner.ctx();
   const first = bytes.subarray(0, session.partBytes);
@@ -94,6 +102,7 @@ it('校验失败只重传失败分片，幂等片号不允许改变内容；新�
   } finally { await recovered.close(); }
 });
 
+/** 同时观察原附件、替换附件状态、主对象版本及审计，证明绑定失败没有半提交或跨用户窃取。 */
 it('附件与命令版本/审计/同事务反应共同回滚，重复绑定、跨租户和非上传者提交被拒绝', async () => {
   const ready = await upload(Buffer.from('合同资料')), ctx = await owner.ctx();
   const doc = await env.kernel.execute('Document.create', { title: '事务', attachments: [ready.id] }, ctx);
@@ -142,6 +151,7 @@ it('到期清理不会删除已绑定文件；先认领清理后绑定必定失�
   await expect(stat(join(directory, ready.id))).rejects.toMatchObject({ code: 'ENOENT' });
 });
 
+/** Promise 屏障把执行精确停在元数据已认领、字节未删除处；finally 解锁并恢复 spy，避免不确定竞态。 */
 it('清理已认领且磁盘删除尚未结束时，业务绑定不能把文件重新救回', async () => {
   const ctx = await owner.ctx(), ready = await upload(Buffer.from('清理认领屏障'));
   await env.query("update sys.file_upload set expires_at=now()-interval '1 second' where id=$1", [ready.id]);
@@ -162,6 +172,7 @@ it('清理已认领且磁盘删除尚未结束时，业务绑定不能把文件�
   expect((await env.query('select status from sys.file_upload where id=$1', [ready.id]))[0].status).toBe('deleted');
 });
 
+/** 控制旧适配器写入延迟并只修改测试租约时间，新 token 完成后再释放旧执行者，检查确认栅栏。 */
 it('过期分片租约被新实例接管后，迟到的旧执行者不能覆盖确认清单', async () => {
   const bytes = Buffer.from('租约接管'), ctx = await owner.ctx(), session = await begin(bytes);
   let entered!: () => void, release!: () => void;
@@ -184,6 +195,7 @@ it('过期分片租约被新实例接管后，迟到的旧执行者不能覆盖�
   } finally { release(); await oldWrite.catch(() => {}); spy.mockRestore(); await recovered.close(); }
 });
 
+/** 分别攻击声明配额、内容伪装和绑定数量；下载审计故障必须拒绝，不能以无审计流兜底成功。 */
 it('系统配额、文件数量及内容类型由服务端拒绝；可靠下载审计失败不交付流', async () => {
   const ctx = await owner.ctx();
   const limited = new FileService(server.kernel, { ...options().files, maxPendingBytesPerUser: 1 });
@@ -199,6 +211,7 @@ it('系统配额、文件数量及内容类型由服务端拒绝；可靠下载�
   try { await expect(server.files.download(files[0].id, ctx)).rejects.toThrow('audit unavailable'); } finally { spy.mockRestore(); }
 });
 
+/** 输入流半途停住时检查临时文件已有字节，提供流式写入证据；该场景不测机器吞吐或内存峰值。 */
 it('磁盘上传在源结束前写出数据，合并按流校验，避免整文件缓冲', async () => {
   const storage = new LocalFileStorage(directory), uploadId = randomUUID(), token = randomUUID();
   const chunk = Buffer.alloc(64 * 1024, 'z'), chunks = 64, checksum = createHash('sha256');

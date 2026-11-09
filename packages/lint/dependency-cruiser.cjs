@@ -1,3 +1,8 @@
+/**
+ * 为业务项目声明模块依赖的禁止方向：domain 不直接 IO，适配器不直接写库，Web 不加载服务端运行时。
+ * 生成契约和 generated 目录不能反向进入 domain，避免生成循环和职责倒置。
+ * 路径正则面向脚手架目录布局，测试文件对 domain IO 规则有明确例外；配置只分析依赖，不改变打包或运行时权限。
+ */
 // 依赖规则（框架提供）：管「谁不能导入谁」。项目里的 .dependency-cruiser.cjs 只需要一行：
 //   module.exports = require('@yss123/cage-lint/dependency-cruiser.cjs');
 module.exports = {

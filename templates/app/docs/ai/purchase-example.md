@@ -11,8 +11,9 @@
 | `packages/domain/src/index.ts` | 哪些声明真正被注册 | 保留组织模型，导出新增业务，避免导出名冲突 |
 | `packages/domain/src/modules/inventory/inventory.ts` | 最简字段、创建命令、资源锁聚合 | scope.none 不等于无需授权；创建与释放都是命令 |
 | `packages/domain/src/modules/purchase/purchase-order.ts` | 单据生命周期、金额、明细、约束、事件 | 哪些字段由输入提供，哪些由内核维护；每个状态的允许操作 |
+| `packages/domain/src/modules/purchase/approval-members.ts` | 采购协作名录与公开业务姓名 | 名录读权限与系统用户资料分离；成员身份不授予审批权限 |
 | `packages/domain/src/workflows/purchase-inventory.ts` | 同事务建锁、异步释放 | acquires/releases 的配对及 map 返回 null 的原因 |
-| `packages/domain/src/modules/purchase/approvals.ts` | 启动/取消审批、条件步骤与选人 | routable、部门负责人、角色 code、结论命令 |
+| `packages/domain/src/modules/purchase/approvals.ts` | 启动/取消审批、专业会签、财务候选与任务动作 | routable、部门负责人、字段选人、候选领取、结论命令 |
 | `packages/domain/src/integrations/erp.ts` | 出站推单、成功回写、入站回调 | 白名单、secret 名、schema、幂等与 HMAC |
 | `packages/domain/src/integrations/intelligence.ts` | 消费框架托管模型和本体助理 | Admin 配置连接，通用工具由框架生成 |
 | `packages/domain/src/modules/purchase/queries.ts` | 按状态汇总 | reads、安全视图、命名参数 |
@@ -32,7 +33,9 @@
       → 材料不足：returnForChanges → draft，补充用途后重新提交、从头审核
       → 疑难材料：在本节点创建人工接管待办
       → 材料清楚：通过本节点，创建经理待办
-  → 经理审批；金额 > 50000 时还有财务步骤
+  → 部门经理审批
+  → 申请启用专业复核时：所选专业人员全部会签
+  → 金额 > 50000 时：财务共享候选任务，由 finance 成员领取后处理
   → 流程完成 → 调用 approve
       → 职责分离、额度、库存检查
       → approved + OrderApproved
@@ -45,11 +48,12 @@
 
 submit 返回成功只表示单据和事件已提交，不表示待办、ERP 或其他异步工作已经完成。worker 未运行时，单据可以已经处于待审批，但没有待办。
 
-### 为什么分三个聚合
+### 为什么分开单据、库存与协作名录
 
 - `PurchaseOrder` 管单据、审批结论和采购状态。
 - `Inventory` 是物料台账，提供库存检查的数据。
 - `InventoryLock` 记录某张订单的资源占用，使用订单 id 作为锁 id，让释放目标明确。
+- `ApprovalMember` 保存采购参与者可读取的公开业务姓名和专业说明。它引用真实用户，但不开放 `User.name` 等系统用户资料，也不代替角色授权。
 
 审批通过和建锁放在同一事务，是为了避免“单据已批准却没拿到资源”。ERP 网络请求放到 outbox，是因为远端调用无法与本地 PostgreSQL 共同回滚。
 
@@ -71,18 +75,28 @@ submit 返回成功只表示单据和事件已提交，不表示待办、ERP 或
 
 | 对象 | 配置要点 |
 | --- | --- |
-| 采购员 | 创建/查看/提交/取消采购单等所需能力，所属部门，以及采购单数据范围 |
+| 采购员 | 创建/查看/提交/取消采购单等所需能力，所属部门，以及采购单数据范围；配置专业复核需 `PurchaseOrder.setReviewers` 和 `ApprovalMember.read` |
 | 智能助理使用人 | 显式授予 `Sys.ai.use`；编辑用途还需 `PurchaseOrder.explainPurpose` |
 | 模型管理者 | `Sys.ai.models.manage`；在 `/admin/#/models` 配置并启用 `main`，部署主密钥见[智能能力指南](intelligence.md) |
 | 助理性格管理者 | `Sys.ai.personalities.manage`；在 `/admin/#/personalities` 编辑预设、自定义性格、设置默认并试聊 |
 | AI 预审角色 | 创建 code 为 `purchase_ai_reviewer` 的角色，授予 `PurchaseOrder.read/returnForChanges` 及覆盖申请范围的数据权限；本例 AI 仅预审，不执行最终 approve |
 | 经理 | `PurchaseOrder.read/approve/reject/returnForChanges`，适当数据范围，`approve` 的 `ceiling` 额度参数 |
+| 专业协作人 | 真实账号及同样的审批能力、范围、额度；由名录管理员通过 `ApprovalMember.create` 登记公开业务姓名、专业说明；需要在任务中选人时授予 `ApprovalMember.read` |
+| 名录管理员 | 显式授予 `ApprovalMember.create/update/retire/read`；登记、更新资料或退役不修改用户角色，不自动给采购参与者授予 `User.read` |
 | 部门 | 将采购员所属部门的负责人设为经理；不能为空 |
-| 财务 | 角色 **code** 为 `finance`，给实际用户分配；配置审批所需权限、范围及额度 |
+| 财务 | 角色 **code** 为 `finance`，给至少两位实际用户分配以体验共享候选池；配置审批所需权限、范围及足够额度；领取后才能处理 |
 | 库存台账 | 预先登记与采购明细相同的 sku，数量满足演示检查 |
 | 连接器环境 | fake 阶段使用 worker 注册的 fake；真实环境另配 host 对应密钥及回调签名密钥 |
 
 经理与提单人必须是不同用户。配置“负责人”决定选谁；配置角色能力与范围决定此人能否完成结论命令，两者都需要。金额 **大于** 50,000 才追加财务步骤，恰好 50,000 不满足 gt 条件。
+
+专业复核默认关闭，兼容旧单据的空字段；开启后需选择 1–5 位不同且非提单人的有效名录成员。`setReviewers` 只允许编辑草稿；创建可暂存未选完整的草稿，但 `submit` 会重新核对名单，拒绝保存后退役的成员。名录退役不修改已经提交的名单快照，也不撤销在途任务；账号停用和实际审批权限继续由审批引擎核验。名录的用户引用不能换绑，已退役记录保留且不支持重新启用。
+
+`ApprovalMember` 使用 `scope.none()`，没有部门或本人字段。名录管理员和需要选人的采购参与者都必须显式获得该聚合的 `all` 数据范围；仅授予 `ApprovalMember.read` 仍看不到成员，草稿的专业名单校验也会因读范围不足拒绝。这里的 `all` 始终受当前租户隔离，不要求也不授予 `User.read`。
+
+经理、专业会签和财务节点均显式启用转办、委派与前置/后置/并行加签，节点政策随每次提交保存。转办交接处理责任；委派处理完成后归还原审批人；加签增加必须完成的签署任务，前置签署完成前原任务等待，后置签署在原任务通过后才开放。任务动作和决定都应携带页面当前 `revision`，冲突后刷新待办，不自动重试旧决定。AI 人工接管继续采用 AI 节点自身政策，不能因为后续经理节点启用动作而越权操作。
+
+逐项体验时用不同采购单分别记录：普通经理审批、专业双人会签、恰好 50,000 元跳过财务、超过 50,000 元财务领取/释放/再领取、转办、委派归还、三种加签，以及退回重提和申请人取消。每一步同时查看采购状态、当前可操作/等待任务及动作历史；专业会签只通过一人或必签尚未完成时采购单应仍待审批，最终通过才产生库存锁。浏览器验收需切换真实账号进行，自动测试通过不能替代页面验证。
 
 可分别准备“采购办公用品”、说明实际使用场景的完整用途、含“紧急采购”的用途，体验退回、通过本节点和转人工。真实模型的判定应按实际样例验收；故障默认转人工，不能当作正常审查通过。详情页显示历史理由、修改建议及审核轮次；用途编辑框的未保存内容会经 SDK 一起传给助理，服务端重新核对当前单据与权限。
 

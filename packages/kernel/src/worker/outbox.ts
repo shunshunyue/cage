@@ -4,6 +4,7 @@ import { isCageError } from '../errors.js';
 import type { Kernel } from '../kernel.js';
 import { withCarrier } from '../telemetry.js';
 
+/** 持久事件的投递视图；attempts 是已失败次数，aggregate_version 对历史事件可缺省。 */
 export interface OutboxRow {
   id: number;
   tenant_id: string;
@@ -50,6 +51,11 @@ export function backoffMs(attempts: number): number {
   return Math.min(3600_000, 1000 * 2 ** Math.max(0, attempts - 1));
 }
 
+/**
+ * 短事务领取到期事件并标 processing，SKIP LOCKED 使其他 worker 可继续领取不同对象。
+ * 同 aggregate_id 的较早非 done 事件会阻塞后续事件，死信也不会被跳过，保持业务先后关系。
+ * 返回时领取事务已提交；实际消费者在后续独立事务执行，崩溃任务由清扫器恢复。
+ */
 export async function claimBatch(k: Kernel, limit: number): Promise<OutboxRow[]> {
   return k.app.transaction().execute(async (tx) => {
     const { rows } = await sql<OutboxRow>`
@@ -84,6 +90,12 @@ function isPermanent(err: unknown): boolean {
   return /\[CAGE-/.test(String(e?.message ?? ''));
 }
 
+/**
+ * 先核对启动清单，再按消费者逐一恢复 trace、检查去重、prepare 外部 IO、事务内 handle 与去重登记。
+ * prepare 不持有消费事务连接，外部成功回执的持久化由消费者实现；本地去重不能代替远端幂等。
+ * 已成功消费者重投时跳过；剩余失败按永久错误/次数进入 dead 或指数退避，全部完成才标 done。
+ * 返回值是本次投递结论，retry 不代表后台已等待或重试完成。
+ */
 export async function deliver(k: Kernel, row: OutboxRow, consumers: EventConsumer[], maxAttempts = MAX_ATTEMPTS, options: { signal?: AbortSignal } = {}): Promise<'done' | 'retry' | 'dead'> {
   const mine = consumers.filter((c) => c.event === row.event);
   try {
@@ -150,6 +162,7 @@ export async function sweepStale(k: Kernel, olderThanMs = 5 * 60_000): Promise<n
 }
 
 /** 人工重放死信：仍然走内核流水线 */
+/** 保留 processed_event 去重证据，仅重置投递状态；不会解除连接器 unknown 或撤销已成功的消费者。 */
 export async function replayDeadLetter(k: Kernel, deadLetterId: number, handledBy: string): Promise<void> {
   await k.app.transaction().execute(async (tx) => {
     const d = await tx.selectFrom('sys.dead_letter').selectAll().where('id', '=', deadLetterId).where('handled_at', 'is', null).forUpdate().executeTakeFirst();
@@ -161,6 +174,7 @@ export async function replayDeadLetter(k: Kernel, deadLetterId: number, handledB
 }
 
 /** 人工丢弃死信：标记完成，解除对同一聚合后续事件的阻塞 */
+/** 这是运维作出的业务取舍，不会补做漏掉的副作用；上层必须先校验权限并记录操作审计。 */
 export async function discardDeadLetter(k: Kernel, deadLetterId: number, handledBy: string): Promise<void> {
   await k.app.transaction().execute(async (tx) => {
     const d = await tx.selectFrom('sys.dead_letter').selectAll().where('id', '=', deadLetterId).where('handled_at', 'is', null).forUpdate().executeTakeFirst();

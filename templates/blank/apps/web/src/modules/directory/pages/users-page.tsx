@@ -1,13 +1,24 @@
+/**
+ * 组织成员的只读目录，使用生成的 useUserList 读取当前账号可访问的安全投影。
+ * 分页存入 URL，姓名排序、每页二十条；不会直接访问组织基表或承担账号维护。
+ */
 import { Link, useSearchParams } from 'react-router-dom';
 import { useUserList } from '@app/contracts';
 import { QueryFailure } from '../../../shared/ui/page-state';
 
 /** 列表来自真实安全接口；分页写入 URL，使刷新、分享和前进后退保留当前页。 */
+/**
+ * 从 page 查询参数恢复页码，非法或非正整数按第一页处理。
+ * 加载、查询失败与空列表分别展示；列表 total 是当前读取范围的结果，详情链接使用成员 ID。
+ */
 export function UsersPage() {
   const [search, setSearch] = useSearchParams();
   const requested = Number(search.get('page') ?? 1);
   const page = Number.isSafeInteger(requested) && requested > 0 ? requested : 1;
   const query = useUserList({ page, pageSize: 20, sort: 'name' });
+  /**
+   * 更新页码并保留其他查询参数，第一页移除 page，让浏览器历史承担前进后退。
+   */
   function go(next: number) {
     const params = new URLSearchParams(search);
     next === 1 ? params.delete('page') : params.set('page', String(next));

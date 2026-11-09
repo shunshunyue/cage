@@ -1,3 +1,7 @@
+/**
+ * 采购详情的用途编辑区和审批轮次轨迹样式；实际审批状态来自 ApprovalHistory 的接口结果。
+ * 纵向步骤线表示展示层次，颜色不产生通过/退回判断；文本框允许用户按内容调整高度。
+ */
 .purchase-detail-content { min-width: 0; }
 .purchase-detail-content .panel { margin-bottom: 22px; }
 .purpose-editor { border-top: 1px solid var(--line, #e4e8df); padding: 20px 0; }
@@ -9,3 +13,5 @@
 .review-step { margin: 14px 0; border-left: 2px solid #bbd0bd; padding: 4px 0 4px 18px; font-size: 13px; line-height: 1.8; }
 .review-step p { margin: 6px 0; }
 .review-suggestion { color: #956128; }
+.review-actions { margin-top: 24px; border-top: 1px solid var(--line, #e4e8df); padding-top: 12px; }
+.review-actions small { display: block; }

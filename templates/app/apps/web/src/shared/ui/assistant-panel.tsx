@@ -1,3 +1,8 @@
+/**
+ * 工作台内持续存在的业务助理面板，负责输入、流式文本、工具进度和人工确认的可视交互。
+ * 实际运行、持久化计划、工具授权与取消由 useAssistant 和服务端负责；面板关闭只是收起 UI。
+ * 每轮绑定发送时页面实例与中文标签，切页后不把新页面快照冒充本轮原始上下文。
+ */
 // 组件只消费框架 SDK；页面显式传入语义上下文，业务事实与写权限由服务端核验。
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -5,18 +10,33 @@ import { client, AiPageContext, useAssistant, type PageContextInput, type AiRun 
 import { AssistantMarkdown } from './assistant-markdown';
 import './assistant-panel.css';
 
+/**
+ * 服务端运行状态的界面名称；succeeded 表示本轮运行结束，具体业务效果以命令回执和重新查询为准。
+ */
 const captions: Record<string, string> = {
   queued: '等待处理', running: '正在核对页面与业务规则', waiting_confirmation: '等待你确认操作',
   waiting_input: '需要补充信息', succeeded: '本轮已完成', failed: '本轮执行失败', expired: '本轮已超时', cancelled: '已停止',
 };
+/**
+ * 工具活动的展示名称，只用于解释过程；不能依据这个表构造工具白名单或权限。
+ */
 const toolLabels: Record<string, string> = {
   ontology_search: '查询业务规则', data_get: '读取单据', data_list: '查询业务数据', data_related: '查询关联记录',
   data_query: '汇总业务数据', approval_history: '查询审批进度', approval_tasks: '查询审批待办',
   approval_decide: '处理审批', request_input: '补充必要信息', request_page_context: '更新页面内容', memory_remember: '保存偏好',
 };
+/**
+ * 助理入口与空性格头像使用的装饰图形；aria-hidden 避免重复朗读按钮名称。
+ */
 function AssistantMark() {
   return <svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M7 6h18a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H14l-7 4v-4a3 3 0 0 1-3-3V9a3 3 0 0 1 3-3Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" /><path d="m16 10 1.5 4.5L22 16l-4.5 1.5L16 22l-1.5-4.5L10 16l4.5-1.5L16 10Z" fill="currentColor" /></svg>;
 }
+/**
+ * 渲染浮动面板、当前页面提示、会话消息、确认步骤和提问表单。
+ * context/suggestions 由页面注册层提供；pageKey 对应一次导航，字段与命令标签只影响展示。
+ * 对话文字保存在组件状态；SDK 的 run/events/streamingText 提供执行证据，不能用文字直接修改业务缓存。
+ * 展开时更新性格列表并恢复输入焦点；流式计时器在忙碌结束或卸载时释放，自动滚动尊重用户阅读位置。
+ */
 export function AssistantPanel({ context, suggestions, pageKey, fieldLabels = {}, commandLabels = {} }: {
   context: PageContextInput; suggestions: string[]; pageKey: string; fieldLabels?: Record<string, string>; commandLabels?: Record<string, string>;
 }) {
@@ -36,6 +56,10 @@ export function AssistantPanel({ context, suggestions, pageKey, fieldLabels = {}
   const streaming = assistant.streamingText;
   const progress = assistant.progress;
   const labelTool = (tool: string, name?: string | null) => sentPage.current.commandLabels[name ?? ''] ?? toolLabels[tool] ?? (tool.startsWith('query_') ? '查询业务数据' : '执行业务操作');
+  /**
+   * 按 step 与 callId 合并工具开始/完成事件，只显示最近四项活动。
+   * 这里是过程摘要，失败状态不能被后续自然语言回答覆盖成成功。
+   */
   const activity = useMemo(() => {
     const calls = new Map<string, { tool: string; name?: string; status: 'running' | 'completed' | 'failed' }>();
     for (const event of assistant.events) {
@@ -63,10 +87,18 @@ export function AssistantPanel({ context, suggestions, pageKey, fieldLabels = {}
     if (open) { setUnread(false); void assistant.refreshPersonalities(); (composer.current?.disabled ? closeButton.current : composer.current)?.focus({ preventScroll: true }); }
   }, [open]);
   useEffect(() => { if (!open && (streaming || interaction)) setUnread(true); }, [streaming, interaction, open]);
+  /**
+   * 收起面板并将焦点交回启动按钮；保留会话与在途任务，显式停止应调用 SDK cancel。
+   */
   function close() { setOpen(false); launcher.current?.focus({ preventScroll: true }); }
   const preview = (interaction?.data ?? {}) as Record<string, any>;
   const fields = (preview.input ?? (preview.key ? { key: preview.key, value: preview.value } : { outcome: preview.outcome, comment: preview.comment })) as Record<string, unknown>;
   const append = (role: 'user' | 'assistant', text: string, page?: string, name?: string) => setMessages(old => [...old, { role, text, page, name }]);
+  /**
+   * 统一等待发送、回复或停止操作，将最终回答追加到本地对话，并在返回后刷新业务查询。
+   * failed/expired 给出未完成提示，取消类异常不重复显示普通请求失败；其他异常展示原因。
+   * 刷新读取服务端真实结果，不使用模型回复拼造已保存记录。
+   */
   async function execute(action: () => Promise<AiRun | undefined>) {
     setFailure('');
     try {
@@ -79,6 +111,10 @@ export function AssistantPanel({ context, suggestions, pageKey, fieldLabels = {}
       if (!(error instanceof Error && (error.message === 'CANCELLED' || error.name === 'AbortError'))) setFailure(error instanceof Error ? error.message : '请求失败，请重试');
     }
   }
+  /**
+   * 仅在文本非空且没有运行、性格切换或待回复交互时开启一轮。
+   * 保存发送页面身份与标签；上一轮失败或取消的部分文本保留为历史，新的输入经 SDK 创建运行。
+   */
   function send(message: string) {
     if (!message.trim() || assistant.busy || assistant.personalityBusy || interaction) return;
     if (streaming && ['cancelled', 'failed', 'expired'].includes(assistant.run?.status ?? '')) append('assistant', streaming, undefined, assistant.run?.personality?.label);
@@ -86,6 +122,10 @@ export function AssistantPanel({ context, suggestions, pageKey, fieldLabels = {}
     followOutput.current = true; setShowLatest(false); append('user', message, context.page.title); setInput('');
     void execute(() => assistant.send(message));
   }
+  /**
+   * 拦截原生提交。等待 input 交互时提交补充答案，否则发送新问题。
+   * confirmation/page_context 由各自按钮处理，避免普通输入绕过确认或替换已持久化计划。
+   */
   function submit(event: FormEvent) {
     event.preventDefault();
     if (assistant.busy || assistant.personalityBusy) return;

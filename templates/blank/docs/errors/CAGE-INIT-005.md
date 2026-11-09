@@ -35,17 +35,18 @@ cage bootstrap --credentials-file .cage/admin-credentials.json // 新受限文�
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/cli/src/bootstrap.ts:12`
-- `packages/cli/src/bootstrap.ts:21`
-- `packages/cli/src/bootstrap.ts:26`
-- `packages/cli/src/bootstrap.ts:42`
+- `packages/cli/src/bootstrap.ts:19`
+- `packages/cli/src/bootstrap.ts:23`
+- `packages/cli/src/bootstrap.ts:32`
+- `packages/cli/src/bootstrap.ts:45`
+- `packages/cli/src/bootstrap.ts:61`
 
 实现片段（位置随框架版本更新）：
 
 ```ts
+ * @param file 已解析的目标路径，父目录必须存在，目标不得已存在。
+ * @throws 创建或 ACL 限制失败时抛出 CAGE-INIT-005；已创建空文件可能保留，不能视为交付成功。
+ */
+export function protectCredentialFile(file: string): void {
   try { closeSync(openSync(file, 'wx', 0o600)); }
-  catch { throw new Error('[CAGE-INIT-005] 无法创建新的受限凭据文件；请使用不存在的文件，并检查父目录及其权限'); }
-  if (process.platform === 'win32') {
-    try {
-      // Shell/sandbox accounts may differ from USERNAME. Grant the actual process identity by SID.
 ```

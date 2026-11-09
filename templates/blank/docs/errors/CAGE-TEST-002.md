@@ -35,15 +35,16 @@ derived(domain, { seed: 20261103, /* 按公开类型提供合法 fixture */ })
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/testkit/src/derived-diagnostics.ts:48`
-- `packages/testkit/src/derived-diagnostics.ts:53`
+- `packages/testkit/src/derived-diagnostics.ts:73`
+- `packages/testkit/src/derived-diagnostics.ts:77`
+- `packages/testkit/src/derived-diagnostics.ts:82`
 
 实现片段（位置随框架版本更新）：
 
 ```ts
+/**
+ * 携带结构化失败轨迹的测试异常，统一标识为 CAGE-TEST-002。
+ * 构造前由调用方脱敏 detail，消息序列化同一轨迹，phase/aggregate/seed 提供快速定位字段。
+ */
 export class DerivedTestError extends Error {
-  readonly code = 'CAGE-TEST-002';
-  readonly phase: 'fixture' | 'execution';
-  readonly aggregate: string;
-  readonly seed: number;
 ```

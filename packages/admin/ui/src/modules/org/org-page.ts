@@ -1,9 +1,17 @@
+/**
+ * 组织管理页面：按读取能力分别加载部门、用户与角色，再提供受能力控制的组织命令入口。
+ * 部门负责人用于审批选人，角色用于授权，两种配置独立维护；页面显示只反映当前取回的分页数据。
+ */
 import { api, can, run } from '../../shared/api.js';
 import { badge, field, h, icon, modal, panel, searchInput, table } from '../../shared/dom.js';
 import { navigate } from '../../shared/navigation.js';
 import type { Dept, List, Role, User } from '../../shared/types.js';
 
 /** 组织编辑继续走生成命令；负责人和角色是两份配置，在界面上明确区分。 */
+/**
+ * 并行读取最多一页组织数据，缺读取能力的集合按空列表处理，后端继续约束实际范围。
+ * 部门用 ancestors 深度显示层级；用户列表支持本地搜索，写入通过生成的领域路由，成功后刷新管理页面。
+ */
 export async function renderOrg(main: HTMLElement) {
   const [departments, people, roleResult] = await Promise.all([
     can('Dept.read')
@@ -134,6 +142,10 @@ export async function renderOrg(main: HTMLElement) {
       out,
     );
     main.append(userPanel);
+    /**
+     * 按当前本地搜索条件重画已加载用户，并根据命令能力展示角色、密码、启停操作。
+     * 过滤范围限于当前返回的数据，不执行服务器全量搜索。
+     */
     function renderUsers() {
       const visible = users.filter((user) =>
         `${user.name} ${user.username} ${departmentName.get(user.deptId) ?? ''}`
@@ -237,6 +249,9 @@ export async function renderOrg(main: HTMLElement) {
       h('p', { class: 'muted' }, '当前仅展示前 200 条可见组织记录；超出部分请通过业务组织接口查询。'),
     );
 
+  /**
+   * 打开新建部门表单，通过 Dept.create 传入父部门与资料；成功关闭弹窗并重载组织页。
+   */
   function createDepartment() {
     const name = h('input', { required: true, maxlength: 100, placeholder: '例如：采购部' });
     const parent = selectDepartment();
@@ -266,6 +281,10 @@ export async function renderOrg(main: HTMLElement) {
     const dialog = modal('新建部门', form);
     name.focus();
   }
+  /**
+   * 收集用户名、姓名及部门并调用用户创建命令；成功后刷新组织页，密码和角色需通过独立操作配置。
+   * 页面成功动作基于实际请求结果，不通过直接写表配置账号。
+   */
   function createUser() {
     const username = h('input', { required: true, placeholder: '用于登录的账号', autocomplete: 'off' });
     const name = h('input', { required: true, placeholder: '用户真实姓名' });
@@ -308,6 +327,10 @@ export async function renderOrg(main: HTMLElement) {
     const dialog = modal('新建用户', form);
     username.focus();
   }
+  /**
+   * 编辑所选用户的完整角色 ID 集合，已有选择作为初值，保存走 User.assignRoles。
+   * 界面提示不能代替服务端防提权和角色有效性检查，成功后才关闭并刷新。
+   */
   function assignRoles(user: User) {
     const selected = new Set(user.roleIds);
     const save = h('button', { class: 'primary', type: 'submit' }, '保存角色');
@@ -356,6 +379,10 @@ export async function renderOrg(main: HTMLElement) {
     );
     const dialog = modal('配置用户角色', form);
   }
+  /**
+   * 为指定用户打开密码重置表单，提交到独立 set-password 命令。
+   * 密码仅保留在表单和请求中；输入校验/授权由服务端再次执行，不影响角色分配。
+   */
   function resetPassword(user: User) {
     const password = h('input', {
       type: 'password',
@@ -389,6 +416,9 @@ export async function renderOrg(main: HTMLElement) {
     password.focus();
   }
 }
+/**
+ * 生成组织页的统计展示卡；value 由调用者传入，不能把本页条数误当服务器总数。
+ */
 function stat(label: string, value: number, glyph: string) {
   return h(
     'div',

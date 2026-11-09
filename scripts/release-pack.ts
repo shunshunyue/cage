@@ -1,3 +1,9 @@
+/**
+ * 本地制作并检查最终 npm tarball 的发布准备脚本。
+ * 依赖排序后的每个包先核对版本/许可证/仓库信息，再 pack 并读取压缩包内清单、入口与资源。
+ * 拒绝运行目录、凭据文件和无法从 npm 安装的 workspace/file/link 依赖，最后写版本目录中的完整性清单。
+ * 脚本只在本地写包、复制许可证和生成 manifest，不上传 npm，也不替代仓库外安装与业务数据库验收。
+ */
 // 实际生成 tarball，再检查 tarball 里的内容。源码目录检查无法发现漏打 dist、
 // workspace 依赖未转换、模板混入 .env 等分发问题，因此以最终压缩包为准。
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -11,6 +17,10 @@ const output = join(root, '.cage', 'releases', version);
 mkdirSync(output, { recursive: true });
 const names = new Set(packages.map((entry) => entry.pkg.name));
 const results = [];
+/**
+ * 递归展开条件 exports 或 bin 的叶子路径，供实际 tarball 文件清单检查。
+ * 未配置入口返回空列表；不会解析或执行对应入口模块。
+ */
 const targets = (value: ExportTarget | undefined): string[] =>
   typeof value === 'string' ? [value] : Object.values(value ?? {}).flatMap(targets);
 

@@ -1,8 +1,15 @@
+/**
+ * 成员详情路由，从地址栏独立校验和加载成员，支持直接访问与刷新。
+ * 姓名、联系方式等均来自安全契约结果，敏感字段是否可见由后端决定。
+ */
 import { Link, useParams } from 'react-router-dom';
 import { UserSchema, useUser } from '@app/contracts';
 import { PageState, QueryFailure } from '../../../shared/ui/page-state';
 
 /** ID 来自地址栏，详情不依赖“先打开列表”的内存对象，也不自行放宽读侧权限。 */
+/**
+ * 校验 URL 中的成员 id，非法时显示地址错误与返回目录入口；通过后才挂载读取组件。
+ */
 export function UserDetailPage() {
   const { id } = useParams();
   const parsed = UserSchema.shape.id.safeParse(id);
@@ -11,6 +18,10 @@ export function UserDetailPage() {
   return <UserDetail id={parsed.data} />;
 }
 
+/**
+ * 对合法 id 调用 useUser，分别呈现加载、权限/范围/网络错误及真实成员信息。
+ * 电话邮箱为空时显示未填写；该展示不能恢复被服务端掩码或裁剪的原始字段。
+ */
 function UserDetail({ id }: { id: string }) {
   const query = useUser(id);
   if (query.isPending)

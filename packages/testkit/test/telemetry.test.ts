@@ -1,3 +1,8 @@
+/**
+ * 默认内核日志的纯内存脱敏回归，拦截 console.error 检查最终输出。
+ * 构造嵌套敏感字段、循环引用、错误正文及含秘密的 URL，确保只有允许的追踪元数据和错误机器码进入日志。
+ * 不需要数据库；afterEach 恢复 spy，避免吞掉其他用例的日志。
+ */
 // 合成标记覆盖没有 HTTP 日志装配时的默认内核日志，防止错误文本或任意快照泄漏。
 import { consoleLogger } from '@yss123/cage-kernel';
 import { afterEach, expect, it, vi } from 'vitest';

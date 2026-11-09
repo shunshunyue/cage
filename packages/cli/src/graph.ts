@@ -1,3 +1,8 @@
+/**
+ * 本地图谱 HTTP 服务与独立抽取进程的管理层，由 cage graph 或查询命令调用。
+ * 抽取结果通过 IPC 传递，服务缓存当前快照，固定路由提供静态资源、节点源码和上下文。
+ * 仅监听回环地址并校验 Host/刷新来源；这是开发工具，不属于业务 API，刷新失败不会伪装成新快照。
+ */
 import { fork } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
@@ -8,6 +13,11 @@ import { buildContext, formatContext } from './context.js';
 
 /** 只采集声明元数据，不连接业务数据库。子进程的 IPC 把日志和 JSON 分开，
  * domain 的普通日志不会污染响应，也不会把进程环境变量发送给浏览器。 */
+/**
+ * fork 独立快照进程以绕开 ESM 缓存，使用 IPC 避免普通日志污染 JSON。
+ * @param root 应用目录，传给子进程。
+ * @returns 快照 Promise；启动、抽取或无结果退出导致拒绝，不连接业务数据库。
+ */
 export function collectGraph(root: string): Promise<GraphSnapshot> {
   return new Promise((resolve, reject) => {
     const child = fork(fileURLToPath(new URL('./graph-snapshot.js', import.meta.url)), [root], {
@@ -29,6 +39,12 @@ export function collectGraph(root: string): Promise<GraphSnapshot> {
 
 /** 本地开发工具只监听回环地址；源码预览只提供抽取快照内的注册声明，
  * 固定路由不接受文件路径。它不挂载到业务 API 或生产 /admin。 */
+/**
+ * 先抽取再启动本地图谱服务，并缓存可显式刷新的快照。
+ * @param cfg 应用配置。
+ * @param port 默认 15418，0 可由系统分配空闲端口。
+ * @returns HTTP server 与实际 URL，调用方负责关闭；仅监听回环，不提供任意文件读取。
+ */
 export async function serveGraph(cfg: CageConfig, port = 15418) {
   let snapshot = await collectGraph(cfg.root);
   let refreshing: Promise<GraphSnapshot> | undefined;
@@ -39,6 +55,8 @@ export async function serveGraph(cfg: CageConfig, port = 15418) {
     ['/relations.js', ['relations.js', 'text/javascript; charset=utf-8']],
     ['/structure.js', ['structure.js', 'text/javascript; charset=utf-8']],
     ['/approval-flow.js', ['approval-flow.js', 'text/javascript; charset=utf-8']],
+    ['/approval-parallel.js', ['approval-parallel.js', 'text/javascript; charset=utf-8']],
+    ['/approval-tree.js', ['approval-tree.js', 'text/javascript; charset=utf-8']],
     ['/graph-approvals.js', ['graph-approvals.js', 'text/javascript; charset=utf-8']],
     ['/graph-model.js', ['graph-model.js', 'text/javascript; charset=utf-8']],
     ['/graph-relations.js', ['graph-relations.js', 'text/javascript; charset=utf-8']],

@@ -1,3 +1,8 @@
+/**
+ * 应用验证编排，串联类型、依赖、lint、声明、生成一致性、托管区、预算与测试。
+ * 每个门禁记录 .cage/verify.json 并在失败时停止；测试先生成临时配置和派生用例，再执行真实 Vitest。
+ * 报告只代表本次已执行阶段，跳过用例另在测试报告及终端提示；本模块不执行浏览器验收或真实第三方联调。
+ */
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { ESLint } from 'eslint';
@@ -12,6 +17,13 @@ import { budget } from './budget.js';
 import { sync } from './sync.js';
 import type { Ontology } from './ontology.js';
 
+/**
+ * 生成通用性质用例并执行 Vitest，先删除旧报告避免读取历史成功结果。
+ * @param cfg 应用与生成目录配置。
+ * @param graph 当前本体。
+ * @param only 可限定派生或项目用例，项目模式允许无测试。
+ * @returns 进程和 JSON 报告共同确定的退出码；pending 会提示，但不单独使本函数失败。
+ */
 export async function testProject(
   cfg: CageConfig,
   graph: Ontology,
@@ -39,6 +51,13 @@ export async function testProject(
   return result.success ? 0 : 1;
 }
 
+/**
+ * 依次执行门禁并写入当前阶段结果，首个失败后停止。
+ * @param cfg 类型、依赖、源码和生成目录配置。
+ * @param opts 可提供语义基线；skipTests 省略整个测试阶段。
+ * @returns 0 表示已执行门禁通过，1 表示失败，工具启动或文件异常仍可抛出。
+ * complete 当前描述是否省略整个测试阶段，具体 pending 仍需读取 test-results.json。
+ */
 export async function verify(
   cfg: CageConfig,
   opts: { base?: Ontology; skipTests?: boolean } = {},

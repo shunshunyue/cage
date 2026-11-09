@@ -35,12 +35,12 @@ query('report', { reads: [Order], audit: { purpose: '月度核对' }, /* input/s
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/kernel/src/read.ts:116`
-- `packages/kernel/src/read.ts:117`
-- `packages/kernel/src/read.ts:253`
-- `packages/kernel/src/read.ts:254`
-- `packages/kernel/src/transfer/index.ts:160`
-- `packages/kernel/src/transfer/index.ts:161`
+- `packages/kernel/src/read.ts:136`
+- `packages/kernel/src/read.ts:137`
+- `packages/kernel/src/read.ts:284`
+- `packages/kernel/src/read.ts:285`
+- `packages/kernel/src/transfer/index.ts:176`
+- `packages/kernel/src/transfer/index.ts:177`
 
 实现片段（位置随框架版本更新）：
 

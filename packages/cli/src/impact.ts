@@ -1,3 +1,8 @@
+/**
+ * 比较两个本体版本并沿声明依赖推导受影响节点和验证候选。
+ * 入口可补充 Git 改动文件，随后合并新旧关系追踪字段、事件、审批及外部协作影响。
+ * 结果不是完整程序依赖分析；测试按 subject 或源码名称匹配，授权和外部兼容提示仍需实际核对。
+ */
 // 影响分析：在基线和当前各生成一张图，找出变化的节点，再沿着边向外扩散。
 // handler 文件的改动会被映射到它所属的命令节点，所以只改实现、不改声明也能算出影响。
 import { execFileSync } from 'node:child_process';
@@ -7,22 +12,41 @@ import { checkEventCompat } from './rules.js';
 import { diffOntology, type NodeDiff, type OntNode, type Ontology } from './ontology.js';
 import type { Finding } from './findings.js';
 
+/**
+ * 本体差异、受影响主体、候选测试及人工复核提示；不包含执行测试后的通过结论。
+ */
 export interface ImpactResult {
+  /** 按节点身份和哈希计算的增删改。 */
   diff: NodeDiff;
+  /** 直接变化或改动文件映射得到的起点 ID。 */
   start: string[];
+  /** 沿相关新旧关系传播得到的受影响 ID。 */
   affected: string[];
   /** 受影响节点 → 通过哪条边、以什么身份受影响 */
   reasons: Map<string, string>;
+  /** 按 subject 命中的派生验证候选，尚未执行。 */
   tests: DerivedTest[];
+  /** 调用方提供且匹配到主体名称的项目测试文件。 */
   projectTests: string[];
+  /** 需要人工或额外证据确认的授权、外部兼容等事项。 */
   confirm: string[];
+  /** 基线与当前 unsafe 使用数量，不表示每一处风险已审查。 */
   unsafe: { base: number; head: number };
+  /** 事件兼容等影响规则发现。 */
   findings: Finding[];
 }
 
+/**
+ * 在指定应用目录执行只读 Git 查询并返回去掉首尾空白的文本；异常由各调用点解释。
+ */
 const git = (cwd: string, args: string[]) =>
   execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
+/**
+ * 只读判断当前目录是否处于 Git 工作树。
+ * @param root 检查目录。
+ * @returns rev-parse 成功且为 true 时真，失败时假。
+ */
 export function isGitRepo(root: string): boolean {
   try {
     return git(root, ['rev-parse', '--is-inside-work-tree']) === 'true';
@@ -31,6 +55,12 @@ export function isGitRepo(root: string): boolean {
   }
 }
 
+/**
+ * 汇总基线至 HEAD、暂存、未暂存与未跟踪文件名。
+ * @param root 应用目录。
+ * @param base Git 比较基线。
+ * @returns 去重文件名；单次 Git 查询失败按该部分无结果处理，不负责验证基线有效性。
+ */
 export function changedFiles(root: string, base: string): string[] {
   const out = new Set<string>();
   const add = (s: string) =>
@@ -54,6 +84,11 @@ export function changedFiles(root: string, base: string): string[] {
   return [...out];
 }
 
+/**
+ * 读取本体 JSON 或带 graph 的快照信封并检查基础形状。
+ * @param path 文件路径。
+ * @returns version=1 的本体；形状、读取或 JSON 错误抛出，不做完整节点语义校验。
+ */
 export function readOntology(path: string): Ontology {
   const value = JSON.parse(readFileSync(path, 'utf8'));
   const graph = value.graph ?? value;
@@ -82,6 +117,13 @@ const LABEL: Record<string, string> = {
 
 /** 影响分析与开发前上下文共用测试候选选择。项目测试只按源码里的名字匹配，
  * 调用方必须标明它是线索，不能据此声称已找到全部需要执行的测试。 */
+/**
+ * 选择主体相关派生用例和源码名称命中的项目测试。
+ * @param subjects 受影响主体 ID 集合。
+ * @param tests 派生索引。
+ * @param projectTestFiles 调用方提供的候选文件；不存在的已删文件忽略。
+ * @returns 测试候选，不代表完整覆盖或已执行；短于三字符的名称不匹配项目测试。
+ */
 export function selectRelatedTests(
   subjects: ReadonlySet<string>,
   tests: DerivedTest[],
@@ -98,6 +140,15 @@ export function selectRelatedTests(
   return { derived, project };
 }
 
+/**
+ * 比较节点哈希并沿新旧边传播影响，保留已删除节点的旧消费者。
+ * @param base 修改前本体。
+ * @param head 当前本体。
+ * @param files 额外变化文件，映射到其中声明。
+ * @param tests 派生测试索引，默认空。
+ * @param projectTestFiles 需要调用方传入的项目测试路径，默认空。
+ * @returns 变化、影响理由和复核项；不运行测试或验证真实外部系统。
+ */
 export function impact(
   base: Ontology,
   head: Ontology,
@@ -199,6 +250,9 @@ export function impact(
   };
 }
 
+/**
+ * 按节点类别生成简短变化描述，命令补状态、反应补资源标签；只用于报告文案。
+ */
 function describeNode(n: OntNode): string {
   if (n.kind === 'command') {
     const from = n.attrs.from === 'new' ? '新建' : (n.attrs.from as string[]).join('/');
@@ -209,6 +263,13 @@ function describeNode(n: OntNode): string {
   return `${LABEL[n.kind] ?? n.kind} ${n.id}`;
 }
 
+/**
+ * 渲染本体变化摘要、影响范围、候选计数与兼容提示。
+ * @param r impact 结果。
+ * @param head 当前图用于查中文类别及属性。
+ * @param opts 文本/Markdown 格式和可选标题、门禁描述。
+ * @returns 报告文本；候选数量不等于测试完成或全覆盖。
+ */
 export function formatImpact(
   r: ImpactResult,
   head: Ontology,

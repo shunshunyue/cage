@@ -1,13 +1,27 @@
+/**
+ * 空白应用的登录表单，使用客户端完成认证并由 app 决定成功后的导航。
+ * SDK 先认证再读取当前用户和能力，两阶段都成功才通知 app；身份读取失败保留在登录页展示。
+ * 账号密码仅用于本次提交，不在本组件持久化或输出日志。
+ */
 // 认证模块拥有登录表单；登录后的导航由 app 组合层处理。
 import { useState, type FormEvent } from 'react';
 import { client } from '@app/contracts';
 import { errorMessages } from '../../../shared/lib/error-message';
 import { Brand } from '../../../shared/ui/brand';
 
+/**
+ * 维护本地忙碌与错误状态，使用统一错误文案；成功调用 onLogin 更新应用会话状态。
+ * 页面不直接消费未验证的 returnTo，也不会把网络错误当成登录成功。
+ */
 export function LoginPage({ onLogin }: { onLogin: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
+  /**
+   * 读取表单中的账号密码并等待 client.login；SDK 完成会话协议与用户能力同步。
+   * 返回失败结果时保留页面并提示原因，成功后回跳由 app 路由处理。
+   * NOT_FOUND 来自认证后读取当前身份的 GET 结果，单独提示服务配置问题，不误报为账号密码错误。
+   */
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -17,7 +31,10 @@ export function LoginPage({ onLogin }: { onLogin: () => void }) {
     const result = await client.login(String(form.get('username')), String(form.get('password')));
     setBusy(false);
     if (result.ok) onLogin();
-    else setError(errorMessages[result.code]);
+    else if (result.code === 'NOT_FOUND') {
+      // login 的返回类型包含 loadMe 的读取错误；先处理该分支，剩余代码仍由 CommonError 映射穷尽检查。
+      setError('无法加载当前登录信息，请检查 API 配置或联系管理员。');
+    } else setError(errorMessages[result.code]);
   }
 
   return (

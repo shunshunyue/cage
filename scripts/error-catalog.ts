@@ -1,7 +1,16 @@
 /**
+ * 错误码手册的唯一人工维护数据源，为每个源码诊断提供业务原因、修复步骤和正反例。
+ * build-error-docs 将这里的解释与实际源码位置合并；修改解释后需重新生成并同步两套模板。
+ * 文本用于开发者排错，不参与运行时异常分类，也不得包含真实密钥、连接密码或个人数据。
+ */
+/**
  * 错误码册的人工维护来源。每项解释一个真实诊断，不按规则族套用笼统修复。
  * 正反例是局部声明或操作说明，不是完整可独立编译的业务文件。
  * 新增运行时/检查器错误码时补齐本表；构建脚本负责核对与生成逐码页面。
+ */
+/**
+ * 单个错误码的解释结构，供生成器构造一致的逐码手册。
+ * title 是手册标题，when 说明触发条件，fix 给出修复动作，positive/negative 对照正确和错误用法。
  */
 export interface ErrorGuide {
   title: string;
@@ -11,6 +20,10 @@ export interface ErrorGuide {
   negative: string;
 }
 
+/**
+ * 按稳定错误码索引的中文解释表，新增运行时/静态诊断时应同步补充对应项。
+ * 示例字符串不执行，不应把建议中的验证动作写成已经通过的事实。
+ */
 export const errorGuides: Record<string, ErrorGuide> = {
   'CAGE-AI-001': {
     title: '智能运行时声明无效',
@@ -191,9 +204,9 @@ export const errorGuides: Record<string, ErrorGuide> = {
       "hasMany('Note', { mappedBy: 'title' }); // title 不是反向 ref\nlist({ members: manyToMany('User') }); // JSON 明细中不能声明关系",
   },
   'CAGE-APPR-001': {
-    title: '可路由字段不存在',
-    when: 'approval.routable 引用了所属聚合没有声明的字段。',
-    fix: ['先在聚合声明实际字段，再将需要给审批路由的字段放入 routable；不要把任意输入直接交给流程。'],
+    title: '审批字段声明无效',
+    when: 'approval.routable 引用了不存在字段，或 approver.field 指向未声明、隐藏、未进入 routable 的字段。',
+    fix: ['先在聚合声明实际字段，再将需要给审批路由的非隐藏字段放入 routable；不要把任意输入直接交给流程。', '字段选人值应为 UUID 或非空 UUID 数组，见 docs/ai/approvals.md；字段公开并不自动授予审批能力。'],
     positive: "routable: ['amount', 'deptId'] // 两字段均在 PurchaseOrder.fields 中",
     negative: "routable: ['managerName'] // 聚合没有该字段",
   },
@@ -226,18 +239,19 @@ export const errorGuides: Record<string, ErrorGuide> = {
     negative: "route('采购审批', nodes)",
   },
   'CAGE-APPR-006': {
-    title: '流程没有步骤',
-    when: 'route 接收了空步骤数组。',
-    fix: ['声明至少一个实际审批步骤，并检查条件后能否形成预期流程。'],
+    title: '审批步骤配置无效',
+    when: 'route 没有步骤、展开后为空，或人工 actions/assignment、候选池与 all 组合、AI 步骤必填配置或预算不合法。',
+    fix: ['声明至少一个实际审批步骤，并检查条件后能否形成预期流程。', 'candidate 只支持 any；逐人会签用默认 direct。actions 只接受 transfer/delegate/addSign 布尔值。', 'AI 步骤需模型、要求、上下文字段、接管规则及正整数预算，并绑定 AI 运行时、退回命令和自动角色。'],
     positive: "route('po-approval', [step('经理审批', approver.deptLeader('deptId'))])",
     negative: "route('po-approval', [])",
   },
   'CAGE-APPR-007': {
     title: '找不到审批人',
-    when: 'worker 启动或推进审批步骤时，选人器没有找到人。',
+    when: 'worker 启动或推进审批步骤时选人器没有找到人，或字段选人/候选节点中存在非当前租户启用账号。',
     fix: [
       '先看本项目 approvals.ts：deptLeader 读取单据部门的负责人；role 使用角色 code；user 使用实际用户 UUID。',
       '在 /admin 设置单据所属部门的负责人，或创建对应 code 的角色并分配实际用户。给用户经理角色，并不等于设置了部门负责人。',
+      'field 使用提交时保存的 routable 人员字段；检查 UUID 对应账号是否全部在当前租户且 active。不能删掉不合格人员后默认为审批通过；字段快照错误需按业务撤回/重提修正。',
       '再核对审批人的结论能力、数据范围、ceiling 额度和职责分离。选中审批人不等于允许完成审批。',
       '若 OrderSubmitted 已入死信，修复后在 /admin 按 outboxId 重放，确认待办生成；原提交已成功时不重复提交或 SQL 改回草稿。',
     ],

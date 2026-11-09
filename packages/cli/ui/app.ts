@@ -1,3 +1,8 @@
+/**
+ * 本地图谱浏览器入口，装配业务地图、对象字段视图、完整本体以及搜索/详情交互。
+ * 从 CLI 固定 HTTP 接口读取快照，复用共享投影与关系解释，URL 保存可分享选择，画布坐标保存在页面内存。
+ * 仅阅读声明而不执行业务；刷新失败保留上次成功图并明确提示，源码文本通过 textContent 呈现，不执行预览内容。
+ */
 import type { GraphSnapshot } from '../src/graph-snapshot.js';
 import type { NodeKind } from '../src/ontology.js';
 import {
@@ -34,6 +39,9 @@ import {
 
 // 页面不引入图形框架或远程 CDN。百级声明图使用 SVG，即可保留清晰缩放、
 // 键盘选择和可检查的节点语义；所有数据都由本地 CLI 抽取服务提供。
+/**
+ * 获取 index.html 约定的固定 DOM 锚点并标注调用方类型；这些 ID 由静态骨架提供。
+ */
 const element = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id)! as T;
 const svg = document.getElementById('graph')! as unknown as SVGSVGElement;
 const viewport = document.getElementById('viewport')! as unknown as SVGGElement;
@@ -73,6 +81,9 @@ const edgeElements = new Map<
   }
 >();
 
+/**
+ * 创建页面元素并用 textContent 写文本，避免把抽取文案当作 HTML 执行；返回未挂载节点。
+ */
 function html<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   className = '',
@@ -83,6 +94,9 @@ function html<K extends keyof HTMLElementTagNameMap>(
   node.textContent = text;
   return node;
 }
+/**
+ * 创建 SVG 命名空间元素并设置属性/文本，供节点和连线绘制；不进行布局计算。
+ */
 function vector<K extends keyof SVGElementTagNameMap>(
   tag: K,
   attrs: Record<string, string | number> = {},
@@ -93,9 +107,19 @@ function vector<K extends keyof SVGElementTagNameMap>(
   node.textContent = text;
   return node;
 }
+/**
+ * 在当前展示模型按完整 key 查找节点；调用者只传入模型或检索结果中的已知 key。
+ */
 const byKey = (key: string) => model.nodes.find((n) => n.key === key)!;
+/**
+ * 使用当前快照的中文覆盖获取显示名，保留底层业务 ID。
+ */
 const displayName = (node: ViewNode) => nodeLabel(node, snapshot.presentation.labels);
 
+/**
+ * 按 patch 修改当前查询参数，null 表示移除，并按 replace 决定替换或新增历史。
+ * 不自行重渲染；调用方必须同步页面状态，避免地址和视图分离。
+ */
 function address(patch: Record<string, string | null>, replace = false) {
   const url = new URL(location.href);
   for (const [key, value] of Object.entries(patch)) {
@@ -105,6 +129,9 @@ function address(patch: Record<string, string | null>, replace = false) {
   if (url.href !== location.href) history[replace ? 'replaceState' : 'pushState'](null, '', url);
 }
 
+/**
+ * 切回业务视图并更新 URL、筛选及画布；仅换场景时滚到入口，窄屏选步骤时滚到详情。
+ */
 function navigateBusiness(patch: Record<string, string | null>) {
   const previousScene = element('business-view').dataset.scene;
   mode = 'business';
@@ -118,6 +145,10 @@ function navigateBusiness(patch: Record<string, string | null>) {
     element('business-view').querySelector('.business-detail')?.scrollIntoView({ block: 'start' });
 }
 
+/**
+ * 从 URL 恢复可用视图、选中对象与系统开关，删除或无效节点不被强行选中。
+ * 清除临时聚焦和边选择，供首次加载及浏览器前进后退复用。
+ */
 function restoreAddress() {
   const params = new URLSearchParams(location.search);
   const view = params.get('view');
@@ -136,6 +167,9 @@ function restoreAddress() {
   enabled = new Set(mode === 'all' ? Object.keys(kinds) : businessKinds);
 }
 // 中文字符约占两个半角字宽，不能沿用英文按字符数截断，否则标题会溢出卡片。
+/**
+ * 按半角/中文近似宽度截断画布短标题，超限添加省略号；不是精确字体测量。
+ */
 function shortName(text: string, width = 23): string {
   let result = '',
     used = 0;
@@ -147,6 +181,9 @@ function shortName(text: string, width = 23): string {
   return result;
 }
 
+/**
+ * 将详情中的业务标识转换为可读名称；可指定类型消歧，未命中节点时尝试显示覆盖，最终保留原始值。
+ */
 const named = (id: unknown, kind?: NodeKind): string => {
   const node = model.nodes.find((n) => n.id === id && (!kind || n.kind === kind));
   return node
@@ -154,11 +191,18 @@ const named = (id: unknown, kind?: NodeKind): string => {
     : ((kind ? snapshot.presentation.labels[`${kind}:${id}`] : undefined) ?? String(id));
 };
 
+/**
+ * 更新页面状态提示，空文本隐藏区域；不把错误提示写进本体快照。
+ */
 function notify(message: string) {
   element('notice').textContent = message;
   element('notice').hidden = !message;
 }
 
+/**
+ * 读取或重新抽取快照，再重建投影、卡片与详情。
+ * refresh 为 true 时调用 POST；期间禁用刷新按钮，失败保留旧图并提示其来源，finally 恢复按钮。
+ */
 async function load(refresh = false) {
   const button = element<HTMLButtonElement>('refresh');
   button.disabled = true;
@@ -207,6 +251,9 @@ async function load(refresh = false) {
   }
 }
 
+/**
+ * 从当前快照更新项目标题、节点统计和规则状态；通过只表示声明规则，不表示业务测试通过。
+ */
 function renderSummary() {
   element('project-name').textContent = snapshot.presentation.title;
   element('project-name').title = snapshot.project;
@@ -237,6 +284,9 @@ function renderSummary() {
   }
 }
 
+/**
+ * 按当前视图重建板块/对象与类型筛选，回调更新内存状态并请求重绘，不修改声明。
+ */
 function renderFilters() {
   element('types-heading').hidden = mode !== 'all';
   element('type-filters').hidden = mode !== 'all';
@@ -319,6 +369,9 @@ function renderFilters() {
 
 /** 选一个聚合时，先纳入它自己的声明，再沿真实关系扩展业务链。
  * 不沿其他聚合的归属边扩散，避免选采购单却展开所有组织管理命令。 */
+/**
+ * 围绕指定聚合沿有限三跳显式关系收集相关节点，避免归属虚线扩散为所有组织命令。
+ */
 function aggregateNodes(id: string): Set<string> {
   const keys = new Set(model.nodes.filter((n) => n.id === id || n.id.startsWith(`${id}.`)).map((n) => n.key));
   for (let hop = 0; hop < 3; hop++) {
@@ -332,6 +385,10 @@ function aggregateNodes(id: string): Set<string> {
   return keys;
 }
 
+/**
+ * 按业务、结构或完整模式重建可见画布，应用类型/系统/对象/邻域筛选。
+ * resetLayout 决定是否重新排布；切走业务视图先释放专属监听器，绘制不修改语义图。
+ */
 function renderGraph(resetLayout = true) {
   const business = mode === 'business';
   element('explorer').classList.toggle('business-mode', business);
@@ -543,6 +600,10 @@ function renderGraph(resetLayout = true) {
 
 /** 绿色表头、逐行字段和表名保持在同一 SVG 卡片里。字段是可选择的原始节点，
  * 表头负责拖动卡片，字段点击不会误触画布拖动或把数据结构重新拆散。 */
+/**
+ * 为一个真实聚合绘制字段卡片，保留字段身份供点击、键盘和关系解释使用。
+ * 卡片尺寸来自字段数量，敏感/可选/关系标记只展示声明事实。
+ */
 function renderTable(card: TableCard) {
   const { node, fields, height } = card;
   const group = vector('g', {
@@ -663,11 +724,18 @@ function renderTable(card: TableCard) {
   nodeElements.set(node.key, group);
 }
 
+/**
+ * 按当前视图返回节点尺寸：对象卡片使用字段数算出的高度，普通图使用固定节点规格。
+ */
 const nodeSize = (key: string) =>
   mode === 'structure'
     ? { width: TABLE_WIDTH, height: tableOwner(visibleCards, key)!.height }
     : { width: NODE_WIDTH, height: NODE_HEIGHT };
 
+/**
+ * 将内存节点位置同步到 SVG 并重算连线，随后在候选线段位置选择碰撞较少的标签落点。
+ * 标签仍贴近对应线，拖动只变展示坐标，不保存后端数据。
+ */
 function updatePositions() {
   for (const n of visibleNodes) {
     const p = positions.get(n.key)!;
@@ -704,6 +772,9 @@ function updatePositions() {
     occupied.push(box);
   }
 }
+/**
+ * 同步节点/边选择高亮及无障碍状态，结构视图保留其他字段的可读对比度。
+ */
 function highlight() {
   const connected = selectedEdge
     ? new Set([selectedEdge.from, selectedEdge.to])
@@ -746,6 +817,10 @@ function highlight() {
     path.setAttribute('marker-end', active ? 'url(#arrow-active)' : 'url(#arrow)');
   }
 }
+/**
+ * 根据节点选择切到合适业务入口或技术视图，必要时显式解除隐藏筛选再定位。
+ * reveal 请求把目标带入视口，不代表执行该节点的业务操作。
+ */
 function selectNode(key: string, reveal = false) {
   if (mode === 'business') {
     const node = byKey(key);
@@ -805,6 +880,9 @@ function selectNode(key: string, reveal = false) {
 
 /** 搜索到长画布下方的字段时将该行移入视口。窄屏详情高度变化可能再次触发
  * ResizeObserver，适应画布后仍需保留搜索位置，否则字段会瞬间跳回屏幕外。 */
+/**
+ * 把结构视图搜索到的具体字段行移入视口，保留 resize 后的阅读目标；目标已清除则忽略旧帧。
+ */
 function centerSearchResult() {
   // 等待绘制期间切换视图会清除目标，这一帧就不再执行旧的搜索定位。
   if (!searchTarget) return;
@@ -820,6 +898,9 @@ function centerSearchResult() {
   applyCamera();
 }
 
+/**
+ * 选中真实关系并确保两端可见；结构模式不能表达的关系切到完整本体，随后刷新解释面板。
+ */
 function selectEdge(edge: ViewEdge) {
   searchTarget = null;
   selectedEdge = edge;
@@ -849,6 +930,9 @@ function selectEdge(edge: ViewEdge) {
   element('inspector').scrollTop = 0;
 }
 
+/**
+ * 渲染连线原因、用途、端点及源码依据，解释复用 CLI 的共享规则，不按布局猜测执行关系。
+ */
 function renderEdgeInspector(panel: HTMLElement, edge: ViewEdge) {
   const explanation = explainEdge(edge, model, snapshot.presentation.labels);
   const top = html('div', 'inspector-top');
@@ -901,6 +985,10 @@ function renderEdgeInspector(panel: HTMLElement, edge: ViewEdge) {
   );
 }
 
+/**
+ * 重建技术详情面板，优先显示选中边，再按节点类型显示字段、规则、实现与关联入口。
+ * 业务视图有独立详情故直接返回；所有动态文字通过 DOM 文本节点呈现。
+ */
 function renderInspector() {
   if (mode === 'business') return;
   const panel = element('inspector');
@@ -1130,6 +1218,9 @@ function renderInspector() {
 
 /** 把会直接影响阅读理解的属性值翻译为业务名称；SQL 表名、cron 和折叠的
  * 原始元数据仍保持技术原文，方便开发者核对实现。 */
+/**
+ * 把节点属性转成可读值，特别保留事务、集合上限和资源标签语义；未知值按字符串展示。
+ */
 function detailValue(key: string, value: unknown): string {
   if (key === 'collection') {
     const collection = value as { maxItems: number; orderBy: string };
@@ -1171,6 +1262,9 @@ function detailValue(key: string, value: unknown): string {
   return ['kind', 'sensitive'].includes(key) ? (types[String(value)] ?? String(value)) : String(value);
 }
 
+/**
+ * 将约束中文解释委托共享业务规则，保证技术详情和业务地图用同一字段/额度口径。
+ */
 function constraintLabel(name: string, aggregateId: string): string {
   return businessConstraintLabel(name, aggregateId, snapshot.presentation.labels);
 }
@@ -1195,6 +1289,9 @@ const descriptions: Record<NodeKind | 'entry', string> = {
   entry: '新建命令进入初始业务状态的虚拟起点。',
 };
 
+/**
+ * 按当前快照展示规则错误码、原因、修复建议和位置，不自动修复源码。
+ */
 function renderFindings() {
   const list = element('findings-list');
   list.replaceChildren();
@@ -1207,6 +1304,10 @@ function renderFindings() {
   }
 }
 
+/**
+ * 复用共享排名检索节点并同时检索板块，显示有限候选和命中依据。
+ * 点击候选更新导航并清空搜索框；未命中只提示换关键词，不判定业务不存在。
+ */
 function searchNodes() {
   const query = element<HTMLInputElement>('search').value.trim().toLowerCase();
   const results = element('search-results');
@@ -1251,10 +1352,16 @@ function searchNodes() {
     results.append(html('div', 'search-empty', '没有匹配的业务，试试业务名称、操作或代码标识。'));
 }
 
+/**
+ * 把当前平移和缩放应用到 SVG 并更新百分比显示，节点业务坐标保持不变。
+ */
 function applyCamera() {
   viewport.setAttribute('transform', `translate(${camera.x},${camera.y}) scale(${camera.scale})`);
   element('zoom-level').textContent = `${Math.round(camera.scale * 100)}%`;
 }
+/**
+ * 依据可见节点实际尺寸计算居中缩放；结构视图保持字段可读下限并保留搜索行定位。
+ */
 function fit() {
   if (!visibleNodes.length) return;
   const bounds = svg.getBoundingClientRect();
@@ -1284,6 +1391,9 @@ function fit() {
   applyCamera();
   if (mode === 'structure' && searchTarget) centerSearchResult();
 }
+/**
+ * 以屏幕锚点缩放并限制倍率范围，清除临时搜索吸附，避免缩放时图像突然跳到别处。
+ */
 function zoom(factor: number, x = svg.clientWidth / 2, y = svg.clientHeight / 2) {
   searchTarget = null;
   const scale = Math.min(2.5, Math.max(0.15, camera.scale * factor));
@@ -1329,6 +1439,9 @@ svg.addEventListener('pointermove', (event) => {
     applyCamera();
   }
 });
+/**
+ * 结束本次指针拖动；只有正常 pointerup 且未移动才按点击选择，取消不触发选择。
+ */
 const endDrag = (event: PointerEvent) => {
   if (!drag || drag.id !== event.pointerId) return;
   if (event.type === 'pointerup' && !drag.moved) {
@@ -1364,6 +1477,9 @@ new ResizeObserver(() => {
   }
 }).observe(svg);
 
+/**
+ * 恢复业务首页并清除 URL 中板块、流程、步骤及技术选择，保留当前抽取快照。
+ */
 function resetView() {
   mode = 'business';
   aggregate = null;

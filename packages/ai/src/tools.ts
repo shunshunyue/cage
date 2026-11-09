@@ -1,3 +1,7 @@
+/**
+ * 把注册表与运行时本体编译为当前主体可见、可校验的模型工具。
+ * 请求规划器选择完整定义，运行时按 effect 执行读、写、交互、发现或裁决；工具调用不会绕过内核安全读、领域命令、审批身份或动作回执事务。
+ */
 import { cageError, present, type Ctx } from '@yss123/cage-kernel';
 import { type InCodeEngine } from '@yss123/cage-approval';
 import { ontologyCatalog } from '@yss123/cage-ontology';
@@ -11,29 +15,73 @@ import { digest, parse } from './security.js';
 import { authorizedToolKeys, callable, loadToolKeys } from './tool-catalog.js';
 import { readContext } from './context-read.js';
 
+/**
+ * 模型工具的服务端可执行定义；公开 JSON Schema 与真实 Zod 校验同时保留。
+ * effect 决定运行时是否确认、暂停或在事务内完成；模型只看到名称、说明和 input，不获得 execute 函数或数据库连接。
+ */
 export interface Tool extends ModelTool {
+  /**
+   * 可选业务本体 key，供发现和预算选择；基础工具没有 key。
+   */
   key?: string;
+  /**
+   * 真实执行前的输入 schema，与发送给模型的 JSON Schema 对应。
+   */
   schema: z.ZodType;
+  /**
+   * 副作用分类：读、写、用户互动、审批裁决或工具发现/加载。
+   */
   effect: 'read' | 'write' | 'interaction' | 'decision' | 'load' | 'discover';
+  /**
+   * 执行已解析参数；写工具要求运行时传入动作事务，读取工具通常不使用该事务。
+   */
   execute(execution: Execution, args: any, tx?: Transaction<any>): Promise<unknown>;
+  /**
+   * 可选写入确认预览；应重新取当前可见事实并掩码，不在预览阶段提交业务变化。
+   */
   preview?(execution: Execution, args: any): Promise<unknown>;
 }
+/**
+ * 工具参数通用标识符校验，与 params 共同构成基础输入片段。
+ * 名称长度为 1 至 160 字符；params 是默认空对象的参数字典，具体字段合法性由被调用内核读接口继续校验。
+ */
 const name = z.string().min(1).max(160),
   params = z.record(z.string(), z.unknown()).default({});
+/**
+ * 本体与证据目录的分页输入，offset 为零基，单页默认 10 项、最多 20 项。
+ * 这是目录/证据页限制，不替代业务列表和命名查询各自的行数边界。
+ */
 const paging = {
   offset: z.number().int().nonnegative().default(0),
   limit: z.number().int().min(1).max(20).default(10),
 };
+/**
+ * 严格的本体搜索输入：允许最长 500 字符关键词、可选聚合筛选和有界分页；空关键词用于浏览目录。
+ */
 const searchSchema = z
   .object({ query: z.string().max(500).default(''), aggregate: name.optional(), ...paging })
   .strict();
+/**
+ * 从已注册 ROUTE 扩展解析进程内审批引擎，供待办、历史与审核工具复用。
+ * 只发现框架已注册引擎，不创建外部审批权限，也不按模型任意字符串动态加载实现。
+ */
 export function engines(execution: Pick<Execution, 'kernel'>): InCodeEngine[] {
   return execution.kernel.registry.extensions
     .filter((e) => e.kind === 'ROUTE')
     .map((e) => e.value.engine(execution.kernel));
 }
+/**
+ * 按 Zod 实例缓存 JSON Schema，避免每轮重复转换完整参数定义；弱引用不会永久保留已废弃声明。
+ */
 const inputDefinitions = new WeakMap<z.ZodType, Record<string, unknown>>();
+/**
+ * 按命令声明对象缓存 input/expectedVersion 包装 schema；真实执行仍校验当前命令状态、权限与版本。
+ */
 const commandSchemas = new WeakMap<object, z.ZodType>();
+/**
+ * 把名称、说明、Zod schema 和服务端执行/预览函数组合为 Tool。
+ * JSON Schema 用于模型理解输入，真实 Zod schema 继续在执行前校验；转换缓存不等于校验缓存或授权缓存。
+ */
 function define(
   name: string,
   description: string,
@@ -51,6 +99,12 @@ function define(
 }
 
 /** 注册声明编译成工具；应用无需为每个业务对象重新实现工具。当前权限决定每轮可见目录。 */
+/**
+ * 按当前运行模式、主体权限和持久工具选择生成工具集合。
+ * 助理可取本体、安全读、已加载业务命令/查询、本人审批及交互/偏好工具；审批仅有上下文读取、策略白名单查询和 review_decide，不获得通用业务写入口。
+ * 命名查询要求所有 reads 能力并最多交付 200 行；业务写必须同动作回执事务执行，更新已有对象必须带 expectedVersion，确认预览重新读取并掩码。
+ * 发现/加载只产出候选，容量由请求规划器决定；工具名校验、当前授权和内核约束仍在每次实际动作中执行。
+ */
 export function toolsFor(execution: Execution, selection?: { keys: string[]; discovery: boolean }): Tool[] {
   const { kernel, ctx, run, ontology } = execution,
     review = run.mode === 'approval';
@@ -159,6 +213,7 @@ export function toolsFor(execution: Execution, selection?: { keys: string[]; dis
       ),
     );
   }
+  // 查询同时受 reads 能力与审批策略白名单限制；助理还要求完整 schema 已装载，搜索命中不等于当前已可执行。
   for (const query of kernel.registry.queries) {
     if (
       !query.reads.every((agg) => ctx.capabilities.has(`${agg.name}.read`)) ||
@@ -192,6 +247,7 @@ export function toolsFor(execution: Execution, selection?: { keys: string[]; dis
     );
     return tools;
   }
+  // 只暴露用户身份入口。命令 schema 加 expectedVersion 包装，真实写入复用内核流水线并与持久动作回执同事务。
   for (const command of kernel.registry.commands) {
     if (!command.cmd.invokedBy.includes('user') || !ctx.capabilities.has(command.capability)) continue;
     if (!selected.has(`command:${command.capability}`)) continue;
@@ -248,6 +304,7 @@ export function toolsFor(execution: Execution, selection?: { keys: string[]; dis
       },
     ),
   );
+  // 本人待办仍需逐个确认业务对象可读；不可读项被省略，不能用空列表推断整个审批流程不存在。
   tools.push(
     define(
       'approval_tasks',
@@ -274,29 +331,35 @@ export function toolsFor(execution: Execution, selection?: { keys: string[]; dis
       process: name,
       taskId: z.uuid(),
       outcome: z.enum(['approved', 'rejected', 'returned']),
-      comment: z.string().max(2000).optional(),
+      comment: z.string().max(1000).optional(),
+      // 将用户确认绑定到待办版本；不能在执行时自动换成最新版本而让旧确认批准转回来的新任务。
+      expectedRevision: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
     })
     .strict();
   tools.push(
     define(
       'approval_decide',
-      '对本人待办通过、拒绝或退回修改；不能代替他人。',
+      '对本人待办通过、拒绝或退回修改；携带 approval_tasks 返回的 revision 作为 expectedRevision，委派未归还时不能决定。',
       taskSchema,
       'write',
       async (e, a, tx) => {
         const engine = engines(e).find((v) => v.route.process === a.process);
         if (!engine || !tx) throw cageError('NOT_FOUND');
-        return engine.decideIn(tx, a.taskId, e.ctx.userId!, e.ctx.tenantId, a.outcome, a.comment);
+        return engine.decideIn(tx, a.taskId, e.ctx.userId!, e.ctx.tenantId, a.outcome, a.comment, a.expectedRevision);
       },
       async (e, a) => {
         const engine = engines(e).find((v) => v.route.process === a.process);
         const task = (await engine?.tasksOf(e.ctx.userId!, e.ctx.tenantId))?.find((t) => t.id === a.taskId);
         if (!task) throw cageError('NOT_FOUND');
+        if (task.delegation === 'pending') throw cageError('INVALID_TRANSITION');
+        if ((task.assignment === 'candidate' || Object.values(task.actions).some(Boolean)) && a.expectedRevision === undefined) throw cageError('INVALID_INPUT');
+        if (a.expectedRevision !== undefined && a.expectedRevision !== task.revision) throw cageError('CONFLICT');
         return {
           process: a.process,
           taskId: a.taskId,
           outcome: a.outcome,
           comment: a.comment,
+          expectedRevision: a.expectedRevision,
           subject: await kernel.read.get(task.aggregate, task.businessKey, e.ctx),
         };
       },
@@ -320,6 +383,7 @@ export function toolsFor(execution: Execution, selection?: { keys: string[]; dis
       async (_e, a) => a,
     ),
   );
+  // 偏好按当前用户隔离并始终要求运行时确认。内容用途由工具说明约束，schema 只限制长度，不声称具有敏感语义识别能力。
   tools.push(
     define(
       'memory_remember',
@@ -361,6 +425,10 @@ export function toolsFor(execution: Execution, selection?: { keys: string[]; dis
   return tools;
 }
 
+/**
+ * 按本轮实际工具列表精确匹配模型名称，再用工具的 Zod schema 解析参数。
+ * 未知或当前无权工具返回 FORBIDDEN，参数错误返回稳定输入错误；不允许模型直接指向任意导出函数。
+ */
 export function checkedTool(tools: Tool[], name: string, input: unknown): { tool: Tool; args: any } {
   const tool = tools.find((t) => t.name === name);
   if (!tool) throw cageError('FORBIDDEN', '工具未注册或当前主体无权调用');

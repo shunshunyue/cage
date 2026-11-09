@@ -1,3 +1,9 @@
+/**
+ * 启动采购 AI 的独立演示环境，供真实页面、角色和模型交互验收。
+ * 使用测试工具创建隔离库并通过命令准备买方、审批者、无权限账号和样例单据，再挂载 Web、API 与 worker。
+ * 凭据和运行信息写入本次 .cage 输出目录，模型配置可从显式输入文件导入，秘密不进入普通运行日志。
+ * 停止标记或进程信号触发关闭流程；本脚本依赖框架已构建产物，不是生产部署或通用业务初始化入口。
+ */
 // 仓库演示入口：用框架 testkit 创建隔离数据库，所有演示业务数据通过命令写入。
 // 不读取或覆盖应用 .env；模型使用 Admin 中的真实连接配置，ERP 保持 fake。
 import { randomBytes } from 'node:crypto';
@@ -72,6 +78,10 @@ console.log(JSON.stringify(info, null, 2));
 let closing = false;
 // 无可交互终端时也能通过本次实例目录中的 stop 文件正常关闭，而不是强制结束数据库。
 const stopTimer = setInterval(() => { void access(join(output, 'stop')).then(() => close(), () => {}); }, 1000);
+/**
+ * 幂等关闭本次演示：停止轮询、worker 和 API，清理测试环境及自建 PostgreSQL。
+ * closing 防止停止文件与进程信号重复并发清理；不作用于用户现有业务数据库。
+ */
 async function close() {
   if (closing) return; closing = true;
   clearInterval(stopTimer);

@@ -1,6 +1,6 @@
 {
   "name": "@yss123/cage-client",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "笼子前端 SDK 运行时：请求、错误码、can()、查询 hooks",
   "type": "module",
   "main": "dist/index.js",
@@ -18,7 +18,9 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
-  "dependencies": { "@yss123/cage-ai-protocol": "workspace:*" },
+  "dependencies": {
+    "@yss123/cage-ai-protocol": "workspace:*"
+  },
   "peerDependencies": {
     "@tanstack/react-query": "^5.0.0",
     "react": ">=18",

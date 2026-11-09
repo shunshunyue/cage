@@ -1,4 +1,9 @@
 /**
+ * 检查规范教材是否完整进入待分发模板或显式指定的独立应用目录。
+ * 逐个 Markdown 比较源文档与快照，检查 AGENTS 学习入口，并验证本地链接可解析。
+ * 代码块剥离后才扫描链接，避免把语法反例当导航；本脚本不编译文档示例或运行浏览器验收。
+ */
+/**
  * 验证用户真正拿到的学习资料：模板快照完整、与规范来源一致、相对链接可打开。
  * 不启动数据库或生成业务行为测试；这项检查专门防止“仓库里有，脚手架里没有”。
  */
@@ -12,6 +17,10 @@ const applications = process.argv[2]
   ? [resolve(process.argv[2])]
   : ['app', 'blank'].map((name) => join(root, 'templates', name));
 
+/**
+ * 递归枚举给定资料目录中的 Markdown 文件，供来源与分发快照逐一比对。
+ * 返回路径列表，不读取正文、不跟进网页，也不修改文档。
+ */
 function markdownFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = join(directory, entry.name);

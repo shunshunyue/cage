@@ -1,3 +1,8 @@
+/**
+ * 已登录工作台的公共外壳：导航、当前账号、退出登录、Outlet 和唯一的业务助理。
+ * 业务页面经路由模块入口进入 Outlet；系统管理使用独立链接。
+ * 助理随页面更新语义快照，账号退出成功后清空查询缓存。
+ */
 // 应用壳组合模块公开入口，只持有导航和会话；表单、筛选、命令留在各业务模块。
 import { useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
@@ -7,6 +12,12 @@ import { useApprovalTasks } from '../modules/approval';
 import { errorMessage } from '../shared/lib/error-message';
 import { AssistantScope } from '../shared/ui/assistant-scope';
 
+/**
+ * 渲染工作台公共区域并把子路由放入内容区。
+ * @param onLogout SDK 退出成功后通知 app 切换会话状态的回调。
+ * 本壳提供固定导航入口；目标路由和服务端分别处理页面访问与真实请求的权限。
+ * location.key 标识一次页面导航，用于防止新页面沿用上一张单据的助理上下文。
+ */
 export function WorkspaceLayout({ onLogout }: { onLogout: () => void }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);

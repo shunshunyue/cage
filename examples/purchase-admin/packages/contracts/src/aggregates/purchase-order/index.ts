@@ -12,6 +12,8 @@ export const PurchaseOrderSchema = z.object({
   supplierPhone: z.string().nullable().optional(),
   amount: z.string(),
   reason: z.string().nullable().optional(),
+  needsSpecialistReview: z.boolean().nullable().optional(),
+  reviewerIds: z.array(z.string().uuid()).nullable().optional(),
   items: z.array(z.object({ sku: z.string(), qty: z.number().int() })),
   erpNo: z.string().nullable().optional(),
   attachments: z.array(z.string().uuid()).max(10),
@@ -29,9 +31,10 @@ export const PurchaseOrderFileFields = {"attachments":{"maxBytes":2147483648,"ac
 /** 命令输入：和后端命令的输入校验完全一致 */
 export const PurchaseOrderInputs = {
   cancel: z.object({ id: z.string().uuid().regex(new RegExp("^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$")) }),
-  create: z.object({ amount: z.string(), items: z.array(z.object({ sku: z.string(), qty: z.number().int().max(9007199254740991).gt(0) })).min(1), supplierPhone: z.string().optional(), reason: z.string().max(2000).optional(), deptId: z.string().uuid().regex(new RegExp("^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$")).optional(), attachments: z.array(z.string().uuid().regex(new RegExp("^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"))).max(10).optional() }),
+  create: z.object({ amount: z.string(), items: z.array(z.object({ sku: z.string(), qty: z.number().int().max(9007199254740991).gt(0) })).min(1), supplierPhone: z.string().optional(), reason: z.string().max(2000).optional(), needsSpecialistReview: z.boolean().optional(), reviewerIds: z.array(z.string().uuid().regex(new RegExp("^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"))).max(5).optional(), deptId: z.string().uuid().regex(new RegExp("^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$")).optional(), attachments: z.array(z.string().uuid().regex(new RegExp("^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"))).max(10).optional() }),
   explainPurpose: z.object({ id: z.string().uuid().regex(new RegExp("^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$")), reason: z.unknown() }),
   setAttachments: z.object({ id: z.string().uuid().regex(new RegExp("^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$")), attachments: z.array(z.string().uuid().regex(new RegExp("^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"))).max(10) }),
+  setReviewers: z.object({ id: z.string().uuid().regex(new RegExp("^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$")), needsSpecialistReview: z.boolean(), reviewerIds: z.array(z.string().uuid().regex(new RegExp("^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"))).max(5) }),
   submit: z.object({ id: z.string().uuid().regex(new RegExp("^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$")) }),
 };
 
@@ -43,11 +46,13 @@ export type PurchaseOrderCreateError = 'CONFLICT' | 'CONSTRAINT_VIOLATED' | 'DOM
 export type PurchaseOrderExplainPurposeError = 'CONFLICT' | 'DOMAIN_ERROR' | 'FORBIDDEN' | 'INVALID_INPUT' | 'INVALID_TRANSITION' | 'INVARIANT_VIOLATED' | 'NOT_FOUND';
 /** PurchaseOrder.setAttachments 可能返回的错误码 */
 export type PurchaseOrderSetAttachmentsError = 'CONFLICT' | 'DOMAIN_ERROR' | 'FORBIDDEN' | 'INVALID_INPUT' | 'INVALID_TRANSITION' | 'INVARIANT_VIOLATED' | 'NOT_FOUND';
+/** PurchaseOrder.setReviewers 可能返回的错误码 */
+export type PurchaseOrderSetReviewersError = 'CONFLICT' | 'DOMAIN_ERROR' | 'FORBIDDEN' | 'INVALID_INPUT' | 'INVALID_TRANSITION' | 'INVARIANT_VIOLATED' | 'NOT_FOUND';
 /** PurchaseOrder.submit 可能返回的错误码；业务码（domainCode）：NO_ITEMS */
 export type PurchaseOrderSubmitError = 'CONFLICT' | 'DOMAIN_ERROR' | 'FORBIDDEN' | 'INVALID_INPUT' | 'INVALID_TRANSITION' | 'INVARIANT_VIOLATED' | 'NOT_FOUND';
 export type PurchaseOrderSubmitDomainCode = 'NO_ITEMS';
 
-export type PurchaseOrderSortKey = 'createdAt' | 'updatedAt' | 'deptId' | 'createdBy' | 'supplierPhone' | 'amount' | 'reason' | 'erpNo';
+export type PurchaseOrderSortKey = 'createdAt' | 'updatedAt' | 'deptId' | 'createdBy' | 'supplierPhone' | 'amount' | 'reason' | 'needsSpecialistReview' | 'erpNo';
 export interface PurchaseOrderListParams {
   page?: number;
   pageSize?: number;
@@ -61,6 +66,7 @@ export interface PurchaseOrderListParams {
   createdBy?: string | number | boolean;
   amount?: string | number | boolean;
   reason?: string | number | boolean;
+  needsSpecialistReview?: string | number | boolean;
   erpNo?: string | number | boolean;
 }
 
@@ -71,6 +77,8 @@ export const purchaseOrder = {
   /** 补充采购用途与必要性，保存后可以重新提交审核 */
   explainPurpose: (id: string, input: Omit<z.input<typeof PurchaseOrderInputs.explainPurpose>, 'id'>, expectedVersion?: number, options: RequestOptions = {}) => client.post<PurchaseOrder, PurchaseOrderExplainPurposeError>(`/api/purchase-order/${encodeURIComponent(id)}/explain-purpose`, { ...input, expectedVersion }, options),
   setAttachments: (id: string, input: Omit<z.input<typeof PurchaseOrderInputs.setAttachments>, 'id'>, expectedVersion?: number, options: RequestOptions = {}) => client.post<PurchaseOrder, PurchaseOrderSetAttachmentsError>(`/api/purchase-order/${encodeURIComponent(id)}/set-attachments`, { ...input, expectedVersion }, options),
+  /** 设置采购单专业复核需求和人员 */
+  setReviewers: (id: string, input: Omit<z.input<typeof PurchaseOrderInputs.setReviewers>, 'id'>, expectedVersion?: number, options: RequestOptions = {}) => client.post<PurchaseOrder, PurchaseOrderSetReviewersError>(`/api/purchase-order/${encodeURIComponent(id)}/set-reviewers`, { ...input, expectedVersion }, options),
   submit: (id: string, expectedVersion?: number, options: RequestOptions = {}) => client.post<PurchaseOrder, PurchaseOrderSubmitError>(`/api/purchase-order/${encodeURIComponent(id)}/submit`, { expectedVersion }, options),
   /** 异步导出 CSV：返回任务，使用 client.transfer(id) 查状态，完成后下载。需要 PurchaseOrder.export 能力。 */
   export: (params: PurchaseOrderListParams = {}, options: RequestOptions = {}) => client.post<TransferTask, 'CONFLICT'>('/api/purchase-order/export', params, options),

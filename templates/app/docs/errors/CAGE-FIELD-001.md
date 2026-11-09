@@ -34,7 +34,7 @@ text().sensitive('自定义随意字符串')
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/kernel/src/primitives/fields.ts:112`
+- `packages/kernel/src/primitives/fields.ts:197`
 
 实现片段（位置随框架版本更新）：
 
@@ -43,5 +43,5 @@ text().sensitive('自定义随意字符串')
     if (!SENSITIVE_KINDS.includes(kind)) throw declError('CAGE-FIELD-001', `未知的敏感种类 ${kind}`);
     return this.with({ sensitiveKind: kind });
   }
-  /** 唯一约束（租户内） */
+  /** 返回要求租户内唯一的新字段；实际约束由 DDL/迁移落实，不是仅一次应用查询。文件和集合已有专用归属/配对语义，拒绝该修饰。 */
 ```

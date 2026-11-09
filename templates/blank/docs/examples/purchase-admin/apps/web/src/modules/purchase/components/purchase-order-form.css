@@ -1,2 +1,6 @@
+/**
+ * 采购创建弹窗的高度与滚动约束。附件任务和恢复列表可能增高表单，使用动态视口高度保留边距。
+ * 滚动在弹窗内完成，限制滚动传播，确保保存按钮在窄屏仍可滚动到达。
+ */
 /* 附件与恢复任务会增加表单高度；滚动留在弹窗内，保证窄屏仍可完成保存。 */
 .purchase-order-dialog { max-height: calc(100dvh - 48px); overflow-y: auto; overscroll-behavior: contain; }

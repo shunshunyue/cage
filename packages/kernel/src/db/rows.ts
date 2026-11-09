@@ -5,12 +5,14 @@ import { camel, snake } from '../util/names.js';
 
 export const SYSTEM_COLUMNS = ['id', 'tenant_id', 'status', 'version', 'created_at', 'updated_at'];
 
+/** 只规范驱动返回的 Date；numeric 金额字符串与 JSON 内容保持原类型，避免额外精度损失。 */
 function normalize(v: unknown): unknown {
   if (v instanceof Date) return v.toISOString();
   return v;
 }
 
 /** 行 → 快照（不含 tenantId；hidden 字段可选保留） */
+/** 内部写流水线默认保留 hidden 以供业务校验；对外呈现仍必须再经过 present 或安全视图。 */
 export function rowToSnapshot(agg: AnyAggregate, row: Record<string, unknown>, keepHidden = true): Record<string, any> {
   const out: Record<string, any> = {
     id: row.id,
@@ -38,6 +40,7 @@ export function viewRowToObject(row: Record<string, unknown>): Record<string, an
 }
 
 /** 快照字段 → 列值（jsonb 字段序列化） */
+/** 仅转换已声明且本次提供的业务字段；关系由独立事务绑定流程处理，系统列由调用者设置。 */
 export function fieldsToColumns(agg: AnyAggregate, values: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, f] of Object.entries(agg.fields as Fields)) {

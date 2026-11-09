@@ -10,12 +10,15 @@ import { FILE_MIGRATION } from '../files/schema.js';
 import { EVENT_VERSION_MIGRATION } from './event-version-schema.js';
 import { relationTable } from '../relations.js';
 
+/** SQL 标识符引用，双引号转义；仅用于已由声明验证的名称，不接受任意 SQL 片段。 */
 export const q = (ident: string) => `"${ident.replace(/"/g, '""')}"`;
+/** 模式和表名分别引用，避免把含点名称误当成一个未限定标识符。 */
 export const qt = (t: { schema: string; name: string }) => `${q(t.schema)}.${q(t.name)}`;
 const lit = (s: string) => `'${s.replace(/'/g, "''")}'`;
 
 // ---------------- 结构模型（迁移比较用） ----------------
 
+/** 可序列化物理列规格；它描述期望结构，迁移执行前还需审查旧数据兼容性。 */
 export interface ColumnModel {
   name: string;
   type: string;
@@ -27,6 +30,7 @@ export interface ColumnModel {
   values?: string[];
 }
 
+/** 普通聚合表与自动关联表共享模型；relation 存在时没有普通聚合的状态和版本语义。 */
 export interface TableModel {
   schema: string;
   name: string;
@@ -39,11 +43,16 @@ export interface TableModel {
   relation?: { field: string; source: string; target: string };
 }
 
+/** 随迁移嵌入的结构快照，version 是此序列化格式版本，不是应用或数据库迁移号。 */
 export interface SchemaModel {
   version: 1;
   tables: TableModel[];
 }
 
+/**
+ * 从字段/状态/范围生成主表列和索引，集合关系不作为主表列。
+ * 参与 manyToMany 的主表补租户/id 复合唯一键，让关联外键在数据库层保证双方租户一致。
+ */
 export function tableModel(agg: AnyAggregate, reg: Registry): TableModel {
   const t = agg.table;
   const columns: ColumnModel[] = [
@@ -113,6 +122,7 @@ export function schemaModel(reg: Registry): SchemaModel {
   return { version: 1, tables: out };
 }
 
+/** 生成列片段；新增列迁移暂不附 NOT NULL，给旧数据回填留下阶段，创建整表则完整约束。 */
 function columnSql(t: TableModel, c: ColumnModel, forCreate: boolean): string {
   let s = `${q(c.name)} ${c.type}`;
   if (c.name === 'id') return `${s} PRIMARY KEY DEFAULT gen_random_uuid()`;
@@ -127,10 +137,15 @@ function columnSql(t: TableModel, c: ColumnModel, forCreate: boolean): string {
   return s;
 }
 
+/** 状态枚举落为数据库 CHECK，给绕过应用校验的异常写入提供最后一道结构约束。 */
 function statusCheckSql(t: TableModel): string {
   return `CONSTRAINT ${q(`${t.name}_status_check`)} CHECK (status IN (${t.statusValues.map(lit).join(', ')}))`;
 }
 
+/**
+ * 生成建表与索引 SQL，不执行它。普通表创建状态约束，关联表创建租户复合主键和双方外键。
+ * 仅关联表授予删除链接权限；普通业务对象的删除仍应由命令状态迁移表达。
+ */
 export function createTableSql(t: TableModel): string {
   const cols = t.columns.map((c) => `  ${columnSql(t, c, true)}`);
   if (t.relation) {
@@ -161,6 +176,10 @@ function relationForeignKeys(t: TableModel): string[] {
 
 /**
  * 比较两份结构，生成迁移草稿语句。破坏性变更（删表、删列）只生成注释，按「先扩展再收缩」由人决定。
+ */
+/**
+ * prev 为迁移中的历史期望快照，null 表示首次建表；这里不会连接数据库扫描实际结构。
+ * 非空新增列和类型变化会生成待审查步骤，删除只给注释；自动草稿不保证既有数据能够直接迁移。
  */
 export function diffSchemas(prev: SchemaModel | null, next: SchemaModel): string[] {
   const out: string[] = [];
@@ -233,6 +252,7 @@ export function diffSchemas(prev: SchemaModel | null, next: SchemaModel): string
 
 // ---------------- 安全层：函数、策略、视图（每次整体重建） ----------------
 
+/** 数据库范围函数与 scope/index.ts 保持同口径；缺少身份/授权会保守拒绝，不默认开放全部。 */
 export const IN_SCOPE_SQL = `
 -- 生成物：范围判断。读取会话变量 app.scopes（{"聚合":[{"c":"组合子","deptIds":[...]}]}），多个授权取并集。
 -- SECURITY DEFINER：以表属主身份读部门表，避免部门表自己的行级策略递归。
@@ -255,6 +275,7 @@ RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalo
     '[{"c":"self"}]'::jsonb)) AS g
 $$;`;
 
+/** 安全视图使用的字段掩码函数；明文权限来自事务会话变量，展示策略须与内存 maskValue 一致。 */
 export const MASK_SQL = `
 -- 生成物：按敏感种类掩码。持有「聚合.种类」明文权限时原样返回。
 CREATE OR REPLACE FUNCTION sys.mask(agg text, kind text, val text)
@@ -273,6 +294,10 @@ RETURNS text LANGUAGE sql STABLE AS $$
   END
 $$;`;
 
+/**
+ * 为单聚合生成 RLS 和 security_barrier 安全视图；hidden/关系字段不投影，敏感字段调用 sys.mask。
+ * cage_read 只有视图 SELECT，视图属主受到范围策略；cage_app 的写入授权由内核流水线执行。
+ */
 export function aggregateSafeSql(agg: AnyAggregate): string {
   const t = agg.table;
   const dept = agg.scope.deptField ? q(snake(agg.scope.deptField)) : 'NULL::uuid';
@@ -303,6 +328,7 @@ export function aggregateSafeSql(agg: AnyAggregate): string {
   ].join('\n');
 }
 
+/** 系统审计视图只做租户过滤，系统管理接口还需检查 Sys.audit.read 等能力。 */
 export const SYSTEM_SAFE_SQL = `
 -- 审计查询视图：读侧账号经系统管理接口使用，按租户过滤
 DROP VIEW IF EXISTS safe.audit_log;
@@ -315,6 +341,7 @@ ALTER VIEW safe.audit_log OWNER TO cage_view_owner;
 GRANT SELECT ON safe.audit_log TO cage_read;`;
 
 /** 整个安全层：先删掉旧的 safe 视图，再按声明重建（幂等） */
+/** 主视图先于关系视图重建；关系视图连接双方安全视图，因此来源/目标范围和逻辑删除都生效。 */
 export function safeLayerSql(reg: Registry): string {
   // 关系视图依赖两侧主视图，先删除框架标记的旧关系视图（包括已删除声明的关系）。
   // 不用 CASCADE，防止顺带移除用户自己维护的数据库对象。
@@ -347,6 +374,7 @@ export function safeLayerSql(reg: Registry): string {
 
 // ---------------- 初始化脚本与框架系统表 ----------------
 
+/** 初始化专用账号所需秘密；仅用于生成/执行受控初始化 SQL，不应写入源码、日志或公开文档。 */
 export interface BootstrapPasswords {
   app: string;
   read: string;
@@ -354,6 +382,10 @@ export interface BootstrapPasswords {
 }
 
 /** 建库时执行一次（超级用户）：模式、账号、默认权限 */
+/**
+ * 为已有数据库生成模式、角色与默认权限 SQL；函数本身不执行、不建库，也不提供业务数据初始化。
+ * SQL 含密码且会调整既有同名账号，调用方必须先核对集群角色复用策略，不能直接用于普通 dev 启动。
+ */
 export function bootstrapSql(pw: BootstrapPasswords, dbName?: string): string {
   const role = (name: string, login: boolean, password?: string) => `
 DO $$ BEGIN
@@ -397,6 +429,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE cage_migrate IN SCHEMA flow GRANT USAGE, SELEC
 export const DEFAULT_TENANT = '00000000-0000-4000-8000-000000000001';
 
 /** 框架系统表（框架自己的迁移流，按名字记入 sys.schema_migrations） */
+/** 系统迁移按数组顺序前向执行；历史 SQL（包括字符串内注释）参与 checksum，必须保持不可变。 */
 export const SYSTEM_MIGRATIONS: { name: string; sql: string }[] = [
   {
     name: 'cage:0001_system',
@@ -557,6 +590,7 @@ CREATE TABLE IF NOT EXISTS sys.job_state (
   EVENT_VERSION_MIGRATION,
 ];
 
+/** 迁移账本记录名称、摘要及提交时间；执行器先建账本，再校验全部已执行文件内容。 */
 export const SCHEMA_MIGRATIONS_SQL = `
 CREATE TABLE IF NOT EXISTS sys.schema_migrations (
   name text PRIMARY KEY,

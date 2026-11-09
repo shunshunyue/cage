@@ -1,3 +1,8 @@
+/**
+ * 验证显式业务流程从注册、抽取、规则检查到画布布局的完整静态链路。
+ * 以申请审批和资源占用声明构造人工、等待、自动执行、分支及关联，确保展示关系有真实声明证据。
+ * 只检查元数据和几何结果，不执行 handler，也不把流程说明当成新的运行时编排器。
+ */
 import { expect, it } from 'vitest';
 import { aggregate, approval, buildRegistry, businessProcess, command, event, reaction, states, text } from '@yss123/cage-kernel';
 import { schemaModel } from '@yss123/cage-kernel/db';
@@ -10,23 +15,65 @@ import { layoutBusinessFlow } from '../ui/flowchart.js';
 import { impact } from '../src/impact.js';
 import type { CageConfig } from '../src/config.js';
 
+/**
+ * 申请生命周期夹具覆盖草稿、审批、驳回再编辑、完成与取消；handler 仅返回空对象，本套件只使用声明元数据。
+ */
 const Request = aggregate('Request', { description: '申请单', fields: { title: text() },
   states: states('draft', 'pending', 'approved', 'rejected', 'closed', 'cancelled', {
     terminal: ['closed', 'cancelled'], labels: { draft: '草稿', pending: '审批中' },
   }) });
+/**
+ * 资源占用聚合用于证明显式流程的关联对象不会因此变成新的自动执行阶段。
+ */
 const Stock = aggregate('Stock', { description: '库存占用', fields: {} });
+/**
+ * 提交与批准是两种独立事实，分别触发审批和资源获取，防止流程说明绕过真实事件证据。
+ */
 const Submitted = event('Submitted', {}), Approved = event('Approved', {});
+/**
+ * 新建进入草稿，为状态可达性与流程开始阶段提供真实命令入口。
+ */
 const create = command(Request, { from: 'new', to: 'draft', handler: () => ({}) });
+/**
+ * 草稿提交进入审批中并发出 Submitted，使“自动启动审批”的流程连线有真实触发依据。
+ */
 const submit = command(Request, { from: 'draft', to: 'pending', emits: [Submitted], handler: () => ({}) });
+/**
+ * 内部审批通过命令读取库存并发出 Approved；reads 只能证明读取，自动获取必须另有反应。
+ */
 const approve = command(Request, { from: 'pending', to: 'approved', invokedBy: 'process', reads: { stock: Stock }, emits: [Approved], handler: () => ({}) });
+/**
+ * 内部审批驳回进入 rejected，为驳回后人工编辑提供状态前置。
+ */
 const reject = command(Request, { from: 'pending', to: 'rejected', invokedBy: 'process', handler: () => ({}) });
+/**
+ * 人工修改把驳回单据带回草稿，供循环路径和状态连线检查。
+ */
 const edit = command(Request, { from: 'rejected', to: 'draft', handler: () => ({}) });
+/**
+ * 只有已批准申请可人工完成，作为业务流程的一个结束结果。
+ */
 const finish = command(Request, { from: 'approved', to: 'closed', handler: () => ({}) });
+/**
+ * 草稿和审批中可取消，进入独立取消终态，作为次要分支与可达性样本。
+ */
 const cancel = command(Request, { from: ['draft', 'pending'], to: 'cancelled', handler: () => ({}) });
+/**
+ * 内部资源创建命令，必须由真实反应调用，不能只靠业务流程说明声称已执行。
+ */
 const acquire = command(Stock, { from: 'new', to: 'active', invokedBy: 'process', handler: () => ({}) });
+/**
+ * 批准事实在同一事务调用获取命令，为自动链规则提供跨聚合证据。
+ */
 const acquireOnApprove = reaction(Approved, { command: acquire, map: () => ({}), tx: 'same' });
+/**
+ * 将提交事实与通过/驳回领域命令绑定为审批，流程节点仅引用此既有执行声明。
+ */
 const review = approval(Request, { process: 'request-review', start: Submitted, routable: [], onApproved: approve, onRejected: reject });
 const domain = { Request, Stock, Submitted, Approved, create, submit, approve, reject, edit, finish, cancel, acquire, acquireOnApprove, review };
+/**
+ * 显式业务流程把真实命令、审批与资源关系组织为阅读阶段；人工和自动连线必须分别满足对应规则。
+ */
 const definition = {
   title: '申请全流程', description: '提交、审批、修改与结束。', subject: Request,
   area: { id: 'requests', title: '申请管理', description: '管理申请全流程。' }, entry: 'create',

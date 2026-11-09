@@ -9,7 +9,7 @@ import { can as baseCan, useCan as baseUseCan } from '@yss123/cage-client';
 import { DeptInputs } from './aggregates/dept';
 import { RoleInputs } from './aggregates/role';
 import { UserInputs } from './aggregates/user';
-export { client, configureClient, loadMe, currentUser, CageQueryError, useTransfer, type CageResult, type CommonError, type TransferTask, type ImportReport } from '@yss123/cage-client';
+export { client, configureClient, loadMe, currentUser, CageQueryError, CageCommandError, useTransfer, useFileUpload, FileUploadError, type FileUploadTask, type FileUploadSnapshot, type UploadSession, type FileInfo, type RequestOptions, type CageResult, type CommonError, type TransferTask, type ImportReport } from '@yss123/cage-client';
 
 /** 能力目录（由代码派生）：写错能力点名会编译失败 */
 export const capabilities = [

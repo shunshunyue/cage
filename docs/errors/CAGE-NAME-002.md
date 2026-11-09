@@ -34,7 +34,7 @@ fields: { supplier_phone: text() }
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/kernel/src/primitives/aggregate.ts:87`
+- `packages/kernel/src/primitives/aggregate.ts:178`
 
 实现片段（位置随框架版本更新）：
 

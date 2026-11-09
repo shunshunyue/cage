@@ -35,25 +35,27 @@ ai({ models: {}, assistant: { model: 'missing', limits: { maxSteps: 0 } } })
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/ai/src/index.ts:56`
-- `packages/ai/src/index.ts:64`
-- `packages/ai/src/index.ts:68`
-- `packages/ai/src/index.ts:70`
-- `packages/ai/src/index.ts:71`
-- `packages/ai/src/index.ts:72`
+- `packages/ai/src/index.ts:54`
+- `packages/ai/src/index.ts:61`
 - `packages/ai/src/index.ts:74`
-- `packages/ai/src/index.ts:76`
-- `packages/ai/src/index.ts:78`
-- `packages/ai/src/index.ts:107`
-- `packages/ai/src/index.ts:111`
-- `packages/ai/src/index.ts:113`
+- `packages/ai/src/index.ts:82`
+- `packages/ai/src/index.ts:86`
+- `packages/ai/src/index.ts:88`
+- `packages/ai/src/index.ts:89`
+- `packages/ai/src/index.ts:90`
+- `packages/ai/src/index.ts:92`
+- `packages/ai/src/index.ts:94`
+- `packages/ai/src/index.ts:96`
+- `packages/ai/src/index.ts:126`
+- `packages/ai/src/index.ts:133`
+- `packages/ai/src/index.ts:135`
 
 实现片段（位置随框架版本更新）：
 
 ```ts
-  };
-  if (!Object.keys(options.models).length) throw declError('CAGE-AI-001', '至少配置一个模型');
-  for (const provider of Object.values(options.models))
-    if (
-      provider.contextWindowTokens !== undefined &&
+  /**
+   * 校验扩展唯一性与审批模型引用，无效配置以 CAGE-AI-001 拒绝。
+   */
+  validate(registry: Registry): void;
+}
 ```

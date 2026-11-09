@@ -1,8 +1,17 @@
+/**
+ * 验证原始本体到业务板块及触发链的纯投影。
+ * 人工构造节点和边以隔离归属、审批结论、同事务/异步语义，以及循环、深度和重复调用路径身份。
+ * 断言读取边不会伪装成后续执行；本套件不加载领域源码或启动服务。
+ */
 import { expect, it } from 'vitest';
 import { projectGraph } from '../src/graph-model.js';
 import { businessBlocks, traceBusinessFlow, flattenBusinessSteps } from '../src/graph-business.js';
 import type { Ontology, OntNode } from '../src/ontology.js';
 
+/**
+ * 构造原始本体节点，attrs 承载当前用例需要的元数据；有 file 时统一指向第 1 行。
+ * 空 hash 表示测试不验证语义变更，只隔离投影关系和路径身份。
+ */
 const node = (
   kind: OntNode['kind'],
   id: string,

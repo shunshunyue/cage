@@ -1,3 +1,8 @@
+/**
+ * 将注册表转换为浏览器可用的契约源码字符串，由 generate 统一写盘。
+ * 按聚合组织读侧 schema、用户命令方法和 hooks，再生成查询与根公共入口。
+ * 不把 domain 或运行时导入浏览器；仅开放 user 命令，客户端校验保留可表达部分，服务端始终负责权威校验与授权。
+ */
 // 前端契约（packages/contracts）：每个聚合一个目录，容纳 schema、调用方法和查询 hooks。
 // 前端只能从这里引入，所以调用方式、参数、错误码都有类型检查。
 import {
@@ -16,6 +21,9 @@ import { snapshotCode, zodCodeOf } from './zod-code.js';
 
 const HEADER = '// 生成物：由 cage gen 从 domain 声明生成，不要手改。\n/* eslint-disable */\n';
 
+/**
+ * 按新建或已有对象命令生成前端 URL 表达式，已有对象 ID 在生成代码中编码。
+ */
 function commandUrlExpr(c: RegisteredCommand): string {
   const base = `/api/${kebab(c.cmd.agg.name)}`;
   return c.cmd.from === 'new'
@@ -23,6 +31,9 @@ function commandUrlExpr(c: RegisteredCommand): string {
     : `\`${base}/\${encodeURIComponent(id)}/${kebab(c.name)}\``;
 }
 
+/**
+ * 根据状态、关系、约束和不变量推导命令可能的错误码联合，业务 domainCode 另由声明源码提取。
+ */
 function errorUnion(c: RegisteredCommand): string[] {
   const codes = new Set(['FORBIDDEN', 'INVALID_INPUT', 'DOMAIN_ERROR', 'CONFLICT']);
   if (c.cmd.from !== 'new') ['NOT_FOUND', 'INVALID_TRANSITION'].forEach((x) => codes.add(x));
@@ -32,11 +43,21 @@ function errorUnion(c: RegisteredCommand): string[] {
   return [...codes].sort();
 }
 
+/**
+ * 识别输入只含 id 的 ZodObject，为生成方法选择省略 input 对象的便捷签名。
+ */
 function isIdOnly(c: RegisteredCommand): boolean {
   const s = c.cmd.input;
   return s instanceof z.ZodObject && Object.keys(s.shape).length === 1 && 'id' in s.shape;
 }
 
+/**
+ * 生成单个聚合的浏览器契约文件文本。
+ * @param reg 注册表，用于筛选允许 user 调用的命令和关系目标。
+ * @param a 当前聚合。
+ * @param sites 静态位置，用于提取业务错误码。
+ * @returns schema、方法、hooks 与缓存键源码；不写盘、不发网络请求。
+ */
 export function aggregateFile(reg: Registry, a: AnyAggregate, sites: DeclSite[]): string {
   const N = a.name;
   const m = lowerFirst(N);
@@ -167,6 +188,11 @@ export function aggregateFile(reg: Registry, a: AnyAggregate, sites: DeclSite[])
   return out.join('\n') + '\n';
 }
 
+/**
+ * 生成所有显式查询的输入 schema、请求方法和 hooks。
+ * @param reg 已注册查询清单。
+ * @returns 源码文本；查询响应仍为通用记录数组，实际范围由服务器执行。
+ */
 export function queriesFile(reg: Registry): string {
   const out: string[] = [
     HEADER,
@@ -198,6 +224,11 @@ export function queriesFile(reg: Registry): string {
   return out.join('\n') + '\n';
 }
 
+/**
+ * 生成契约根公共入口及能力名类型、客户端转导出。
+ * @param reg 当前注册表。
+ * @returns 根 index 源码，can/useCan 仅用于前端显示，不产生授权。
+ */
 export function indexFile(reg: Registry): string {
   const caps = reg.capabilityCatalog().map((c) => c.capability);
   const out: string[] = [HEADER];
@@ -225,6 +256,12 @@ export function indexFile(reg: Registry): string {
   return out.join('\n') + '\n';
 }
 
+/**
+ * 按稳定聚合名组织所有待生成契约，后端模块移动不改变契约公开入口。
+ * @param reg 注册表。
+ * @param sites 声明位置与业务错误码线索。
+ * @returns 相对路径到源码字符串的映射；实际写入由 generate 负责。
+ */
 export function contractsFiles(reg: Registry, sites: DeclSite[]): Record<string, string> {
   const files: Record<string, string> = {};
   // 路径只取稳定的聚合名，不依赖后端文件位置；移动领域模块不会改变前端公共 API。

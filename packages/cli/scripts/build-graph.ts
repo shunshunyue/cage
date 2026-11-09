@@ -1,3 +1,8 @@
+/**
+ * CLI 构建阶段的本地图谱资源转译脚本，路径按本文件位置解析，不依赖执行终端目录。
+ * 读取 ui 与明确列出的共享纯模块，转译为 ES2022 模块并重定位内部导入，再复制 HTML/CSS 到 graph-ui。
+ * 覆盖对应产物但不做完整类型检查、不下载资源；类型验证由构建的 TypeScript 阶段承担，异常中止并保留已写文件。
+ */
 // 浏览器页面仅依赖本地 ES 模块。TypeScript 编译器负责完整类型检查；此处只做
 // 语法转译和复制，无需为 CLI 添加前端框架、远程字体或打包器依赖。
 import { mkdirSync, readFileSync, writeFileSync, copyFileSync } from 'node:fs';
@@ -16,8 +21,9 @@ for (const [directory, name] of [
     'flowchart',
     'flowchart-interaction',
     'approval-flow',
+    'approval-parallel',
   ].map((name) => ['ui', name]),
-  ...['graph-model', 'graph-relations', 'graph-search', 'graph-business', 'graph-approvals'].map((name) => [
+  ...['graph-model', 'graph-relations', 'graph-search', 'graph-business', 'graph-approvals', 'approval-tree'].map((name) => [
     'src',
     name,
   ]),

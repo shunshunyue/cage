@@ -8,6 +8,7 @@ import { compileScope } from './scope/index.js';
 import { snake } from './util/names.js';
 import type { Fields } from './primitives/fields.js';
 
+/** 按来源聚合和字段形成单向关系表名；两侧分别声明集合时不会自动合并成一张镜像表。 */
 export const relationTable = (owner: AnyAggregate, field: string) => ({
   schema: owner.table.schema,
   name: `${owner.table.name}__${snake(field)}`,
@@ -15,6 +16,7 @@ export const relationTable = (owner: AnyAggregate, field: string) => ({
 
 /** 命令/已声明读依赖的内部快照包含完整关联 ID，才能保留未被本次命令修改的关系。
  * 对外读侧不使用此函数，而通过安全视图分页读取目标对象。 */
+/** 批量补全 manyToMany ID 并原位更新传入快照；必须先由调用方确认来源记录在当前范围内。 */
 export async function loadRelationIds(
   tx: Kysely<any> | Transaction<any>, owner: AnyAggregate,
   rows: Record<string, any>[], ctx: Ctx,
@@ -35,6 +37,11 @@ export async function loadRelationIds(
 
 /** 只校验新增的目标：无关字段更新不应因旧目标当前不可见而失败或丢失旧关系。
  * 新增目标必须可选择且属于同一租户；数据库的复合外键再保证持久化一致性。 */
+/**
+ * 由主对象命令事务调用；新增目标校验 read 能力、范围和未删除状态，并用 key-share 锁稳定外键。
+ * 更新后删除旧链接再写完整新集合，任一步失败随主对象一起回滚；它从不修改目标对象的业务字段。
+ * previous/next 中的集合由内核预先规范化，保留既有不可见目标防止无关字段更新悄悄丢关联。
+ */
 export async function writeRelations(
   tx: Transaction<any>, reg: Registry, owner: AnyAggregate,
   previous: Record<string, any>, next: Record<string, any>, ctx: Ctx,

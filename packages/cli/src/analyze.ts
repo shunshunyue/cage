@@ -1,3 +1,8 @@
+/**
+ * 声明分析总入口，供 check、gen、verify、doctor 与本体快照共同调用。
+ * 先检查目录、顶层声明及禁止的 IO，再导入领域入口构建注册表、抽取本体并运行图规则。
+ * 这里只求值声明，不执行命令；write 选项才会更新当前本体文件，静态错误会阻止模块求值。
+ */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { abs, type CageConfig } from './config.js';
 import { errorsOnly, type Finding } from './findings.js';
@@ -9,6 +14,13 @@ import { checkProjectStructure } from './project-structure.js';
 import { registrationEvidence } from './registration.js';
 
 /** 静态检查先于模块求值；发现动态声明或 IO 时不执行模块。 */
+/**
+ * 执行当前应用的声明检查与语义抽取，不运行具体业务命令。
+ * 静态错误时返回已有 source/findings；可求值时继续附注册表、本体及可选导出链。
+ * @param cfg 应用目录和 domain 入口配置。
+ * @param opts base 用于事件兼容检查，write 才保存当前图，registration 强制收集完整导出证据。
+ * @returns 分阶段分析结果；模块导入、注册或文件 IO 异常直接抛出。
+ */
 export async function analyze(cfg: CageConfig, opts: { base?: Ontology; write?: boolean; registration?: boolean } = {}) {
   const source = staticCheck(cfg);
   source.findings.push(...checkProjectStructure(cfg));

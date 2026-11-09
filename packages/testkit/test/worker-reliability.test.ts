@@ -1,3 +1,8 @@
+/**
+ * worker 的真实数据库故障回归，覆盖小连接池、持久回执、重复投递、定时锁、心跳及有界停机。
+ * 外部 IO 使用受控 fake，故意让远端成功与本地回写分离；只验证框架恢复协议，不代表真实第三方联调。
+ * 每例复位失败开关和定时任务，按用例关闭额外内核与 worker，文件结束销毁隔离测试库。
+ */
 // 真实 PostgreSQL 故障回归：小池不能互等，回执恢复不能重复外呼/核销，锁在在途任务结束前不能释放。
 import { randomUUID } from 'node:crypto';
 import { aggregate, approval, command, createKernel, emit, event, id, int, job, scope, text } from '@yss123/cage-kernel';
@@ -9,11 +14,17 @@ import { afterAll, afterEach, beforeAll, expect, it } from 'vitest';
 import { z } from 'zod';
 import { createTestEnv, type TestEnv } from '../src/index.js';
 
+/**
+ * 用于观察外呼回写次数的聚合；applied 每次真正落库增加一次，remoteValue 保存被确认的返回值。
+ */
 const Probe = aggregate('WorkerProbe', { fields: { name: text(80), applied: int(), remoteValue: text(80).optional() }, scope: scope.none() });
 const Queued = event('WorkerProbeQueued', { probeId: id(), name: text(80) });
 const create = command(Probe, { name: 'create', from: 'new', to: 'active', input: z.object({ name: z.string() }),
   emits: [emit(Queued, (row) => ({ probeId: row.id, name: row.name }))], handler: (_draft, input) => ({ name: input.name, applied: 0 }) });
 let rejectWriteback = false;
+/**
+ * 外部身份专用回写命令。rejectWriteback 允许模拟远端已成功但本地命令失败，检验回执复用而非重复外呼。
+ */
 const applyReceipt = command(Probe, { name: 'applyReceipt', from: 'active', to: 'active', invokedBy: 'external',
   input: z.object({ id: z.uuid(), value: z.string() }), handler: (draft, input) => {
     if (rejectWriteback) throw new Error('injected-local-writeback-failure');
@@ -22,9 +33,15 @@ const applyReceipt = command(Probe, { name: 'applyReceipt', from: 'active', to: 
 const remote = connector('worker-probe', { hosts: {}, timeoutMs: 500, operations: {
   push: op({ effect: 'retryableWrite', method: 'POST', path: '/probe', request: z.object({ name: z.string() }), response: z.object({ value: z.string() }) }),
 } });
+/**
+ * 以业务探针 ID 为外呼幂等键，成功回到 applyReceipt；事件重新投递仍对应同一远端动作。
+ */
 const send = outbound(Queued, remote.operations.push, { idempotencyKey: (entry) => entry.probeId, map: (entry) => ({ name: entry.name }),
   onSuccess: { command: applyReceipt, map: (res, entry) => ({ id: entry.probeId, value: res.value }) } });
 let runJob: () => Promise<void> = async () => {};
+/**
+ * 每秒可触发的测试任务，实际 runJob 由用例替换，用于人为保持在途执行与观察锁生命周期。
+ */
 const scheduled = job('workerProbeJob', { cron: '* * * * * *', run: () => runJob() });
 const domain = { ...org, Probe, Queued, create, applyReceipt, remote, send, scheduled };
 let env: TestEnv;
@@ -32,11 +49,20 @@ beforeAll(async () => { env = await createTestEnv({ domain }); });
 afterEach(() => { rejectWriteback = false; runJob = async () => {}; fakeConnector(remote, { push: (req) => ({ value: req.name }) }); });
 afterAll(async () => { await env?.close(); });
 
+/**
+ * 通过真实 create 命令产生探针和 outbox；返回记录用于关联后续投递证据。
+ */
 const newProbe = (name = randomUUID()) => env.kernel.execute('WorkerProbe.create', { name }, env.system());
+/**
+ * 仅用于测试：把指定探针的 outbox 标为 processing 并读回行，模拟 worker 已领取后的崩溃位置。
+ */
 async function rowFor(id: string): Promise<OutboxRow> {
   const [row] = await env.query('update sys.outbox set status=$1,locked_at=now() where aggregate_id=$2 and event=$3 returning *', ['processing', id, Queued.name]);
   return { ...row, id: Number(row.id) };
 }
+/**
+ * 建立可由测试显式放行的 Promise，不依赖固定睡眠制造慢 IO 或持锁窗口。
+ */
 const deferred = () => { let resolve!: () => void; const promise = new Promise<void>((r) => { resolve = r; }); return { promise, resolve }; };
 
 it('poolSize=1 的 fake 外呼可读取同池，随后短事务回写；不存在连接池相互等待', async () => {

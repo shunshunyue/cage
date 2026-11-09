@@ -23,12 +23,15 @@ import { registerRoutes } from './routes.js';
 import { FileService, type FileServiceOptions } from '@yss123/cage-files';
 import { registerFiles } from './files.js';
 
+/** HTTP 进程的组合配置；领域声明决定能力与路由，选项只负责部署、认证和服务生命周期。 */
 export interface ServerOptions {
   /** 私有文件存储与上传限制；默认本地 .cage-files。 */
   files?: FileServiceOptions;
   /** domain 包的导出：import * as domain from '@app/domain' */
   domain: object;
+  /** 写账号与只读账号由内核分别使用；省略时从项目环境读取，不在启动时建库或执行迁移。 */
   urls?: DatabaseUrls;
+  /** 密码认证选项及可选 OIDC issuer；具体凭据来源由认证模块和部署环境决定。 */
   auth?: AuthOptions & { oidcIssuer?: string };
   /** 业务前端构建产物目录（单页应用），不传时不托管 */
   webDir?: string;
@@ -44,7 +47,9 @@ export interface ServerOptions {
   cookieSecret?: string;
   /** 就绪探测的每个数据库等待上限，默认 2000 毫秒。 */
   readinessTimeoutMs?: number;
+  /** 默认监听端口；listen 调用参数优先，其次本选项、PORT 环境变量，最后 3000。 */
   port?: number;
+  /** 默认监听地址；listen 调用参数优先，其次本选项、HOST 环境变量，最后 0.0.0.0。 */
   host?: string;
   /** 默认每个客户端每分钟 300 次 */
   rateLimitPerMinute?: number;
@@ -52,25 +57,39 @@ export interface ServerOptions {
   authRateLimitPerMinute?: number;
   /** 关闭 CSRF（只用于测试） */
   csrf?: boolean;
+  /** false 关闭 HTTP 日志；默认启用框架脱敏日志配置。 */
   logger?: boolean;
+  /** 可选 OpenAPI 文档标题，仅用于接口说明。 */
   title?: string;
 }
 
+/** 已创建但未必已开始监听的服务；嵌入式测试可只调用 ready，再通过 app 注入请求。 */
 export interface CageServer {
+  /** 本服务拥有的文件协调器，HTTP 上传路由与关闭流程使用同一实例。 */
   files: FileService;
+  /** Fastify 实例；ready 之后可用 inject 测试，listen 后才接受网络连接。 */
   app: FastifyInstance;
+  /** 本 HTTP 服务装配的内核，业务请求通过它执行命令和安全读取。 */
   kernel: Kernel;
+  /** 注册路由、启动扩展与授权监听；重复调用共享同一次初始化及其失败结果。 */
   ready(): Promise<FastifyInstance>;
+  /** 检查数据库及授权监听等就绪依赖，返回状态快照，不证明异步业务已完成。 */
   health(): Promise<ServerHealth>;
+  /** 先完成 ready，再按参数/配置监听网络；返回监听地址，启动失败向调用方抛出。 */
   listen(opts?: { port?: number; host?: string }): Promise<string>;
+  /** 关闭 HTTP 及其装配资源；由宿主退出流程调用，不能把停止接收请求当作业务回滚。 */
   close(): Promise<void>;
 }
 
+/** 就绪状态只覆盖当前 HTTP 进程依赖；异步 worker 的消费健康需单独探测。 */
 export interface ServerHealth {
+  /** 当前就绪依赖均满足时为 true，不代表整个部署的 worker 或外部系统健康。 */
   ok: boolean;
+  /** appDb/readDb 为连接探测，grantsListener 为授权监听状态；不包含秘密连接信息。 */
   dependencies: { appDb: boolean; readDb: boolean; grantsListener: boolean };
 }
 
+/** 从实际安装的 admin 包定位已构建静态资源；未附带 UI 时返回 null，仍可注册管理 API。 */
 function adminUiDir(): string | null {
   // 通过包公开入口定位资源；package.json 未被 exports 公开，且安装后的 pnpm
   // 目录与 monorepo 不同，不能依赖 ../../admin 的工作区相对路径。
@@ -79,6 +98,12 @@ function adminUiDir(): string | null {
   return existsSync(dir) ? dir : null;
 }
 
+/**
+ * 组合组织模型、业务内核、文件服务和 HTTP 安全基线，返回由调用者掌控的启动/停止句柄。
+ * 创建阶段校验环境并建立资源对象，ready 才注册插件、扩展和监听；不会初始化组织或更新数据库。
+ * 生产密钥无效或显式要求隐式 bootstrap 时立即失败，避免服务启动产生不可审查的管理凭据。
+ * close 先停止 HTTP 及扩展后台活动，再关闭授权监听与内核连接，防止清理任务访问已关闭的连接池。
+ */
 export function createServer(opts: ServerOptions): CageServer {
   const production = process.env.NODE_ENV === 'production';
   const configuredSecret = opts.cookieSecret ?? process.env.CAGE_COOKIE_SECRET;
@@ -106,6 +131,7 @@ export function createServer(opts: ServerOptions): CageServer {
   let closing = false;
   let fileCleanup: Promise<void> | null = null;
   let fileTimer: NodeJS.Timeout | undefined;
+  /** 一次只允许一个清理批次运行；失败留待下周期重试，停止时等待当前批次完成。 */
   const cleanFiles = () => {
     if (closing || fileCleanup) return;
     fileCleanup = files.cleanup().catch(err => kernel.log.error({ err }, '文件清理失败，将在下一周期重试')).finally(() => { fileCleanup = null; });
@@ -118,6 +144,7 @@ export function createServer(opts: ServerOptions): CageServer {
     await fileCleanup;
   });
   const probes = new Map<'appDb' | 'readDb', Promise<boolean>>();
+  /** 检查账号能否访问它应访问的 schema；超时只结束本次等待，不取消底层尚未返回的查询。 */
   const probe = async (name: 'appDb' | 'readDb') => {
     // 超时的探测不重复申请连接，避免依赖故障时探针本身耗尽连接池。
     let pending = probes.get(name);
@@ -132,6 +159,7 @@ export function createServer(opts: ServerOptions): CageServer {
     try { return await Promise.race([pending, new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(false), readinessTimeoutMs); })]); }
     finally { if (timer) clearTimeout(timer); }
   };
+  /** readiness 同时要求写库、只读安全视图和撤权通知可用；关闭期间固定为不可接流量。 */
   const health = async (): Promise<ServerHealth> => {
     const [appDb, readDb] = closing ? [false, false] : await Promise.all([probe('appDb'), probe('readDb')]);
     const dependencies = { appDb, readDb, grantsListener: cache.healthy };
@@ -150,6 +178,7 @@ export function createServer(opts: ServerOptions): CageServer {
   };
   const sessions = new Sessions(kernel, authOpts.sessionHours ?? 8);
 
+  /** 注册顺序保证会话、CSRF 和统一错误处理覆盖业务路由；原始 JSON 同时供第三方回调验签。 */
   const build = async () => {
     // 原始请求体：入站回调验签要用
     app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
@@ -238,6 +267,7 @@ export function createServer(opts: ServerOptions): CageServer {
     return app;
   };
 
+  // 共享初始化 Promise，避免 listen、测试和健康管理代码并发调用时重复挂载路由或后台任务。
   let readyP: Promise<FastifyInstance> | null = null;
   const ready = () => (readyP ??= build());
 

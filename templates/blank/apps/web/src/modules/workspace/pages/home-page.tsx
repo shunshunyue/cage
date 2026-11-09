@@ -1,7 +1,15 @@
+/**
+ * 空白业务项目的工作台首页，解释尚未添加业务模块并提供真实成员目录和管理入口。
+ * 不注册采购演示、不制造统计；客户业务应建立相邻模块，再经 app 接入导航。
+ */
 // 空白工作台模块：新增业务时建立相邻模块，由 app 导航接入，不在本页堆全部业务。
 import { useCan } from '@app/contracts';
 import { Link } from 'react-router-dom';
 
+/**
+ * 根据 User.read 的界面能力展示组织相关入口，其余区域显示业务空状态。
+ * 拥有读取能力不等于获得全部管理权限；系统管理仍按具体操作检查能力。
+ */
 export function HomePage() {
   const canManage = useCan('User.read');
   return (

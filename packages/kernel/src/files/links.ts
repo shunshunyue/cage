@@ -5,6 +5,12 @@ import type { AnyAggregate } from '../primitives/aggregate.js';
 import { isFile, type Fields } from '../primitives/fields.js';
 import type { Ctx } from '../types.js';
 
+/**
+ * 把已完成临时上传绑定到业务对象，或将被移除附件退回临时状态；全程处于主命令事务中。
+ * 先归一化 ID/拒绝重复，再按 ID 排序加锁，与清理任务争用同一行锁以避免刚绑定就被清掉。
+ * 新增必须属于当前真人、聚合、字段与目标对象，且状态 ready、未过期、符合当前字段政策。
+ * 移除只解绑，不立即删除字节；延长 24 小时临时期限后交由文件清理服务处理。
+ */
 export async function writeFileLinks(tx: Transaction<any>, agg: AnyAggregate, previous: Record<string, any>, next: Record<string, any>, ctx: Ctx) {
   const changes: { key: string; added: string[]; removed: string[] }[] = [];
   const ids = (value: unknown): string[] => value == null ? [] : (Array.isArray(value) ? value : [value]) as string[];

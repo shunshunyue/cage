@@ -34,8 +34,8 @@ gen --check/verify 比较发现需提交的生成文件缺失或与声明不一�
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/cli/src/gen/index.ts:50`
-- `packages/cli/src/gen/index.ts:92`
+- `packages/cli/src/gen/index.ts:76`
+- `packages/cli/src/gen/index.ts:122`
 
 实现片段（位置随框架版本更新）：
 

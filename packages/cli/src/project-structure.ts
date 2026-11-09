@@ -1,3 +1,8 @@
+/**
+ * 模块化应用的目录与公开入口门禁，随 analyze 在领域求值前执行。
+ * 检查 domain、Web 的允许层次、模块入口以及跨模块引用边界，用诊断定位不符合约定的文件。
+ * 只在 structure=modular 时启用，不自动移动代码、不修改路径；文本与 AST 检查不能替代业务分层设计。
+ */
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import ts from 'typescript';
@@ -5,9 +10,15 @@ import { abs, type CageConfig } from './config.js';
 import type { Finding } from './findings.js';
 import { listTs } from './static-check.js';
 
+/**
+ * 相对 src 的源码层和可选模块归属；模块外文件不伪造模块名。
+ */
 interface Area {
+  /** 模块路径归属的层，如 app/modules/shared 或领域工作流。 */
   layer: string;
+  /** 模块标识，shared/app 等非业务模块路径可缺省。 */
   module?: string;
+  /** 相对对应源码根的规范化路径，供入口边界判断。 */
   path: string;
 }
 
@@ -27,6 +38,11 @@ function area(root: string, file: string): Area | undefined {
  * 目录规则只在 structure: modular 的应用启用，不约束框架自身或旧应用。
  * 使用 TypeScript 的模块解析处理 .js 源码导入、目录 index 和 tsconfig paths，
  * 这样换用别名也不能绕过模块边界。这里只读源码，绝不加载或执行页面模块。
+ */
+/**
+ * 检查模块布局及跨层导入，发现问题只返回诊断。
+ * @param cfg structure=modular 才启用；源码位置由应用配置决定。
+ * @returns CAGE-STRUCT 诊断；缺少一侧目录时跳过，不移动代码或改写导入。
  */
 export function checkProjectStructure(cfg: CageConfig): Finding[] {
   if (cfg.structure !== 'modular') return [];

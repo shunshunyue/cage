@@ -1,3 +1,8 @@
+/**
+ * 验证文件声明约束和客户端分片续传的状态边界。
+ * 使用固定文件内容和注入 fetch 检查哈希、缺片上传、局部重试、暂停及账号切换后的恢复。
+ * 进度以服务端确认片为准；这里不建立真实存储服务，也不证明后端事务绑定已执行。
+ */
 import { createHash, randomUUID } from 'node:crypto';
 import { expect, it } from 'vitest';
 import { aggregate, buildRegistry, command, event, file, files, id, list, scope, text } from '@yss123/cage-kernel';
@@ -7,12 +12,22 @@ import type { UploadSession } from '../../client/src/files.js';
 import { contractsFiles } from '../src/gen/contracts.js';
 import { extract } from '../src/ontology.js';
 
+/**
+ * 计算固定文本的 SHA-256 十六进制摘要，供模拟服务端分片清单与本地内容逐片比对。
+ */
 const digest = (body: string) => createHash('sha256').update(body).digest('hex');
 const target = { command: 'Document.create', field: 'attachments' };
+/**
+ * 构造 12 字节文件、每片 4 字节、共 3 片的上传会话，调用方指定已确认分片。
+ * targetId 为 null 表示新建目标，会话有效期设为一小时；这里只生成测试协议对象。
+ */
 function session(parts: UploadSession['parts'] = []): UploadSession {
   return { id: randomUUID(), aggregate: 'Document', field: 'attachments', command: 'Document.create', targetId: null, filename: 'same.txt', bytes: 12,
     contentType: 'text/plain', status: 'uploading', partBytes: 4, partCount: 3, parts, expiresAt: new Date(Date.now() + 3600_000).toISOString() };
 }
+/**
+ * 将模拟协议数据包装成可由客户端读取的 JSON 响应，状态码由失败场景显式提供。
+ */
 const response = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status });
 
 it('文件声明拒绝不安全组合，契约与本体保留字段限制及 ID 类型', () => {

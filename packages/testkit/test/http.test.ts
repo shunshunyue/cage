@@ -14,7 +14,11 @@ let adminPassword: string;
 
 process.env.ERP_WEBHOOK_SECRET = 'whsec-test';
 
-/** 带 cookie 的简易客户端 */
+/**
+ * 每个客户端维护独立 Cookie 罐与 CSRF 令牌，通过 Fastify inject 发起真实插件/路由链请求。
+ * 登录后清令牌以重新取得对应会话上下文；x-no-csrf 仅由负例使用，不能当作服务器免检入口。
+ * 不启动监听端口、不操控浏览器；HTML 断言仅覆盖服务端资源交付，不替代页面交互验收。
+ */
 function agent() {
   const jar = new Map<string, string>();
   let csrf: string | null = null;
@@ -53,6 +57,7 @@ function agent() {
   };
 }
 
+/** 将夹具准备中的非 200 响应直接转为失败，避免后续用缺失 ID 产生误导性断言。 */
 const ok = (r: { status: number; body: any }) => {
   if (r.status !== 200) throw new Error(`HTTP ${r.status}: ${JSON.stringify(r.body)}`);
   return r.body;
@@ -61,6 +66,7 @@ const ok = (r: { status: number; body: any }) => {
 let admin: ReturnType<typeof agent>;
 const ids: Record<string, string> = {};
 
+/** 显式初始化独立库组织，然后通过 HTTP 管理命令创建部门/用户/角色；ERP 使用测试环境 fake。 */
 beforeAll(async () => {
   env = await createTestEnv({ domain });
   server = createServer({ domain, urls: { app: env.urls.app, read: env.urls.read }, bootstrap: false, logger: false, authRateLimitPerMinute: 1000,
@@ -102,6 +108,10 @@ afterAll(async () => {
   await env?.close();
 });
 
+/**
+ * 本组按声明顺序延续同一 poId，覆盖登录→提交→待办→批准→ERP→签名收货，不应改成并发用例。
+ * 每个异步边界显式 drain，防止把 HTTP 命令成功误认为消费完成；额度场景验证审批决定事务回滚。
+ */
 describe('HTTP 全链路：李四提交采购单到推送 ERP', () => {
   const lisi = agent();
   const manager = agent();
@@ -194,6 +204,7 @@ describe('HTTP 全链路：李四提交采购单到推送 ERP', () => {
   });
 });
 
+/** 管理能力与普通采购身份对照，兼查已发布静态资源和 SPA 回退边界，未知 API 不能伪装成首页成功。 */
 describe('系统管理接口', () => {
   it('审计查询走读侧账号；没有系统能力点返回 403', async () => {
     const audit = ok(await admin.get('/api/sys/audit?aggregate=PurchaseOrder'));

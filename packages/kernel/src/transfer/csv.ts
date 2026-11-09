@@ -3,9 +3,15 @@
 import { z } from 'zod';
 import { cageError } from '../errors.js';
 
+/** UTF-8 编码后的字节上限为 1 MiB；不能用字符串长度代替中文等多字节内容的实际大小。 */
 export const MAX_IMPORT_BYTES = 1_048_576;
+/** 仅计数据行，不含表头；限制单任务事务、错误报告及内存使用量。 */
 export const MAX_IMPORT_ROWS = 1000;
 
+/**
+ * 把值编码为供表格软件阅读的安全单元格，对象使用 JSON，公式前缀加单引号。
+ * 因为会应用展示安全转义，导出文件不是可无损回导的命令输入模板。
+ */
 export function csvCell(value: unknown): string {
   const text = value == null ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value);
   // 表格软件会执行以这些字符开头的单元格。导出文件用于查看，不能把公式当作数据执行。
@@ -55,11 +61,16 @@ function inner(schema: z.ZodType): z.ZodType {
   return schema;
 }
 
+/** 导入要求对象输入，并额外允许传输层 expectedVersion；不会为 process-only 命令创建调用权限。 */
 export function importShape(schema: z.ZodType): Record<string, z.ZodType> {
   if (!(schema instanceof z.ZodObject)) invalid('CSV 导入要求命令使用 z.object 声明输入');
   return { ...schema.shape, expectedVersion: z.number().int().optional() };
 }
 
+/**
+ * 表头必须是命令输入字段，空可选单元格表示未提供；数组/对象使用单元格内 JSON 编码。
+ * 仅做格式和基础类型转换，不在这里执行字段或业务规则。坏 JSON 保留原值，使该行由命令报告失败。
+ */
 export function csvInputs(text: string, schema: z.ZodType): Record<string, unknown>[] {
   const [headers, ...rows] = parseCsv(text);
   const shape = importShape(schema);

@@ -1,19 +1,32 @@
+/**
+ * 管理能力目录的纯内存回归：构造最小聚合与命令注册表，核对中文标签、覆盖优先级和调用身份。
+ * 不连接数据库、不授予角色权限；通过断言原目录不变，防止展示层翻译污染真实能力标识。
+ */
 import { aggregate, buildRegistry, command, states, text } from '@yss123/cage-kernel';
 import { expect, it } from 'vitest';
 import { adminCatalog } from '../src/catalog.js';
 
 // 展示层不需要数据库；这里验证翻译覆盖不会改变真实能力标识和调用边界。
+/**
+ * 含两个不同敏感标记的最小单据，用于验证 unmask 能力分别获得正确标签。
+ */
 const Document = aggregate('Document', {
   description: '业务单据',
   fields: { contact: text().sensitive('phone'), identity: text().sensitive('idCard') },
   states: states('draft', 'approved'),
 });
+/**
+ * 流程专用审批命令，验证中文名称不会丢失 invokedBy 限制。
+ */
 const approve = command(Document, {
   from: 'draft',
   to: 'approved',
   invokedBy: 'process',
   handler: () => ({}),
 });
+/**
+ * 自定义描述的命令，验证领域说明优先于默认动作词典。
+ */
 const custom = command(Document, {
   name: 'reconcile',
   description: '核对业务明细',

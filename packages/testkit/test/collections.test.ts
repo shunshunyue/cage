@@ -7,19 +7,25 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { createTestEnv, type TestEnv } from '../src/index.js';
 
+/** 预算用整数测试单位避免金额精度干扰；available/frozen 均不得为负，以便观察冻结与回滚。 */
 const Budget = aggregate('CollectionBudget', { fields: { available: int(), frozen: int() }, scope: scope.none(), invariants: { nonNegative: (row) => row.available >= 0 && row.frozen >= 0 } });
+/** 独占资源只能 available→reserved，用行锁和状态冲突模拟两个申请竞争同一设备。 */
 const Asset = aggregate('CollectionAsset', { fields: { label: text(40) }, states: states('available', 'reserved'), scope: scope.none() });
+/** 明细与末尾凭证分别观察集合创建是否完整，以及最后一步失败能否撤销前面全部工作。 */
 const Line = aggregate('CollectionLine', { fields: { label: text(40) }, scope: scope.none() });
 const Ticket = aggregate('CollectionTicket', { fields: { label: text(40) }, scope: scope.none() });
+/** 申请快照含预算、资源 ID、明细 ID/标签和故障开关 failLate；只由测试控制开关，不模拟真实业务字段。 */
 const Allocation = aggregate('CollectionAllocation', { fields: {
   budgetId: id(), amount: int(), assets: list({ assetId: id() }), lines: list({ lineId: id(), label: text(40) }), failLate: bool(),
 }, scope: scope.none() });
+/** 保留创建时的集合内容，后续反应不能依赖外部可变数组；事件载荷同时覆盖单项和集合步骤。 */
 const Requested = event('CollectionRequested', { budgetId: id(), amount: int(), assets: list({ assetId: id() }), lines: list({ lineId: id(), label: text(40) }), failLate: bool() });
 const allocate = command(Allocation, { from: 'new', to: 'active', input: z.object({ budgetId: z.uuid(), amount: z.number().int().positive(), assets: z.array(z.object({ assetId: z.uuid() })), lines: z.array(z.object({ lineId: z.uuid(), label: z.string() })), failLate: z.boolean() }), handler: (draft) => draft, emits: [emit(Requested, (row) => row)] });
 const freeze = command(Budget, { from: 'active', to: null, invokedBy: 'process', input: z.object({ id: z.uuid(), amount: z.number().int().positive() }), handler: (row, input) => row.available < input.amount ? fail('BUDGET_SHORT') : { available: row.available - input.amount, frozen: row.frozen + input.amount } });
 const reserve = command(Asset, { from: 'available', to: 'reserved', invokedBy: 'process', handler: () => ({}) });
 const addLine = command(Line, { from: 'new', to: 'active', invokedBy: 'process', input: z.object({ id: z.uuid(), label: z.string() }), handler: (row) => row });
 const issue = command(Ticket, { from: 'new', to: 'active', invokedBy: 'process', input: z.object({ label: z.string(), failLate: z.boolean() }), handler: (row, input) => input.failLate ? fail('LATE_FAILURE') : row });
+/** 顺序固定为冻结预算、按稳定键占资源、创建明细、出凭证；步骤序号与对象导出顺序刻意不同。 */
 const budgetFirst = reaction(Requested, { command: freeze, order: 10, tx: 'same', map: (payload) => ({ id: payload.budgetId, amount: payload.amount }) });
 const assetsSecond = reactionEach(Requested, { command: reserve, order: 20, tx: 'same', maxItems: 20, orderBy: 'assetId', items: (payload) => payload.assets, map: (asset) => ({ id: asset.assetId }) });
 const linesThird = reactionEach(Requested, { command: addLine, order: 30, tx: 'same', maxItems: 10, orderBy: 'lineId', items: (payload) => payload.lines, map: (line) => ({ id: line.lineId, label: line.label }) });
@@ -30,6 +36,7 @@ let env: TestEnv;
 beforeAll(async () => { env = await createTestEnv({ domain }); });
 afterAll(async () => { await env?.close(); });
 
+/** 创建独立资源与预算，集合故意反序输入；断言应依据 orderBy 的稳定排序，而非传入次序。 */
 async function fixture(assetCount = 20, lineCount = 10) {
   const budget = await env.insert(Budget, { available: 100, frozen: 0 });
   const assets = [];
@@ -38,6 +45,7 @@ async function fixture(assetCount = 20, lineCount = 10) {
   return { budgetId: budget.id, amount: 60, assets: assets.reverse(), lines: lines.reverse(), failLate: false };
 }
 
+/** 复用同一测试数据库但更换反应事务模式；skipFirst 让 null 映射后执行索引与原始/排序索引不同。 */
 function variant(tx: TxMode, skipFirst = false) {
   return createKernel({ db: { app: env.kernel.app, read: env.kernel.readDb }, logger: silentLogger, domain: {
     ...domain,
@@ -49,6 +57,11 @@ function variant(tx: TxMode, skipFirst = false) {
   } });
 }
 
+/**
+ * 真库验证上限、重复键、资源竞争及中间/末尾失败的回滚，不只检查静态声明返回值。
+ * same 与 outbox 两条路径分别核对错误中的执行索引、排序索引、原索引及稳定键。
+ * 指纹场景只变选择器，确保 API/worker 不会把不同集合含义误判为同一份注册声明。
+ */
 describe('有界集合共同事务与显式执行顺序', () => {
   it('20个资源、10个明细按稳定键执行，完整通过命令、审计及outbox', async () => {
     const input = await fixture();

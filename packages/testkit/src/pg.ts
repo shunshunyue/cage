@@ -1,3 +1,9 @@
+/**
+ * 内嵌真实 PostgreSQL 的测试进程与目录生命周期管理。
+ * 启动临时或显式持久实例，使用路径和归属标记约束停止/删除目标；Windows 通过 pg_ctl 关闭本次实例。
+ * 业务 dev 不使用这里自动建库，测试连接选择由上层 env/globalSetup 负责；目录和管理员连接只供受控测试。
+ * 加载上游依赖后安装退出码兼容层，避免其异步清理钩子把已有测试失败改为成功退出。
+ */
 // 测试与本地开发用的 PostgreSQL：优先使用 CAGE_TEST_DATABASE_URL（超级用户连接串，例如 CI 里的服务容器），
 // 否则启动 embedded-postgres（npm 包自带真实的 PostgreSQL 二进制，不需要 Docker）。
 import { mkdtempSync, existsSync, mkdirSync } from 'node:fs';
@@ -11,7 +17,12 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, parse, resolve } from 'node:path';
 import pg from 'pg';
+import { preserveEmbeddedPostgresExitCode } from './embedded-exit.js';
 
+/**
+ * 内嵌实例句柄：host/port 定位本地监听，superUrl 是测试管理员连接。
+ * stop 幂等关闭本次实例并按 persistent 决定目录清理，不按进程名停止其他 PostgreSQL。
+ */
 export interface PgInstance {
   /** 超级用户连接串（指向 postgres 库） */
   superUrl: string;
@@ -20,6 +31,10 @@ export interface PgInstance {
   stop(): Promise<void>;
 }
 
+/**
+ * 让系统在回环地址分配临时端口，关闭探测 socket 后返回端口号。
+ * 该结果是当时空闲端口，不在函数返回后持续占用；后续启动仍可能遇到竞争并失败。
+ */
 export async function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const s = createServer();
@@ -32,8 +47,16 @@ export async function freePort(): Promise<number> {
   });
 }
 
+/**
+ * 启动测试 PostgreSQL；dir/port 可显式指定，persistent 默认 false，log 决定是否转发进程日志。
+ * 拒绝根目录和把已有数据库目录作为可自动删除临时目录；启动后记录真实路径及唯一归属令牌。
+ * stop 在关闭前后核对目录归属，Windows 还核对服务报告的数据目录和端口；归属不符时拒绝清理。
+ * 临时目录删除有界重试以等待文件句柄释放，失败抛出；持久目录只移除本次归属标记。
+ */
 export async function startEmbeddedPostgres(opts: { dir?: string; port?: number; persistent?: boolean; log?: boolean } = {}): Promise<PgInstance> {
   const { default: EmbeddedPostgres } = await import('embedded-postgres');
+  // 依赖仅被导入就注册固定退出码的钩子；在创建实例前保留失败状态，初始化失败同样不能变成成功。
+  preserveEmbeddedPostgresExitCode();
   const port = opts.port ?? (await freePort());
   const persistent = opts.persistent ?? false;
   const dir = resolve(opts.dir ?? mkdtempSync(join(tmpdir(), 'cage-pg-')));
@@ -96,6 +119,10 @@ export async function startEmbeddedPostgres(opts: { dir?: string; port?: number;
 }
 
 /** 把超级用户连接串换成另一个库、另一个账号 */
+/**
+ * 复制并改写连接 URL 的数据库路径，可选替换账号与密码，保留主机及其他 URL 参数。
+ * 仅返回字符串，不建立连接、创建数据库或验证账号；调用方不得把含凭据结果写入日志。
+ */
 export function withDb(url: string, db: string, user?: { name: string; password: string }): string {
   const u = new URL(url);
   u.pathname = `/${db}`;

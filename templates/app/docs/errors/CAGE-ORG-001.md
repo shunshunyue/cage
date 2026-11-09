@@ -34,16 +34,17 @@ export * from '@yss123/cage-admin/domain';
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/cli/src/rules.ts:212`
-- `packages/cli/src/rules.ts:219`
-- `packages/testkit/src/env.ts:107`
+- `packages/cli/src/rules.ts:256`
+- `packages/cli/src/rules.ts:260`
+- `packages/cli/src/rules.ts:268`
+- `packages/testkit/src/env.ts:135`
 
 实现片段（位置随框架版本更新）：
 
 ```ts
 
 /** CAGE-ORG-001：domain 必须包含框架自带的组织模型 */
-export function checkOrg(g: Ontology): Finding[] {
-  const has = (id: string) => g.nodes.some((n) => n.kind === 'aggregate' && n.id === id);
-  return has('User') && has('Dept') && has('Role')
+/**
+ * 确认 domain 注册了 User、Dept、Role 三个框架组织聚合。
+ * @param g 当前图。
 ```

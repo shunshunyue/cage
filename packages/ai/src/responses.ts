@@ -1,17 +1,36 @@
+/**
+ * 适配 Responses 流式协议及远端会话接续。
+ * 与 Chat provider 共用连接器安全边界，保留同配置的 provider 原始输出以恢复推理/压缩项；远端历史不可用时向运行时发恢复信号，不直接重放业务工具。
+ */
 import { connector, ConnectorError, stage, streamJson } from '@yss123/cage-connectors';
 import { validateModelResult, type ChatModelOptions } from './model.js';
 import { digest } from './security.js';
 import { ModelResponseError, parseModelJson, providerErrorCode } from './model-failure.js';
 import type { ModelMessage, ModelProvider, ModelResult } from './types.js';
 
+/**
+ * Responses 配置复用模型主机、凭据与窗口设置，并可显式启用厂商上下文压缩。
+ * 压缩是协议能力声明，不会自动验证网关支持；不启用自动截断来静默丢弃业务历史。
+ */
 export interface ResponsesModelOptions extends ChatModelOptions {
   /** 只在服务支持 context_management 时启用；不使用自动丢弃历史的 truncation。 */
   compaction?: boolean;
 }
+/**
+ * 通知运行时从本地持久历史重建请求的内部异常。
+ * 仅用于尚未向用户输出文本的远端历史失效或网关不支持接续；它不是模型业务结论，也不是任意网络失败的重试许可。
+ */
 export class ResponseHistoryExpired extends Error {
+  /**
+   * 创建接续失效信号；expired 允许以后继续使用有效远端历史，unsupported 由运行时记录该配置不支持接续。
+   */
   constructor(readonly reason: 'expired' | 'unsupported' = 'expired') { super('RESPONSES_HISTORY_EXPIRED'); }
 }
 
+/**
+ * 将统一消息映射为 Responses input 项。
+ * 系统指令由调用方单独重发；工具回执保留 call_id，只有 providerItems 的配置 key 相等时才复用原始项，防止不同模型配置的私有状态混用。
+ */
 function inputItems(messages: ModelMessage[], key?: string): Record<string, unknown>[] {
   const items: Record<string, unknown>[] = [];
   for (const message of messages) {
@@ -27,6 +46,12 @@ function inputItems(messages: ModelMessage[], key?: string): Record<string, unkn
 }
 
 /** Responses 与 Chat 共用连接器边界；接续 ID、工具回执和每次重发的指令由框架组装。 */
+/**
+ * 构造 Responses provider；声明 spec 的摘要作为远端历史配置键。
+ * 每次请求重新发送系统指令，关闭自动 truncation，并显式使用非 strict 工具 schema 以保留合法可选参数。
+ * 只接受唯一 completed 终态，核对创建/结束响应 ID 和流式/最终文本；函数调用之外只保留 reasoning、compaction 项，其他工具类型拒绝执行。
+ * 404 或不支持 previous_response_id 且尚无文本时抛恢复信号；已有文本的失败直接上抛，避免静默重放造成重复输出。
+ */
 export function responsesModel(name: string, options: ResponsesModelOptions): ModelProvider {
   const transport = connector(name, { hosts: options.hosts, secret: options.secret, timeoutMs: options.timeoutMs ?? 90_000,
     rateLimit: options.rateLimit, operations: {} });

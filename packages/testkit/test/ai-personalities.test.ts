@@ -1,3 +1,8 @@
+/**
+ * AI 性格配置与会话选择的持久化回归，区分管理权限与普通使用权限，核对租户、版本及默认项约束。
+ * 模型为可控函数，捕获实际请求验证风格只影响表达且不能覆盖应用规则、工具授权或写入确认。
+ * 每例重置模型行为，最终关闭运行时和隔离库；HTTP 用例另行验证登录/CSRF 与会话归属。
+ */
 import { createHash, randomUUID } from 'node:crypto';
 import { beforeAll, afterAll, beforeEach, expect, it } from 'vitest';
 import * as admin from '@yss123/cage-admin/domain';
@@ -8,6 +13,9 @@ import { createTestEnv, type TestEnv, type TestUser } from '../src/index.js';
 let model: (request: ModelRequest) => Promise<ModelResult> | ModelResult = () => ({ text: '你好', calls: [] });
 const intelligence = ai({ models: { main: { spec: { kind: 'personality-test' }, generate: request => Promise.resolve(model(request)) } }, assistant: { model: 'main', instructions: '应用规则：使用已提供的能力。' } });
 const domain = { ...admin, intelligence };
+/**
+ * 待创建性格的完整测试草稿：version=0 表示首次保存，描述及示例只作风格输入，不提供业务权限。
+ */
 const input = { version: 0, label: '测试搭档', avatar: '🌱', description: '语气温和，先讲结论。', verbosity: 'concise' as const,
   address: '朋友', emoji: 'light' as const, examples: ['我来帮你理清楚。'], enabled: true };
 let env: TestEnv, manager: TestUser, user: TestUser, other: TestUser, runtime: AiRuntime;

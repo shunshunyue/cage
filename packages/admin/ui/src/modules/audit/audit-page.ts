@@ -1,3 +1,7 @@
+/**
+ * 操作审计查询页面，通过安全审计接口读取记录并展示操作人、时间和变化详情。
+ * 筛选、分页与详情均属于读操作；界面不补写审计，也不将查到的部分记录当作完整请求轨迹。
+ */
 import { api, run, state } from '../../shared/api.js';
 import { badge, field, formatTime, h, panel, table } from '../../shared/dom.js';
 import { capabilityName, objectName } from '../../shared/labels.js';
@@ -30,6 +34,10 @@ const actors: Record<string, string> = {
   system: '系统',
 };
 
+/**
+ * 构建审计筛选器与列表，等待初次 load 完成；服务端仍校验 Sys.audit.read 与安全视图。
+ * 详情通过 DOM 文本展示，包含结构化差异时也不解释为 HTML。
+ */
 export async function renderAudit(main: HTMLElement) {
   const actor = h('input', { placeholder: '操作人的用户 ID' });
   const aggregate = h(
@@ -98,6 +106,10 @@ export async function renderAudit(main: HTMLElement) {
       h('div', { class: 'pagination' }, pageText, h('div', { class: 'row-actions' }, previous, next)),
     ),
   );
+  /**
+   * 按当前筛选和页码请求审计记录，更新表格及分页控制。
+   * 查询失败保留明确错误反馈，不生成占位成功记录；请求只读，不重放任何业务命令。
+   */
   async function load() {
     const params = new URLSearchParams(
       Object.entries(fields)

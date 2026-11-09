@@ -1,6 +1,13 @@
+/**
+ * 业务页公共标题区，统一标题、说明与右侧操作的布局，不包含查询和权限逻辑。
+ */
 import type { ReactNode } from 'react';
 
 /** 统一页面标题的排版；不读取路由或业务状态，避免共享 UI 反向依赖某项业务。 */
+/**
+ * 展示 eyebrow 分类文字、title 主标题、description 说明和 children 操作区。
+ * 操作按钮及其 can 检查由使用页面提供；此组件不会替调用方判断权限。
+ */
 export function PageHeading({
   eyebrow,
   title,

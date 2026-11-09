@@ -1,6 +1,14 @@
+/**
+ * 构造系统管理登录页面，复用统一 JSON/CSRF 请求和操作反馈。
+ * 账号密码只用于本次登录表单；成功清掉旧 CSRF 后由上层重新加载真实身份和目录，SSO 使用独立服务端入口。
+ */
 import { api, run, state } from '../../shared/api.js';
 import { field, h, icon } from '../../shared/dom.js';
 
+/**
+ * 返回未挂载的登录页面 DOM。提交期间禁用按钮，失败由 run 显示原因并保留可重试表单。
+ * onLogin 仅在登录请求成功后等待执行，负责恢复会话并切换页面；本组件不自行伪造身份或能力列表。
+ */
 export function loginPage(onLogin: () => Promise<void>) {
   const username = h('input', {
     name: 'username',

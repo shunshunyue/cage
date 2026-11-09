@@ -1,3 +1,8 @@
+/**
+ * 为编程 agent 组织需求相关子图、源码位置、契约及验证候选，供 CLI 与本地图谱共用。
+ * 从精确节点或名称候选出发做有界扩展，再读取项目测试与 Web 源码补充文本匹配线索。
+ * 不执行推荐测试、不访问业务数据；输出截断、深度边界与证据来源，不能替代源码阅读或业务验收。
+ */
 // 开发前的上下文包：沿声明截取一小块业务图，并列出继续阅读的源码及检查线索。
 // 这里只读取工程源码、文件名和已抽取元数据，不读取 .env，不连接业务数据库。
 import { existsSync, globSync, readFileSync } from 'node:fs';
@@ -18,6 +23,11 @@ import {
 } from './graph-query.js';
 
 /** 只去掉实现哈希，保留输入、状态、约束、范围等可读事实。要看完整原始属性用 inspect。 */
+/**
+ * 移除实现文本及实现哈希等大属性，保留输入、状态、约束和字段 SQL 等可读事实。
+ * @param node 已附证据与源码位置的节点。
+ * @returns 浅拷贝节点和筛选后的 attrs，不修改快照；完整原始属性仍由 inspect 提供。
+ */
 function compactNode(node: GraphNodeInfo): GraphNodeInfo {
   const attrs = Object.fromEntries(
     Object.entries(node.attrs).filter(
@@ -28,6 +38,15 @@ function compactNode(node: GraphNodeInfo): GraphNodeInfo {
   return { ...node, attrs };
 }
 
+/**
+ * 补齐子图之外需要阅读的契约、测试、Web 候选和迁移目录说明。
+ * 按聚合/查询名扫描源码，不进行完整导入图分析；候选只是线索，未执行或证明覆盖。
+ * @param cfg 文件定位配置。
+ * @param snapshot 本次抽取图，供派生测试筛选使用。
+ * @param nodes 子图节点。
+ * @param roots 真正选定入口，避免把附带聚合的全部测试都带入。
+ * @returns 带存在性、截断数量及匹配依据的资源清单；只读项目文件。
+ */
 function contextResources(cfg: CageConfig, snapshot: GraphSnapshot, nodes: GraphNodeInfo[], roots: string[]) {
   const sourceFiles = [...new Set(nodes.flatMap((node) => (node.source ? [node.source.file] : [])))].sort();
   const aggregates = [
@@ -105,6 +124,15 @@ function contextResources(cfg: CageConfig, snapshot: GraphSnapshot, nodes: Graph
   };
 }
 
+/**
+ * 从需求候选或精确节点构建有界业务上下文。
+ * 优先扩展执行关系，聚合/字段等附带资料停止继续传播，降低高连接节点造成的上下文膨胀。
+ * @param cfg 应用文件位置。
+ * @param snapshot 单次抽取快照，查询不会更新它。
+ * @param query 业务词或完整节点 key。
+ * @param options depth 默认 3，limit 默认 40，freshness 区分本次抽取与页面快照。
+ * @returns 子图、选择依据、覆盖边界和建议；未命中返回 not-found，不猜造节点。
+ */
 export function buildContext(
   cfg: CageConfig,
   snapshot: GraphSnapshot,
@@ -221,6 +249,11 @@ export function buildContext(
   };
 }
 
+/**
+ * 把结构化上下文渲染为可交给 agent 的 Markdown，保留候选和证据限制。
+ * @param report buildContext 的完整报告。
+ * @returns Markdown 文本；不写文件、不执行报告中的下一步命令。
+ */
 export function formatContext(report: ReturnType<typeof buildContext>): string {
   const lines = reportHeader(report, 'Cage 业务开发上下文');
   lines.push(`需求/节点：${report.query}`, '', report.selection.note, '', '## 候选入口与匹配依据', '');

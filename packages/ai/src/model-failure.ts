@@ -1,5 +1,12 @@
+/**
+ * 把上游协议、连接器和网络异常转为可持久化的模型故障分类。
+ * 模型适配器负责抛出协议错误，运行时用这里的稳定代码记录事件；不保留原始错误正文、参数碎片或凭据，不在此决定重试。
+ */
 import { ConnectorError } from '@yss123/cage-connectors';
 
+/**
+ * 模型返回已到达但不能作为完整结果使用的封闭原因集合；区分厂商拒绝、输出截断、结构/参数错误和终态不一致，便于诊断预算与协议问题。
+ */
 type ResponseFailure =
   | 'provider_error'
   | 'incomplete'
@@ -11,12 +18,34 @@ type ResponseFailure =
   | 'unexpected_tool'
   | 'text_mismatch';
 
+/**
+ * 运行记录可安全保存的故障摘要。
+ * 可选字段只在异常提供相应证据时出现；没有证据不能推断 HTTP 状态、网络错误或厂商停止原因。
+ */
 export interface ModelFailure {
+  /**
+   * 稳定的细分原因；未知错误仅记 request_failed。
+   */
   reason: string;
+  /**
+   * 可选框架错误码，用于界面与诊断分类。
+   */
   code?: string;
+  /**
+   * 连接器实际取得的 HTTP 状态；没有响应时不填。
+   */
   httpStatus?: number;
+  /**
+   * 经过字符白名单过滤的上游错误代码，不是上游 message。
+   */
   providerCode?: string;
+  /**
+   * 经过白名单过滤的生成终止原因，例如输出长度限制。
+   */
   stopReason?: string;
+  /**
+   * 允许列表内的网络或 TLS 代码；不记录任意 cause 内容。
+   */
   networkCode?: string;
 }
 
@@ -25,8 +54,18 @@ export function providerErrorCode(value: unknown): string | undefined {
   return typeof value === 'string' && /^[A-Za-z0-9_.-]{1,100}$/.test(value) ? value : undefined;
 }
 
+/**
+ * 统一表达模型协议错误，并把原因映射成稳定 AI_MODEL_* 错误码。
+ * 错误消息只含框架代码；details 用于携带可筛选的厂商代码和终止原因，不接收原始响应正文。
+ */
 export class ModelResponseError extends Error {
+  /**
+   * 根据 reason 映射出的稳定框架错误码。
+   */
   readonly code: string;
+  /**
+   * 根据输出上限、不完整、厂商失败或其余协议错误选择稳定代码，保留具体 reason 供运行时诊断；不触发请求重试。
+   */
   constructor(
     readonly reason: ResponseFailure,
     readonly details: { providerCode?: string; stopReason?: string } = {},
@@ -45,6 +84,10 @@ export class ModelResponseError extends Error {
   }
 }
 
+/**
+ * 解析模型 JSON 或函数参数 JSON；解析失败抛带指定原因的统一异常。
+ * 刻意不转发 JSON.parse 的错误片段，避免模型正文或业务数据进入日志。返回值仍需后续结构 schema 校验。
+ */
 export function parseModelJson(value: string, reason: 'invalid_json' | 'invalid_arguments'): any {
   try {
     return JSON.parse(value);

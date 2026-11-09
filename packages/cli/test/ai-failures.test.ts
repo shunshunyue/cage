@@ -1,3 +1,8 @@
+/**
+ * 验证模型失败分类及错误脱敏，避免上游正文进入用户诊断。
+ * 通过替换全局 fetch 构造 Responses 不完整终态、Chat 输出上限、超时、HTTP 与网络错误。
+ * 每例恢复环境和桩；失败事件必须得到对应诊断，不能交付半截工具调用。
+ */
 import { afterEach, expect, it, vi } from 'vitest';
 import { responsesModel } from '../../ai/src/responses.js';
 import { chatModel } from '../../ai/src/model.js';
@@ -5,12 +10,18 @@ import { modelFailure } from '../../ai/src/model-failure.js';
 
 afterEach(() => vi.unstubAllGlobals());
 const options = { model: 'test', hosts: { test: 'model.example.invalid' }, environment: 'test' as const };
+/**
+ * 为每次模型调用建立独立 AbortSignal 和最小请求，避免上个失败场景的取消状态泄漏。
+ */
 const request = () => ({
   messages: [],
   tools: [],
   maxOutputTokens: 100,
   signal: new AbortController().signal,
 });
+/**
+ * 将指定事件逐条编码成 data 帧，用于精确控制失败/不完整终态；不替模型补成功结束事件。
+ */
 const sse = (...events: unknown[]) =>
   new Response(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(''));
 const secret = 'PRIVATE_RESPONSE_CONTENT';

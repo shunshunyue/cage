@@ -1,3 +1,8 @@
+/**
+ * 验证生成校验器、命名快照、能力签名和运行实例证据的诊断边界。
+ * 真实 schema 比较与临时快照检查转换边界、独占保存和只读分析；注入运行响应检查授权解释与凭据脱敏。
+ * 未提供实例证据必须保留 unknown，文件存在不能替代进程已加载证明。
+ */
 import { afterAll, expect, it } from 'vitest';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -20,6 +25,9 @@ import * as domain from '../../testkit/test/fixtures/domain.js';
 const directory = mkdtempSync(join(tmpdir(), 'cage-diagnostics-'));
 afterAll(() => rmSync(directory, { recursive: true, force: true }));
 
+/**
+ * 用相同输入分别执行原始 Zod 与生成 Zod，比较接受性和解析输出，覆盖严格对象、倍数及默认值。
+ */
 it('generated schemas retain strict objects, multiples, defaults and parse output', () => {
   const source = z.object({ amount: z.number().multipleOf(5), mode: z.string().default('draft') }).strict();
   const generated = new Function('z', `return ${zodCodeOf(source)}`)(z) as z.ZodType;
@@ -31,11 +39,17 @@ it('generated schemas retain strict objects, multiples, defaults and parse outpu
   expect(jsonToZod({ type: 'object', properties: {}, additionalProperties: false }, {})).toContain('.strict()');
 });
 
+/**
+ * 服务端 refine 无法序列化时，诊断必须指到数组元素的真实字段，不能只报告整个对象。
+ */
 it('reports the exact field containing a server-only refinement', () => {
   const schema = z.object({ rows: z.array(z.object({ value: z.string().refine(value => value === 'ok') })) });
   expect(schemaDiagnostics(schema)).toEqual([expect.objectContaining({ path: '$.rows[].value', reason: expect.stringContaining('refine') })]);
 });
 
+/**
+ * 保留可表达的字符串边界、可选元组位置和 record key 规则，交叉对象解析结果也需一致。
+ */
 it('retains formatted string patterns, optional tuple positions and record keys', () => {
   const source = z.object({ code: z.string().startsWith('A').endsWith('Z'), pair: z.tuple([z.string(), z.number().optional()]), values: z.record(z.string().regex(/^[a-z]+$/), z.number()) });
   const generated = new Function('z', `return ${zodCodeOf(source)}`)(z) as z.ZodType;
@@ -51,6 +65,9 @@ it('retains formatted string patterns, optional tuple positions and record keys'
   expect(generatedIntersection.parse(input)).toEqual(intersection.parse(input));
 });
 
+/**
+ * 无法表达的变换和正则标志只放宽客户端校验，并在 OpenAPI 标记服务端验证，不能误拒合法输入。
+ */
 it('server-only conversion and regex flags never make generated validation stricter', () => {
   const source = z.object({ code: z.string().regex(/^ok$/i), label: z.string().trim().max(2), count: z.number().catch(0) });
   const input = { code: 'OK', label: ' x ', count: 'fallback' };
@@ -67,6 +84,9 @@ it('server-only conversion and regex flags never make generated validation stric
   expect(schema.properties.label.maxLength).toBeUndefined();
 });
 
+/**
+ * 递归续接处可以明确放宽，但根层普通字段仍须校验；不存在的 schema 引用必须报错。
+ */
 it('recursive schemas report and safely relax only the recursive continuation', () => {
   const source = z.object({ name: z.string(), get children(): z.ZodArray<typeof source> { return z.array(source); } });
   expect(schemaDiagnostics(source)).toContainEqual(expect.objectContaining({ path: '$.children[]', reason: expect.stringContaining('递归') }));
@@ -78,6 +98,9 @@ it('recursive schemas report and safely relax only the recursive continuation', 
   expect(() => jsonToZod({ $ref: '#/$defs/missing' }, {})).toThrow('CAGE-GEN-003');
 });
 
+/**
+ * impact 接受命名快照信封的 graph 内容；快照名不得包含目录逃逸路径。
+ */
 it('named snapshots are valid impact inputs and reject escaping names', () => {
   const cfg = loadConfig(directory);
   expect(() => snapshotPath(cfg, '../old')).toThrow('CAGE-IMPACT-002');
@@ -88,6 +111,9 @@ it('named snapshots are valid impact inputs and reject escaping names', () => {
   expect(readFileSync(file, 'utf8')).toContain('before');
 });
 
+/**
+ * 保存一次基线后拒绝同名覆盖，再执行会更新当前本体的分析，证明独立基线字节保持原样。
+ */
 it('saving a baseline is exclusive and later analysis cannot change it', async () => {
   const root = join(directory, 'snapshots');
   mkdirSync(join(root, 'packages/domain/src'), { recursive: true });
@@ -101,6 +127,9 @@ it('saving a baseline is exclusive and later analysis cannot change it', async (
   expect(readFileSync(file, 'utf8')).toBe(before);
 });
 
+/**
+ * 批量反应的 maxItems/orderBy 与事务/顺序是执行边界，抽取不能为了简化图谱而丢失它们。
+ */
 it('collection metadata remains available to graph and AI context consumers', () => {
   const Batch = event('DiagnosticBatch', {});
   const batchReaction = reactionEach(Batch, { command: domain.acquireLock, tx: 'same', order: 2, maxItems: 20, orderBy: 'key', items: () => [{ key: 'one' }], map: () => null });
@@ -109,6 +138,9 @@ it('collection metadata remains available to graph and AI context consumers', ()
   expect(graph.nodes.find(node => node.id === 'batchReaction')?.attrs).toMatchObject({ tx: 'same', order: 2, collection: { maxItems: 20, orderBy: 'key' } });
 });
 
+/**
+ * 离线空项目没有迁移、授权或进程证据，doctor 必须标 unknown 且 complete=false。
+ */
 it('doctor does not invent runtime success or write generated artifacts', async () => {
   const project = join(directory, 'project');
   mkdirSync(join(project, 'packages/domain/src'), { recursive: true });
@@ -120,6 +152,9 @@ it('doctor does not invent runtime success or write generated artifacts', async 
   expect(report.limitations.join(' ')).toContain('不执行');
 });
 
+/**
+ * 授权解释 POST 先获取 CSRF；新 cookie 与原 session 合并发送，但报告不得返回 token。
+ */
 it('runtime authorization explanation merges CSRF cookies without returning credentials', async () => {
   const cookieFile = join(directory, 'diagnostic-cookie.txt');
   writeFileSync(cookieFile, 'session=synthetic-session');
@@ -135,6 +170,9 @@ it('runtime authorization explanation merges CSRF cookies without returning cred
   expect(JSON.stringify(result)).not.toContain('synthetic-csrf');
 });
 
+/**
+ * 带凭据、查询、锚点或非 HTTP 地址，以及改变实例 origin 的路径，必须在调用 fetch 前拒绝。
+ */
 it('diagnostic requests reject credentials in addresses and cannot change the configured origin', async () => {
   const cfg = loadConfig(directory);
   const unused = (() => { throw new Error('invalid request reached network'); }) as typeof fetch;
@@ -143,10 +181,26 @@ it('diagnostic requests reject credentials in addresses and cannot change the co
   await expect(runtimeDiagnostic(cfg, { runtimeUrl: 'http://localhost', fetch: unused }, 'https://elsewhere.invalid')).rejects.toThrow('CAGE-DIAG-001');
 });
 
+/**
+ * 按中文“本人”召回已安装声明中的 ownerField 签名，以实际公开 API 证明能力，避免仅凭词表臆造接口。
+ */
 it('public discovery finds the installed owner signature instead of claiming the feature is absent', () => {
   const cfg = loadConfig(fileURLToPath(new URL('../../../examples/purchase-admin/', import.meta.url)));
   const report = publicCapabilities(cfg, '本人');
   expect(report.capabilities).toContainEqual(expect.objectContaining({ name: 'scope', public: true, signatures: [expect.stringContaining('ownerField')] }));
+});
+
+/** 依据当前安装的公开声明核对 AND 能力发现，关键词不能把只有会签的旧 API 描述成并行网关。 */
+it('并行审批需求定位真实parallel与branch签名并说明结构化AND边界', () => {
+  const cfg = loadConfig(fileURLToPath(new URL('../../../examples/purchase-admin/', import.meta.url)));
+  const report = publicCapabilities(cfg, '并行');
+  for (const name of ['parallel', 'branch']) {
+    const item = report.capabilities.find(capability => capability.key === `@yss123/cage-approval#${name}`);
+    expect(item).toMatchObject({ public: true, guide: 'docs/ai/approvals.md' });
+    expect(item?.signatures.length).toBeGreaterThan(0);
+  }
+  expect(report.capabilities.find(item => item.key === '@yss123/cage-approval#parallel')?.limitations)
+    .toContainEqual(expect.stringContaining('全部活动分支完成'));
 });
 
 it.each([

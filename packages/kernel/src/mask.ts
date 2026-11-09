@@ -3,6 +3,10 @@ import { type AnyAggregate, hiddenFields, sensitiveFields } from './primitives/a
 import { isRelation, type Fields, type SensitiveKind } from './primitives/fields.js';
 import type { Ctx } from './types.js';
 
+/**
+ * 按封闭敏感种类生成展示掩码，null/undefined 保持原值；未知种类保守地全部遮盖。
+ * 掩码是展示策略而非加密，不能将返回字符串用于业务计算、唯一键或原样回写。
+ */
 export function maskValue(kind: SensitiveKind | string, val: unknown): unknown {
   if (val === null || val === undefined) return val;
   const s = String(val);
@@ -32,6 +36,7 @@ export function canUnmask(ctx: Ctx | null, aggName: string, kind: string): boole
 }
 
 /** 对外呈现快照：去掉隐藏字段；敏感字段按当前主体掩码（ctx 为 null 时一律掩码） */
+/** 返回浅拷贝，不修改事务中的完整快照；集合关系另走双方授权的分页入口。 */
 export function present(agg: AnyAggregate, snap: Record<string, any>, ctx: Ctx | null): Record<string, any> {
   const out = { ...snap };
   // 关联集合按需分页读取。命令响应不暴露内部完整 ID 集合，也不隐式读取目标内容。
@@ -45,6 +50,7 @@ export function present(agg: AnyAggregate, snap: Record<string, any>, ctx: Ctx |
 }
 
 /** 审计 diff：敏感字段掩码，隐藏字段只记录「已修改」 */
+/** 审计不借用操作者的明文能力；即使操作者可解掩码，日志中仍遮盖敏感值。新建时 from 为 null。 */
 export function auditDiff(agg: AnyAggregate, cur: Record<string, any> | null, next: Record<string, any>, changed: string[]) {
   const sens = sensitiveFields(agg);
   const hidden = new Set(hiddenFields(agg));

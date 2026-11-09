@@ -34,9 +34,9 @@
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/admin/src/domain/constraints.ts:21`
-- `packages/admin/src/domain/constraints.ts:24`
-- `packages/admin/src/domain/constraints.ts:51`
+- `packages/admin/src/domain/constraints.ts:39`
+- `packages/admin/src/domain/constraints.ts:42`
+- `packages/admin/src/domain/constraints.ts:78`
 
 实现片段（位置随框架版本更新）：
 

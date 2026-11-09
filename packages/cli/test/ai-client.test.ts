@@ -1,3 +1,8 @@
+/**
+ * 验证 AI 客户端、页面快照及模型流协议的可观察行为。
+ * 使用注入 fetch 和受控 SSE 分片覆盖会话版本、续传去重、实时文字及工具状态；不访问真实模型。
+ * 同时从声明注册链核对 AI 审批展示与敏感内容过滤，协议成功不等于真实业务命令已经执行。
+ */
 import { afterEach, expect, it, vi } from 'vitest';
 import { AiPageContext, CageClient } from '../../client/src/index.js';
 import { applyStreamEvent, streamState } from '../../client/src/ai-stream.js';
@@ -5,14 +10,21 @@ import type { AiEvent, AiRun } from '@yss123/cage-ai-protocol';
 import { chatModel } from '../../ai/src/model.js';
 import { ai } from '../../ai/src/index.js';
 import { aggregate, approval, buildRegistry, command, event, states, text } from '@yss123/cage-kernel';
-import { route, step, approver } from '../../approval/src/route.js';
+import { route, step, approver, parallel, branch, when, eq } from '../../approval/src/route.js';
 import { extract } from '../src/ontology.js';
 import { projectGraph } from '../src/graph-model.js';
 import { approvalFlowForStep } from '../src/graph-approvals.js';
 import { runtimeOntology } from '@yss123/cage-ontology';
 
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
+/**
+ * 构造带 JSON 类型的模拟 HTTP 响应，供会话和终态查询共用；状态码默认成功。
+ */
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+/**
+ * 按调用方给定的字节块顺序推送并关闭 SSE，刻意保留块边界以验证客户端增量解析。
+ * 块本身可包含半条事件；此助手不补全事件或去重。
+ */
 const sse = (chunks: string[]) => new Response(new ReadableStream<Uint8Array>({ start(controller) {
   for (const part of chunks) controller.enqueue(new TextEncoder().encode(part)); controller.close();
 } }), { headers: { 'content-type': 'text/event-stream' } });
@@ -191,4 +203,30 @@ it('AI 审批进入已有图谱与结论边，运行本体不导出隐藏字段�
   expect(flow.groups[0].tasks[0].actor).toBe('AI 审核');
   expect(JSON.stringify(runtimeOntology(registry))).not.toContain('PRIVATE_POLICY_MARKER');
   expect((runtimeOntology(registry).nodes.find(n => n.kind === 'aggregate')!.data.fields as any).secret).toBeUndefined();
+});
+
+/** 多层 when/parallel 中的 AI 仍须提取取证边，不能因只遍历顶层而让图谱遗漏真实读取依赖。 */
+it('嵌套并行条件中的AI保留取证字段和图形位置', () => {
+  const Record = aggregate('NestedAiRecord', { fields: { reason: text() }, states: states('draft', 'pending', 'accepted', 'rejected') });
+  const Submitted = event('NestedAiSubmitted', {});
+  const approve = command(Record, { name: 'approve', from: 'pending', to: 'accepted', invokedBy: 'process', handler: row => row });
+  const reject = command(Record, { name: 'reject', from: 'pending', to: 'rejected', invokedBy: 'process', handler: row => row });
+  const revise = command(Record, { name: 'revise', from: 'pending', to: 'draft', invokedBy: 'process', handler: row => row });
+  const review = approval(Record, { process: 'nested-ai-record', start: Submitted, routable: ['reason'],
+    onApproved: approve, onRejected: reject, onReturned: revise, automatedBy: 'reviewer' });
+  const routed = route('nested-ai-record', [parallel('联合审查',
+    branch('人工', step('人工核查', approver.role('reviewer'))),
+    branch('条件智能审查', when(eq('reason', 'special'), parallel('补充审查',
+      branch('智能意见', step('嵌套智能节点', { kind: 'ai', model: 'main', instructions: 'PRIVATE_NESTED_POLICY', context: { fields: ['reason'] }, handoff: approver.role('reviewer') })),
+      branch('合规意见', step('合规核对', approver.role('reviewer'))),
+    ))),
+  )]);
+  const runtime = ai({ models: { main: { spec: {}, generate: async () => ({ text: '', calls: [] }) } } });
+  const graph = extract(buildRegistry({ Record, Submitted, approve, reject, revise, review, routed, runtime })), view = projectGraph(graph);
+  expect(graph.edges.filter(edge => edge.kind === 'uses' && edge.to === 'NestedAiRecord.reason').map(edge => edge.as))
+    .toEqual(expect.arrayContaining(['AI 上下文', '路由条件']));
+  const node = view.nodes.find(item => item.kind === 'approval')!;
+  const flow = approvalFlowForStep(view, { node, label: '审查' } as any)!;
+  expect(flow.groups[0].parallel?.branches[1].groups[0].groups?.[0].parallel?.branches[0].groups[0].tasks[0])
+    .toMatchObject({ title: '嵌套智能节点', actor: 'AI 审核' });
 });

@@ -1,3 +1,8 @@
+/**
+ * 验证 init 为既有数据库准备账号时的凭据一致性。
+ * 隔离 PostgreSQL 中覆盖事务回滚、重复执行、密码保留和实际只读权限，并检查日志不泄漏密码。
+ * 测试夹具负责建库；被测命令不得代建业务库，连接、实例与临时文件均由套件释放。
+ */
 // 使用独立的真实 PostgreSQL 验证账号和凭证的一致性，不接触使用者配置的业务库。
 // 重点覆盖失败回滚和重复执行，避免“数据库改了密码，.env 却还是旧值”的部署事故。
 import { afterAll, beforeAll, expect, it } from 'vitest';
@@ -35,6 +40,10 @@ afterAll(async () => {
   rmSync(temporary, { recursive: true, force: true });
 });
 
+/**
+ * 在本套件临时根目录创建最小项目与管理员连接 .env，附加内容用于确认业务配置被保留。
+ * 返回正常配置加载结果；不建立数据库，也不修改宿主进程环境。
+ */
 function project(name: string, connection: string, extra = '') {
   const root = join(temporary, name);
   mkdirSync(root);
@@ -42,6 +51,10 @@ function project(name: string, connection: string, extra = '') {
   writeFileSync(join(root, '.env'), `# 业务配置与注释需要保留\nCAGE_ADMIN_DATABASE_URL=${connection}\n${extra}`);
   return loadConfig(root);
 }
+/**
+ * 读取隔离实例的 cage_* 角色及密码哈希，按角色名排序以比较初始化前后的精确状态。
+ * 仅供测试回滚和不重置密码断言，不把密码哈希输出到生产诊断。
+ */
 async function roles() {
   return (await admin.query("select rolname, rolpassword from pg_authid where rolname like 'cage_%' order by rolname")).rows;
 }

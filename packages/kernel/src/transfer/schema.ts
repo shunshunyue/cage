@@ -1,6 +1,11 @@
 // 独立的前向系统迁移；不改动已发布的 cage:0001_system 校验和。
 // 文件与任务存在同一 PostgreSQL 中，API/worker 不需要共享本地磁盘。
 // 原始文件和结果仅保留 24 小时；索引记录保留用于幂等及操作追踪。
+/**
+ * 任务用租户/用户/幂等键去重，并关联 outbox 以复用投递与死信机制。
+ * access_hash 绑定生成结果时的访问条件，下载时还需核对当前权限；过期清理内容但保留任务索引。
+ * 此处 CSV 内容存数据库，与附件模块的字节存储策略不同；保持已发布 SQL 文本不变。
+ */
 export const TRANSFER_MIGRATION = {
   name: 'cage:0002_data_transfer',
   sql: `

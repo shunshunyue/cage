@@ -34,14 +34,14 @@ export * from './inventory.js'; export * from './purchase-order.js';
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/approval/src/route.ts:144`
-- `packages/kernel/src/kernel.ts:118`
-- `packages/kernel/src/registry.ts:171`
-- `packages/kernel/src/registry.ts:177`
-- `packages/kernel/src/registry.ts:182`
-- `packages/kernel/src/registry.ts:196`
-- `packages/kernel/src/registry.ts:200`
-- `packages/kernel/src/registry.ts:230`
+- `packages/approval/src/route.ts:231`
+- `packages/kernel/src/kernel.ts:161`
+- `packages/kernel/src/registry.ts:209`
+- `packages/kernel/src/registry.ts:215`
+- `packages/kernel/src/registry.ts:220`
+- `packages/kernel/src/registry.ts:234`
+- `packages/kernel/src/registry.ts:238`
+- `packages/kernel/src/registry.ts:268`
 
 实现片段（位置随框架版本更新）：
 

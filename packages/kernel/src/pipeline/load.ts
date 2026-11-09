@@ -12,8 +12,13 @@ import { isRelation } from '../primitives/fields.js';
 
 type Db = Transaction<any> | Kysely<any>;
 
+/** 内核内部基表引用；业务公开读入口应使用 ReadSide 的 safe 视图，而非直接复用此函数。 */
 export const tableRef = (agg: AnyAggregate, alias = 't') => `${agg.table.schema}.${agg.table.name} as ${alias}`;
 
+/**
+ * 在 SQL 中同时限定 ID、租户和有效范围，再加载内部关系 ID；范围外与不存在统一返回 null。
+ * 写流水线传 forUpdate=true 持有行锁直至事务结束；诊断/读依赖传 false，不借此获得写权限。
+ */
 export async function loadScoped(tx: Db, agg: AnyAggregate, id: string, ctx: Ctx, forUpdate: boolean) {
   let q = tx
     .selectFrom(tableRef(agg))
@@ -43,6 +48,10 @@ export function whereColumns(agg: AnyAggregate, where: Record<string, unknown> |
   return out;
 }
 
+/**
+ * 构造尚未执行的范围查询；仅接受声明列及系统列，null 转 IS NULL，值始终参数化。
+ * 默认按创建时间升序，默认最多 1000 条、上限 5000 条；JSON 明细和集合不是主表筛选列。
+ */
 export function scopedFind(tx: Db, agg: AnyAggregate, ctx: Ctx, where?: Record<string, unknown>, opts: FindOptions = {}) {
   let q = tx.selectFrom(tableRef(agg)).selectAll().where(compileScope(agg.scope, agg.name, ctx, 't'));
   for (const [col, v] of whereColumns(agg, where)) {
@@ -60,6 +69,10 @@ export function scopedFind(tx: Db, agg: AnyAggregate, ctx: Ctx, where?: Record<s
 }
 
 /** 第 7 关：只把 reads 里的聚合做成只读仓储，同样受范围约束 */
+/**
+ * 仓储绑定当前事务与身份，handler 的读操作因此看到同一事务状态且不能写入。
+ * Proxy 将未声明别名转成明确 CAGE-READS-001；then/toJSON 保留为普通对象协议属性。
+ */
 export function bindReads<R extends Reads>(tx: Db, reads: R, ctx: Ctx): Record<string, ReadRepo<any>> {
   const deps: Record<string, ReadRepo<any>> = {};
   for (const [alias, agg] of Object.entries(reads)) {

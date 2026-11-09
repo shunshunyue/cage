@@ -34,15 +34,15 @@ states('draft', 'done', { terminal: ['done'] })，draft 有提交路径
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/cli/src/rules.ts:68`
-- `packages/cli/src/rules.ts:103`
+- `packages/cli/src/rules.ts:92`
+- `packages/cli/src/rules.ts:132`
 
 实现片段（位置随框架版本更新）：
 
 ```ts
 
 /** CAGE-STATE-010：每个状态都能从初始状态到达；CAGE-STATE-011：非终态必须有出边 */
-export function checkStates(g: Ontology): Finding[] {
-  const { get } = index(g);
-  const findings: Finding[] = [];
+/**
+ * 从新建或初始状态计算可达性，并检查非终态出边。
+ * @param g 当前图。
 ```

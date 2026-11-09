@@ -1,3 +1,7 @@
+/**
+ * 采购详情路由，直接从地址栏校验单据 ID 并独立读取，支持刷新与深链接。
+ * 详情由真实契约数据构建，附件、审批轨迹和助理上下文通过同模块组件组合。
+ */
 // 详情通过 URL 中的记录 ID 重新读取安全接口；刷新或新标签页不依赖列表的内存状态。
 import { Link, useParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
@@ -10,10 +14,15 @@ import { currency, statusLabels } from '../lib/presentation';
 import { OrderAttachments } from '../components/order-attachments';
 import { PurchaseAssistantContext } from '../components/purchase-assistant-context';
 import { ApprovalHistory } from '../components/approval-history';
+import { OrderReviewers } from '../components/order-reviewers';
 import './purchase-intelligence.css';
 
 const list = '/procurement/orders';
 
+/**
+ * 从 URL 参数获取 id，使用生成 schema 校验；无效地址给返回列表入口。
+ * 有效 ID 作为 OrderDetail 的 key，使切换记录时重置本地未保存用途草稿。
+ */
 export function PurchaseOrderDetailPage() {
   const { id } = useParams();
   const parsed = PurchaseOrderSchema.shape.id.safeParse(id);
@@ -22,6 +31,11 @@ export function PurchaseOrderDetailPage() {
   return <OrderDetail key={parsed.data} id={parsed.data} />;
 }
 
+/**
+ * 按 id 读取单据；待审批期间定时刷新，错误不作为空记录处理。
+ * 用途草稿用 null 区分尚未编辑与主动清空；保存成功后回到服务端数据，命令使用当前 version。
+ * 助理收到明确区分的已保存 record 与未保存 draft；审批历史及附件仍各自按权限读取。
+ */
 function OrderDetail({ id }: { id: string }) {
   const query = usePurchaseOrder(id);
   const [draftReason, setDraftReason] = useState<string | null>(null);
@@ -109,6 +123,7 @@ function OrderDetail({ id }: { id: string }) {
             }}>保存用途</button></div>
           </> : <p>{order.reason || '尚未填写用途'}</p>}
         </div>
+        <OrderReviewers order={order} />
         <OrderAttachments order={order} />
         <div className="section-head">
           <h2>采购物料</h2>

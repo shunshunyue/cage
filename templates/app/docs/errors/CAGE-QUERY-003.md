@@ -34,17 +34,17 @@ reads: []；SQL from safe.purchase_order
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/cli/src/rules.ts:169`
-- `packages/cli/src/rules.ts:184`
-- `packages/cli/src/rules.ts:202`
-- `packages/kernel/src/primitives/flow.ts:105`
+- `packages/cli/src/rules.ts:208`
+- `packages/cli/src/rules.ts:228`
+- `packages/cli/src/rules.ts:246`
+- `packages/kernel/src/primitives/flow.ts:170`
 
 实现片段（位置随框架版本更新）：
 
 ```ts
 
 /** CAGE-QUERY-003：手写 SQL 只能引用 reads 里聚合的安全视图 */
-export function checkQueries(g: Ontology): Finding[] {
-  const { get } = index(g);
-  const findings: Finding[] = [];
+/**
+ * 从 SQL 文本检查 safe 视图与 reads 对应关系及显式基表引用。
+ * @param g 当前图。
 ```

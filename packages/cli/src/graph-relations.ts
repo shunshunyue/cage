@@ -1,31 +1,39 @@
+/**
+ * 将每种本体连线翻译为中文原因、用途、方向与证据，供 CLI 和浏览器详情复用。
+ * 解释基于投影端点及已抽取属性，分别标注显式声明、规则推导与文本匹配。
+ * 不求值 handler、映射或审批条件；存在连线只代表对应声明关系，不证明某次操作已发生。
+ */
 import { kindLabels, nodeLabel, type GraphModel, type ViewEdge, type ViewNode } from './graph-model.js';
+import { approvalRouteNodes, approvalRouteSteps, type ApprovalRouteNode } from './approval-tree.js';
 
 /** 解释来自已抽取的声明，不借连线猜测运行结果。尤其要区分“允许读取”、
  * “声明依赖”和“事件触发”，否则图谱很容易被误读为一张执行时序图。 */
 export interface RelationExplanation {
+  /** 适合连线显示的中文短名。 */
   label: string;
+  /** 关系类别文案，用于解释栏分组。 */
   category: string;
+  /** 本关系存在的声明原因。 */
   why: string;
+  /** 维护时应如何理解或检查这条关系。 */
   purpose: string;
+  /** 按源端到目标端阅读的中文语句。 */
   direction: string;
+  /** 可阅读的声明片段或推导规则列表。 */
   evidence: string[];
+  /** 用于定位主要证据的节点，不一定等于连线源端。 */
   source: ViewNode;
+  /** declared 为直接声明，inferred 为标识推导，text-match 为文本候选。 */
   basis: 'declared' | 'inferred' | 'text-match';
 }
 
-// 只读取路由 JSON 中与字段有关的结构，浏览器无需加载审批引擎。
-interface RouteStep {
-  kind: 'step' | 'ai';
-  title: string;
-  approver?: { kind: string; field?: string };
-  handoff?: { kind: string; field?: string };
-}
-interface RouteWhen {
-  kind: 'when';
-  cond: { field: string; op: string; value: unknown };
-  steps: RouteStep[];
-}
-
+/**
+ * 按真实关系种类解释连线，补充声明来源和证据强度。
+ * @param edge 已投影且两端有效的边。
+ * @param model 展示图，提供端点和辅助声明。
+ * @param labels 中文名称覆盖。
+ * @returns 中文解释；只读元数据，不执行审批、映射、查询或业务命令。
+ */
 export function explainEdge(
   edge: ViewEdge,
   model: GraphModel,
@@ -162,13 +170,18 @@ export function explainEdge(
           '明确审批可以拿到哪些业务数据。这里只表示允许使用；是否真的参与分支或审批选人，要查看审批路由的字段关系。',
           [`${from.id}.routable 包含 ${field}`],
         );
+      if (as === '催办申请人') return result(
+        '确定催办申请人', '流程运营依赖',
+        `“${a}”以提交时“${b}”的用户标识确定可催办申请人。`,
+        '字段必须进入 routable；催办仍校验当前对象可见性、运行节点、业务版本及冷却，不赋予审批权限。字段也可能被选人或条件使用，完整用途见路由声明。',
+        [`route.reminders.requesterField = ${JSON.stringify(field)}`],
+      );
       if (as === '路由条件') {
-        // fieldsUsed 同时包含 when 条件和 deptLeader 选人字段，不能一律解释成条件判断。
-        const nodes = from.attrs.nodes as (RouteStep | RouteWhen)[];
-        const conditions = nodes.filter((n): n is RouteWhen => n.kind === 'when' && n.cond.field === field);
-        const steps = nodes
-          .flatMap((n) => (n.kind !== 'when' ? [n] : n.steps))
-          .filter((s) => (s.approver ?? s.handoff)?.kind === 'deptLeader' && (s.approver ?? s.handoff)?.field === field);
+        // fieldsUsed 同时包含 when 条件、部门负责人和单据人员字段，必须区分实际选人方式。
+        const nodes = from.attrs.nodes as ApprovalRouteNode[];
+        const conditions = approvalRouteNodes(nodes).filter((n): n is Extract<ApprovalRouteNode, { kind: 'when' }> => n.kind === 'when' && n.cond.field === field);
+        const steps = approvalRouteSteps(nodes).map(step => ({ ...step, selector: step.kind === 'ai' ? step.handoff : step.approver }))
+          .filter(step => (step.selector.kind === 'deptLeader' || step.selector.kind === 'field') && step.selector.field === field);
         const operators: Record<string, string> = {
           gt: '大于',
           gte: '大于等于',
@@ -179,10 +192,10 @@ export function explainEdge(
           in: '属于',
         };
         const reasons = [
-          ...steps.map((s) => `“${s.title}”步骤根据“${b}”找到对应部门的负责人`),
+          ...steps.map((s) => s.selector.kind === 'field' ? `“${s.title}”步骤读取“${b}”保存的审批人员` : `“${s.title}”步骤根据“${b}”找到对应部门的负责人`),
           ...conditions.map(
             (n) =>
-              `当“${b}”${operators[n.cond.op]} ${JSON.stringify(n.cond.value)} 时，加入${n.steps.map((s) => `“${s.title}”`).join('、')}步骤`,
+              `当“${b}”${operators[n.cond.op]} ${JSON.stringify(n.cond.value)} 时，加入${approvalRouteSteps(n.steps).map((s) => `“${s.title}”`).join('、')}步骤（内部顺序或并行关系见路由）`,
           ),
         ];
         return result(
@@ -191,7 +204,7 @@ export function explainEdge(
           `${reasons.join('；')}。`,
           '字段值会影响审批人或需要经过的审批步骤；修改字段含义时，应一起检查这些路由配置。',
           [
-            ...steps.map((s) => `${s.title}: approver.deptLeader(${JSON.stringify(field)})`),
+            ...steps.map((s) => `${s.title}: approver.${s.selector.kind}(${JSON.stringify(field)})`),
             ...conditions.map(
               (n) => `when(${n.cond.op}(${JSON.stringify(field)}, ${JSON.stringify(n.cond.value)}))`,
             ),

@@ -1,4 +1,6 @@
 /* 业务板块逐层进入流程图；节点、分支与箭头表达执行关系，代码按需展开。 */
+/* 业务地图专属样式，由 index.html 在基础 style.css 之后加载。
+ * 配合 business.ts 与 flowchart.ts 的 DOM/SVG 状态，区分板块入口、流程画布、审批子图与证据详情；不决定业务执行。 */
 .business-journeys {
   margin: 22px 0 30px;
 }
@@ -56,6 +58,7 @@
   stroke: #8b9975;
   stroke-dasharray: 5 4;
 }
+/* 业务模式隐藏完整本体画布的旧工具区，保留同页共用的视图切换和检索入口。 */
 .explorer.business-mode {
   display: block;
   height: auto;
@@ -160,6 +163,7 @@
   padding: 7px 13px;
   font-size: 12px;
 }
+/* 板块卡片和对象标签构成从业务主题进入流程的导航；实际跳转使用脚本生成的锚点 URL。 */
 .business-blocks {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr));
@@ -319,6 +323,7 @@
   font-size: 10px;
   color: #4c7c58;
 }
+/* 流程画布与详情栏的工作区；inspecting 控制详情空间，画布尺寸变化由 ResizeObserver 通知相机。 */
 .business-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -398,6 +403,7 @@
   opacity: 0.35;
   cursor: default;
 }
+/* 画布禁止浏览器默认触控滚动，由手势状态机接管；SVG 内坐标仍由相机 transform 控制。 */
 .flowchart-canvas {
   position: relative;
   width: 100%;
@@ -429,6 +435,7 @@
 .flowchart-canvas > svg.interacting * {
   cursor: grabbing !important;
 }
+/* 展开模式将当前工作区覆盖视窗，保留画布和详情；退出时复用同一阅读状态，不创建第二幅图。 */
 .flow-workspace.expanded {
   position: fixed;
   inset: 12px;
@@ -485,6 +492,7 @@
   fill: #fafaf3;
   stroke: #b5bf9e;
 }
+/* 审批容器内部的条件、任务和跳过支路样式；布局尺寸和换行已由 approval-flow.ts 计算。 */
 .approval-flow-content {
   pointer-events: none;
 }
@@ -545,6 +553,22 @@
   font-size: 12px;
   font-weight: 500;
 }
+/* AND 网关与分支标题使用独立形状，不能被误认成一个需要审批的任务；坐标由递归测量布局提供。 */
+.approval-gateway-shape {
+  fill: #e9f0e4;
+  stroke: #72916f;
+  stroke-width: 1.5;
+}
+.approval-gateway-title {
+  fill: #35573b;
+  font-size: 12px;
+  font-weight: 600;
+}
+.approval-branch-shape {
+  fill: #f2f5ed;
+  stroke: #b5c5ab;
+  stroke-dasharray: 4 3;
+}
 .approval-flow-merge {
   fill: #8ba28e;
 }
@@ -591,6 +615,7 @@
   font-size: 10px;
   pointer-events: none;
 }
+/* 主线、次要分支、关联及异步边分别呈现；透明粗命中线便于选择，不扩大实际可见线条。 */
 .flow-edge {
   cursor: pointer;
 }
@@ -654,6 +679,7 @@
   font-size: 22px;
   padding: 0 5px;
 }
+/* 步骤详情承担说明、来源和技术入口，选中态跟随 URL；源码仅在展开时由脚本请求。 */
 .business-detail {
   min-width: 0;
   border: 1px solid #dce6d7;
@@ -771,6 +797,17 @@
 .business-approval-steps p {
   font-size: 10px;
 }
+/* 并行分支在规则详情中保留树层级，独立左边线区分分支，不靠列表编号暗示执行先后。 */
+.business-approval-branches {
+  margin: 8px 0;
+  padding-left: 16px;
+  list-style: none;
+  border-left: 2px solid #b5c5ab;
+}
+.business-approval-branches > li {
+  margin: 10px 0 14px;
+}
+/* 源码预览按行显示并保留原始缩进，横向溢出在代码框内滚动；行号只参与显示。 */
 .source-preview {
   min-width: 0;
   margin-top: 12px;
@@ -854,6 +891,7 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
+/* 随视窗收窄调整卡片与工作区宽度；后续断点将详情移到下方，并缩短触控画布高度。 */
 @media (max-width: 1150px) {
   .business-view {
     padding: 24px 20px;
@@ -964,6 +1002,7 @@
     padding: 8px 10px;
   }
 }
+/* 尊重系统减少动画偏好，只移除过渡效果，不影响拖动和相机坐标计算。 */
 @media (prefers-reduced-motion: reduce) {
   .business-block,
   .business-flow-entry {

@@ -10,7 +10,7 @@
 
 本节位于托管区之外，cage sync 会保留。下面的托管区提供框架工作方法。
 
-<!-- cage:begin v0.2.0 -->
+<!-- cage:begin v0.3.0 -->
 ## Cage 业务开发约定（框架托管）
 
 ### 先读，再按需求改业务
@@ -18,6 +18,18 @@
 本项目由 create-cage-app 创建。框架来自 `@yss123/cage-*` 依赖，业务写在本项目；不需要克隆框架仓库，也不要复制框架内部实现。
 
 先读项目说明指定的学习资料，默认入口为 `docs/ai/README.md`。第一次读 `architecture.md`、`project-structure.md` 和 `primitives.md`；具体任务读 `recipes.md`，采购全链路读 `purchase-example.md`，错误查 `docs/errors/README.md` 和 `docs/ai/troubleshooting.md`。资料相对该学习目录，项目说明可指定源码仓库中的规范资料位置。
+
+### 详细中文注释（每次开发必须遵守）
+
+所有新增和维护的手写源码都必须写详细中文注释，先读学习目录中的 `commenting.md`（独立项目为 `docs/ai/commenting.md`）。注释是交付内容，不能以“代码自解释”或“保持简洁”为由省略。
+
+- 每个文件开头说明模块职责、谁调用它、主要调用链和责任边界；纯导出入口也说明如何组合模块。
+- 导出函数、类、组件、hooks、接口和业务声明使用 JSDoc，写清用途、参数含义、返回结果、主要步骤、前置条件、失败行为和副作用；复杂内部函数同样说明。参数类型已表达的语法无需重复，业务单位、空值、默认行为与约束必须解释。
+- 领域代码说明字段和状态的业务意义、命令调用身份与权限/范围、reads 依赖、事件用途、事务与异步边界、幂等/重试及资源释放；只写实际声明和实现已有的保证。
+- 页面说明 URL/查询参数、数据来源、临时状态、加载/空态/失败/无权限、提交后的刷新、会话与订阅清理；复杂分支、计算、顺序、并发和缓存规则在附近解释原因与过程。
+- 测试说明场景、前置条件、动作、断言和所防止的回归；脚本说明输入、读写路径、执行顺序、外部副作用与退出条件。注释不含密钥、凭据或个人数据。
+- 注释同时回答“做什么、为什么、如何完成、有哪些边界”，不能只有一句标题，也不能机械逐行翻译、凑字数或批量粘贴空泛模板。代码变更时同步更新注释，交付前逐文件核对。
+- 生成契约的注释由生成器维护，不手改生成物；已执行/已发布迁移不能改写。仅补注释时不得顺便重构或改变逻辑、接口、配置值和运行文案。
 
 ### 原生 AI 能力入口
 
@@ -59,7 +71,7 @@
 3. 先声明 aggregate/states/command/constraints/event，再写 handler、reaction/query/approval/connector，最后接业务页面。声明使用模块顶层 `export const`，从 domain 入口导出，跨文件导出名保持唯一。
 4. 运行 `pnpm exec cage check` 和 `pnpm gen`，审查 contracts 和迁移草稿。按需运行 `pnpm exec cage impact --snapshot before-change`，补中文图谱名。
 5. 页面使用生成方法并处理 code/domainCode；列表、详情等多页面注册到 React Router，Link/NavLink 导航，筛选/分页进入 URL。组件状态用于弹窗和表单等临时交互。新增能力由管理员授权。数据库结构变化审查后显式 `pnpm migrate`，dev 不代办迁移。
-6. 按改动运行必要验证，交付时说明体验步骤、授权配置、迁移，以及通过/跳过/未执行项。
+6. 按 `commenting.md` 逐文件检查详细中文注释与实现一致，再按改动运行必要验证；交付时说明体验步骤、授权配置、迁移、注释覆盖，以及通过/跳过/未执行项。
 
 ### 必守边界
 
@@ -73,16 +85,22 @@
 - 多页面业务必须有独立 URL，不用 useState/tab 模拟整页导航；详情从 URL 取 ID 并独立加载。前端路由集中在 app，页面从模块公开入口接入 Outlet。登录后保留原路径/query/hash，401 回登录，403 展示权限提示；/admin/ 使用普通链接进入独立系统管理。前端路由不替代后端授权。实现、SPA 部署回退和浏览器配方见 docs/ai/routing.md。
 - 跨聚合写入通过 reaction 调用命令。`tx: 'same'` 共同提交/回滚，默认 outbox 异步执行。资源 acquires/releases 是图规则标签，实际占用/释放仍由命令完成；离开持有状态要检查每条释放路径。
 - 批量调用同一命令使用 reactionEach，声明 maxItems、唯一排序字段 orderBy、items 和 map；稳定键排序后串行执行。步骤依赖用 order，同事件同事务分组不得混用有序/无序或重复顺序。保持同事务回滚边界，见 docs/ai/primitives.md。
-- 审批通过 approval + route 配置，结论是 process 命令；选中审批人不等于已具备能力、范围和额度。第三方 IO 通过连接器，回调验签后调用 external 命令。
+- 审批通过 approval + route 配置，结论是 process 命令；选中审批人不等于已具备能力、范围和额度。parallel(title, ...branch(...)) 声明结构化 AND：分支同时开始，内部顺序独立，全部活动分支完成后汇合；when 支持嵌套并仍按提交快照求值，声明有深度/数量边界，不支持任意跳转。currentSteps 表示当前活动节点集合，兼容字段 currentStep 只是最小活动索引，不能据此隐藏其他分支。人工节点 assignment: 'candidate' 开放候选领取/释放，approver.field 从 routable 字段选人；actions 开放转办、委派归还和前后/并行必签。任务操作与决定携带 revision，waiting 任务只能查看。approvalOperations() 为框架通用时效运行时：step.sla 配置自然分钟节点总时限，route.reminders 配置申请人催办；迁移并运行 worker 后提供持久站内提醒、已读与 Admin 通用页面，不自动批准或授予权限。政策、SDK 和边界见 docs/ai/approvals.md。第三方 IO 通过连接器，回调验签后调用 external 命令。
 - job 的读取与调用必须列入 reads/calls。业务导入/导出放在需要的业务页面调用通用任务接口，202 只代表任务已接受；worker 必须运行。
 - 已部署事件只做兼容扩展；新增字段设为 optional，不兼容含义用新事件。已执行/已发布迁移不能改写，结构更新新增迁移。
 - 不手改生成物，不关闭门禁掩盖错误，不因方便自动授予生产角色新能力。unsafe 必须写明 reason/owner，不能替代普通业务声明。
-- 代码注释说明职责、关键流程和设计原因；避免无业务价值的防御分支和静默兜底。维护脚本用 TypeScript，不新增 .mjs。
+- 按前述详细中文注释规范完成文件、API、业务声明和关键流程说明；避免无业务价值的防御分支和静默兜底。维护脚本用 TypeScript，不新增 .mjs。
 
 ### 最小命令形状
 
 ```ts
 // 片段：Order 为已导出的聚合，OrderSubmitted 为事件，业务校验按需求添加。
+/**
+ * 将草稿订单提交审批：只有 draft 可进入 pending_approval。
+ * 入口使用 Order.submit 能力，真实授权、范围、状态和版本由内核检查；声明本身不自动授予权限。
+ * handler 返回草稿供后续校验和持久化，OrderSubmitted 随命令事务登记，后续由已配置消费者处理。
+ * 失败不会提交这次业务变更；事件已登记也不代表后续审批已经完成。
+ */
 export const submitOrder = command(Order, {
   name: 'submit',
   from: 'draft',

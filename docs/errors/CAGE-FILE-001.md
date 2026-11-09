@@ -35,15 +35,15 @@ list({ contract: file({ maxBytes: 0, accept: ['*/*'] }) })
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/files/src/service.ts:63`
-- `packages/files/src/service.ts:66`
-- `packages/kernel/src/primitives/aggregate.ts:98`
-- `packages/kernel/src/primitives/event.ts:21`
-- `packages/kernel/src/primitives/fields.ts:110`
-- `packages/kernel/src/primitives/fields.ts:117`
-- `packages/kernel/src/primitives/fields.ts:123`
-- `packages/kernel/src/primitives/fields.ts:199`
-- `packages/kernel/src/primitives/fields.ts:225`
+- `packages/files/src/service.ts:95`
+- `packages/files/src/service.ts:98`
+- `packages/kernel/src/primitives/aggregate.ts:189`
+- `packages/kernel/src/primitives/event.ts:51`
+- `packages/kernel/src/primitives/fields.ts:195`
+- `packages/kernel/src/primitives/fields.ts:202`
+- `packages/kernel/src/primitives/fields.ts:208`
+- `packages/kernel/src/primitives/fields.ts:305`
+- `packages/kernel/src/primitives/fields.ts:336`
 
 实现片段（位置随框架版本更新）：
 

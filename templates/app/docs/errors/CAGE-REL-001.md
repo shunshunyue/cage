@@ -39,19 +39,19 @@ list({ members: manyToMany('User') }); // JSON 明细中不能声明关系
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/kernel/src/primitives/aggregate.ts:97`
-- `packages/kernel/src/primitives/event.ts:20`
-- `packages/kernel/src/primitives/fields.ts:105`
-- `packages/kernel/src/primitives/fields.ts:111`
-- `packages/kernel/src/primitives/fields.ts:118`
-- `packages/kernel/src/primitives/fields.ts:124`
-- `packages/kernel/src/primitives/fields.ts:181`
-- `packages/kernel/src/primitives/fields.ts:188`
-- `packages/kernel/src/primitives/fields.ts:224`
-- `packages/kernel/src/registry.ts:155`
-- `packages/kernel/src/registry.ts:159`
-- `packages/kernel/src/registry.ts:165`
-- `packages/kernel/src/registry.ts:173`
+- `packages/kernel/src/primitives/aggregate.ts:188`
+- `packages/kernel/src/primitives/event.ts:50`
+- `packages/kernel/src/primitives/fields.ts:190`
+- `packages/kernel/src/primitives/fields.ts:196`
+- `packages/kernel/src/primitives/fields.ts:203`
+- `packages/kernel/src/primitives/fields.ts:209`
+- `packages/kernel/src/primitives/fields.ts:277`
+- `packages/kernel/src/primitives/fields.ts:284`
+- `packages/kernel/src/primitives/fields.ts:335`
+- `packages/kernel/src/registry.ts:193`
+- `packages/kernel/src/registry.ts:197`
+- `packages/kernel/src/registry.ts:203`
+- `packages/kernel/src/registry.ts:211`
 
 实现片段（位置随框架版本更新）：
 

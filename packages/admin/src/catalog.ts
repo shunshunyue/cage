@@ -1,3 +1,8 @@
+/**
+ * 将当前注册表整理为系统管理 UI 使用的能力、对象、审批与任务目录。
+ * 调用方可传入图谱中文 labels 覆盖显示名；技术标识保持原值供授权和路由使用。
+ * 生成目录是同步内存操作，不读取用户实际授权，也不表示目录中的每项能力已授给当前用户。
+ */
 import { sensitiveFields, type Registry } from '@yss123/cage-kernel';
 
 /** 显示名沿用图谱的节点键；只影响文案，不重命名权限、命令、表或业务字段。 */
@@ -77,6 +82,8 @@ export function adminCatalog(registry: Registry, labels: AdminLabels = {}) {
     capabilities,
     aggregates,
     combinators: ['self', 'dept', 'deptSubtree', 'deptSet', 'all'],
+    // 功能发现只控制通用界面入口；实际催办与提醒读写仍在审批服务中逐对象授权。
+    approvalOperations: registry.extensions.some(e => e.kind === 'RUNTIME' && e.value.name === 'approval-operations'),
     approvals: registry.approvals.map(({ a, name }) => ({
       name,
       process: a.process,

@@ -15,12 +15,18 @@ const types = {
   },
 };
 
+/** 内核自建连接的所有权句柄；close 销毁 Kysely 及底层池，调用方不应继续复用它。 */
 export interface DbHandle {
   db: Kysely<any>;
   pool: pg.Pool;
   close(): Promise<void>;
 }
 
+/**
+ * 创建一个独立账号的连接池，所有超时均以毫秒计；构造池不等于已验证数据库可连通。
+ * 读账号与写账号分别建池，避免会话权限混用。onConnect 是连接事件钩子，不承担迁移或账号初始化。
+ * 默认的连接、语句、空闲事务时限让池耗尽和遗留事务可失败退出，不能用无限等待隐藏锁问题。
+ */
 export function connect(
   url: string,
   opts: { max?: number; onConnect?: (c: pg.PoolClient) => Promise<void>; applicationName?: string; connectionTimeoutMs?: number; statementTimeoutMs?: number; idleTransactionTimeoutMs?: number } = {},
@@ -44,6 +50,7 @@ export function connect(
 }
 
 /** 单独的长连接（LISTEN、咨询锁用），不进连接池 */
+/** 成功返回已连接客户端；调用方必须 end，并在网络断开时重建 LISTEN/咨询锁状态。 */
 export async function dedicatedClient(url: string, applicationName = 'cage-listener'): Promise<pg.Client> {
   const c = new pg.Client({ connectionString: url, types: types as any, application_name: applicationName, connectionTimeoutMillis: 5_000, statement_timeout: 30_000 });
   await c.connect();
@@ -63,6 +70,10 @@ export interface DatabaseUrls {
  * 从环境变量读取连接串：
  *   CAGE_APP_DATABASE_URL / CAGE_READ_DATABASE_URL / CAGE_MIGRATE_DATABASE_URL
  * 或只给一个 DATABASE_URL（主机、端口、库名），各账号用默认用户名和 CAGE_DB_PASSWORD。
+ */
+/**
+ * 专用连接串优先于 DATABASE_URL 派生值；仅解析配置，不创建数据库、角色或重置密码。
+ * 返回值含凭据，应只传给连接层，排障时提取主机/端口/库名而不要输出整个对象。
  */
 export function urlsFromEnv(env: NodeJS.ProcessEnv = process.env): DatabaseUrls {
   const base = env.DATABASE_URL;

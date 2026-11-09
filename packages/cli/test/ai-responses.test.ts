@@ -1,9 +1,23 @@
+/**
+ * 验证 Responses 原生流协议与多轮接续请求。
+ * 用受控 SSE 检查文字先到达、工具 call_id/参数完整、用量和不透明推理项保留；接续只提交新增结果。
+ * 请求经注入 fetch 捕获，未访问真实服务；未完成或失败终态不能产出可执行工具。
+ */
 import { afterEach, expect, it, vi } from 'vitest';
 import { responsesModel, ResponseHistoryExpired } from '../../ai/src/responses.js';
 
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+/**
+ * 将事件数组编码为合法 SSE 帧和响应类型，调用方负责安排 delta 与终态先后顺序。
+ */
 const sse = (events: unknown[]) => new Response(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(''), { headers: { 'content-type': 'text/event-stream' } });
+/**
+ * 生成原生 Responses 已完成消息项，保留 output_text 结构供完整结果与增量结果比对。
+ */
 const message = (text: string) => ({ type: 'message', id: 'msg-1', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text, annotations: [] }] });
+/**
+ * 构造 response.completed 终态及固定 token 用量，响应 ID 可覆盖以测试接续请求的引用。
+ */
 const completed = (output: unknown[], id = 'resp-1') => ({ type: 'response.completed', response: { id, status: 'completed', output, usage: { input_tokens: 100, output_tokens: 20 } } });
 
 it('Responses 按原生协议流式交付文字，保留 call_id、完整参数、用量和不透明推理项', async () => {

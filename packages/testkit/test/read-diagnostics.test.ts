@@ -1,3 +1,8 @@
+/**
+ * 读侧与运维诊断的真实 PostgreSQL/HTTP 回归，保护输入边界、敏感读取审计、数据范围及证据隔离。
+ * 构造不同用户、范围、授权和同 UUID 的跨聚合记录，确保诊断不能成为越权读取或执行命令的旁路。
+ * 测试直查系统表仅用于核对持久证据；服务端接口仍使用正常授权。每例恢复 mock，最终关闭服务及隔离库。
+ */
 // 读取与运维诊断使用真实安全视图，验证拒绝交付、隔离与证据关联，不通过诊断写业务。
 import { randomUUID } from 'node:crypto';
 import * as adminDomain from '@yss123/cage-admin/domain';
@@ -11,10 +16,17 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { z } from 'zod';
 import { createTestEnv, type TestEnv, type TestUser } from '../src/index.js';
 
+/**
+ * 本人范围的父对象，children 通过子记录外键反查；与记录复用 ID 的场景用于检验关联条件包含聚合名。
+ */
 const DiagnosticFolder = aggregate('DiagnosticFolder', {
   fields: { ownerId: ref('User'), title: text(30), children: hasMany('DiagnosticRecord', { mappedBy: 'folderId' }) },
   scope: scope.self('ownerId'),
 });
+/**
+ * 综合字段夹具：金额、布尔、日期、整数和列表检验严格输入，phone 检验掩码排序及明文审计。
+ * ownerId/teamId 是自定义范围字段，不能假设所有聚合都有 createdBy/deptId。
+ */
 const DiagnosticRecord = aggregate('DiagnosticRecord', {
   fields: { ownerId: ref('User'), teamId: ref('Dept'), folderId: ref(DiagnosticFolder).optional(), amount: money(), phone: text(32).sensitive('phone'), active: bool(), on: date(), quantity: int(), label: text(12), flags: list(text()).optional() },
   states: states('draft', 'approved', { terminal: ['approved'] }),
@@ -33,17 +45,29 @@ const createFolder = command(DiagnosticFolder, {
 });
 const approveRecord = command(DiagnosticRecord, { name: 'approve', from: 'draft', to: 'approved', constraints: [ceiling('amount')], handler: (draft) => draft });
 const internalReview = command(DiagnosticRecord, { name: 'internalReview', from: 'draft', to: 'draft', invokedBy: 'process', handler: (draft) => draft });
+/**
+ * 故意将敏感字段拼进约束失败原文，测试诊断响应会裁剪细节，不能把内部错误直接透传。
+ */
 const privateConstraint = command(DiagnosticRecord, {
   name: 'privateConstraint', from: 'draft', to: 'draft', handler: (draft) => draft,
   constraints: [{ name: 'privateBusinessRule', fields: ['phone'], check: (draft: any) => ({ ok: false, message: `SYNTHETIC_PRIVATE_CONSTRAINT:${draft.phone}` }) }],
 });
 let checkedHandlerCalls = 0;
+/**
+ * 约束核对 handler 前的真实创建草稿，handler 计数用于证明 explain 不执行业务处理。
+ */
 const createChecked = command(DiagnosticRecord, {
   name: 'createChecked', from: 'new', to: 'draft', input: createInput,
   constraints: [{ name: 'preHandlerDraft', fields: ['ownerId', 'teamId'], check: (draft: any, ctx: Ctx) => draft.ownerId === null && draft.teamId === ctx.deptId && !('createdBy' in draft) && !('deptId' in draft) ? { ok: true } : { ok: false, message: '草稿默认值不同' } }],
   handler: (draft) => { checkedHandlerCalls++; return draft; },
 });
+/**
+ * 未声明用途审计的安全视图查询，与 auditedRows 对比明文审计和用途审计的独立触发条件。
+ */
 const plainRows = query('diagnosticPlainRows', { reads: [DiagnosticRecord], sql: 'select id, phone from safe.diagnostic_record' });
+/**
+ * 显式用途审计查询；即使结果为掩码，审计失败也不能交付查询数据。
+ */
 const auditedRows = query('diagnosticAuditedRows', { reads: [DiagnosticRecord], sql: 'select id, phone from safe.diagnostic_record', audit: { purpose: '诊断回归的用途级读取' } });
 const domain = { ...adminDomain, DiagnosticFolder, DiagnosticRecord, RecordCreated, FolderCreated, createFolder, createRecord, approveRecord, internalReview, privateConstraint, createChecked, plainRows, auditedRows };
 
@@ -71,6 +95,10 @@ beforeAll(async () => {
 afterEach(() => { vi.restoreAllMocks(); });
 afterAll(async () => { await server?.close(); await env?.close(); });
 
+/**
+ * 按测试用户缓存真实登录 Cookie，再调用被测 HTTP 路由；提供 payload 时发送 POST，否则发送 GET。
+ * 缓存仅在本测试文件存活，避免重复密码派生影响诊断用例耗时。
+ */
 async function http(user: TestUser, url: string, payload?: object) {
   if (!cookies.has(user.id)) {
     const login = await server.app.inject({ method: 'POST', url: '/auth/login', payload: { username: user.username, password: 'diagnostic-test-password' } });

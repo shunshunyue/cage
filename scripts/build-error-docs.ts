@@ -1,4 +1,9 @@
 /**
+ * 合并源码诊断位置与手写逐码说明，生成 docs/errors 的本地排错手册。
+ * 扫描路径和行号随源码注释移动也会变化，因此补注释后需重新生成手册再同步模板。
+ * 默认写生成页面，--check 仅收集差异并失败；没有对应手写说明的错误码会阻止交付。
+ */
+/**
  * 从当前实现提取诊断位置，与人工维护的逐码解释合并成可离线使用的手册。
  * 输出直接进入脚手架，因此源码位置用文本表达，不能链接到用户项目不存在的 kernel 目录。
  * --check 只检查一致性；新增错误码缺少解释时失败，避免发出只有编号的空手册。
@@ -8,6 +13,10 @@ import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { errorGuides } from './error-catalog.ts';
 
+/**
+ * 错误码的一处源码证据：path 相对仓库，line 为一基行号，context 保存附近文本。
+ * 这是检索定位信息，不代表该分支已经运行或测试通过。
+ */
 interface SourceLocation {
   path: string;
   line: number;
@@ -19,6 +28,10 @@ const check = process.argv.includes('--check');
 const codes = new Map<string, SourceLocation[]>();
 const excluded = new Set(['node_modules', 'dist', 'test', 'templates', 'managed', 'graph-ui']);
 
+/**
+ * 按稳定目录顺序扫描允许的源码文件，跳过测试、生成及分发副本以降低重复证据。
+ * 每行同一错误码只记录一次，保留不同位置，便于逐码页面指回具体实现；当前扫描包含注释中的编号。
+ */
 function scan(directory: string): void {
   for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) =>
     a.name.localeCompare(b.name),
@@ -275,6 +288,10 @@ scan(join(root, 'packages'));
 const target = join(root, 'docs/errors');
 const mismatches: string[] = [];
 
+/**
+ * 将一份生成页面与当前文件比较：相同则不写，检查模式记录差异，普通模式创建目录并写入。
+ * 不手工合并生成页，正文来源必须回到 error-catalog 或生成模板维护。
+ */
 function output(name: string, content: string): void {
   const path = join(target, name);
   if (existsSync(path) && readFileSync(path, 'utf8') === content) return;

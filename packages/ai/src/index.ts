@@ -1,3 +1,7 @@
+/**
+ * AI 包公开入口。应用顶层 ai() 声明向注册表提供服务、能力和迁移，供 CLI/API/worker 一致使用。
+ * 声明阶段只验证冻结配置；按 Kernel 懒创建并复用运行时，不在模块加载时访问数据库或模型。
+ */
 import {
   RUNTIME,
   MIGRATIONS,
@@ -38,12 +42,26 @@ export type {
   AiMemory,
 } from '@yss123/cage-ai-protocol';
 
+/**
+ * 可注册的 AI 服务声明，校验唯一启用和模型引用，并按内核复用运行时。
+ */
 export interface AiDefinition extends RuntimeDefinition {
+  /**
+   * 获取或创建绑定内核的 AiRuntime，生命周期由宿主管理。
+   */
   service(kernel: Kernel): AiRuntime;
+  /**
+   * 校验扩展唯一性与审批模型引用，无效配置以 CAGE-AI-001 拒绝。
+   */
   validate(registry: Registry): void;
 }
 
-/** domain 顶层导出即启用；CLI、API、worker 从同一注册表获得服务与迁移。声明阶段没有网络或数据库 IO。 */
+/**
+ * 创建供 domain 顶层导出的 AI 服务声明，CLI、API 和 worker 从同一注册表取得能力、迁移与运行时。
+ * 复制并冻结模型映射、上下文和助理额度，校验模型引用、窗口、并发及超时边界；无效声明以 CAGE-AI-001 拒绝。
+ * service 按 Kernel 实例懒创建并缓存运行时，validate 再核对唯一启用和审批节点的模型引用。
+ * 声明阶段没有数据库或网络 IO；公开能力仍需管理员明确授予，启用声明不自动授权用户或连接真实模型。
+ */
 export function ai(options: AiOptions): AiDefinition {
   options = {
     ...options,
@@ -76,6 +94,7 @@ export function ai(options: AiOptions): AiDefinition {
     if (!Number.isSafeInteger(value) || value <= 0) throw declError('CAGE-AI-001', '并发、队列与委托期限必须是正整数');
   if ((options.maxConcurrentRuns ?? 2) > 32 || limits.timeoutMs > 300_000)
     throw declError('CAGE-AI-001', '并发最多 32，单轮运行超时最多 300000 毫秒');
+  // 按内核实例缓存而非全局单例，避免不同应用/连接配置共享运行队列；弱引用不阻止已释放内核回收。
   const services = new WeakMap<Kernel, AiRuntime>();
   return Object.freeze({
     [RUNTIME]: true as const,
@@ -105,8 +124,11 @@ export function ai(options: AiOptions): AiDefinition {
     validate(registry: Registry) {
       if (registry.extensions.filter((e) => e.kind === 'RUNTIME' && e.value.name === 'ai').length !== 1)
         throw declError('CAGE-AI-001', '只能启用一个 AI 运行时');
+      // 容器内的 AI 仍须经过相同模型/预算检查；不能因放入条件或并行分支而遗漏启动期校验。
+      const leafSteps = (nodes: readonly any[]): any[] => nodes.flatMap(node => node.kind === 'when' ? leafSteps(node.steps)
+        : node.kind === 'parallel' ? node.branches.flatMap((branch: any) => leafSteps(branch.nodes)) : [node]);
       for (const ext of registry.extensions.filter((e) => e.kind === 'ROUTE'))
-        for (const node of ext.value.nodes.flatMap((n: any) => (n.kind === 'when' ? n.steps : [n]))) {
+        for (const node of leafSteps(ext.value.nodes)) {
           if (node.kind === 'ai' && !options.models[node.model])
             throw declError('CAGE-AI-001', `AI 审批引用的模型 ${node.model} 未配置`);
           if (node.kind === 'ai' && (node.limits?.timeoutMs ?? 1) > 300_000)

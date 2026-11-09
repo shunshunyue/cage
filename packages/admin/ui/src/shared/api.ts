@@ -1,6 +1,15 @@
+/**
+ * 系统管理浏览器的统一 HTTP、会话状态和操作反馈层。
+ * GET 读取 JSON，POST 自动获取 CSRF 并附幂等键；401 清空会话并通知应用壳，其他失败保留业务原因。
+ * 本模块只消费协议，不导入服务端领域实现；SSE 试聊独立按事件流读取，DOM 输出由调用方负责安全渲染。
+ */
 import { h, icon } from './dom.js';
 import type { Catalog, Me } from './types.js';
 
+/**
+ * 当前页面进程持有的身份、展示目录与 CSRF 令牌缓存，null 表示尚未取得或已清除。
+ * 只用于页面展示与请求头，不作为后端权限判断的事实来源；退出和非登录请求 401 时会清空。
+ */
 export const state: { me: Me | null; catalog: Catalog | null; csrf: string | null } = {
   me: null,
   catalog: null,
@@ -18,6 +27,10 @@ const errors: Record<string, string> = {
   DOMAIN_ERROR: '业务规则未满足',
   RATE_LIMITED: '操作过于频繁，请稍后再试',
 };
+/**
+ * 包含协议 code 的 HTTP 失败异常，message 为页面可显示的中文原因。
+ * 由 checkResponse 创建；网络错误与 JSON 解析错误会以原异常传播，调用方不能假定都是 ApiError。
+ */
 export class ApiError extends Error {
   constructor(
     public code: string,
@@ -28,6 +41,11 @@ export class ApiError extends Error {
 }
 
 /** 系统管理同样使用会话、CSRF 和幂等键，不拥有绕过领域命令的写入通道。 */
+/**
+ * 发送管理接口 JSON 请求，成功返回响应体并按 T 提供静态类型。
+ * POST 在缺少 CSRF 时先取令牌，每次调用生成新的幂等键；这里不自动重试，也不运行响应 schema 校验。
+ * 请求携带同源会话，失败交由 checkResponse 分类；T 只是调用方的类型约定，不能替代服务端验证。
+ */
 export async function api<T>(method: 'GET' | 'POST', url: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { accept: 'application/json' };
   if (method === 'POST') {
@@ -51,6 +69,11 @@ export async function api<T>(method: 'GET' | 'POST', url: string, body?: unknown
   return data as T;
 }
 
+/**
+ * 把非成功 HTTP 响应转换为 ApiError，优先保留业务码、字段级问题或字符串详情。
+ * 非登录接口 401 清空全部会话缓存并广播过期事件；登录失败保留登录页处理流程。
+ * 成功响应不修改状态；服务端未提供已知错误码时使用通用提示。
+ */
 function checkResponse(response: Response, data: any, url: string): void {
   if (!response.ok) {
     if (response.status === 401 && url !== '/auth/login') {
@@ -70,6 +93,11 @@ function checkResponse(response: Response, data: any, url: string): void {
 }
 
 /** 管理预览逐段更新，沿用登录、CSRF 和错误提示；不将模型文本作为 HTML 插入。 */
+/**
+ * 以 POST 发起可取消的 SSE 管理试聊，将完整 data 事件解析为 T 交给 onEvent。
+ * 只在空行分隔处解析 JSON，跨网络分片保留缓冲，未完成缓冲超过上限时拒绝继续积累。
+ * HTTP 错误复用统一处理；缺少事件流响应直接失败。finally 取消 reader 并释放锁，signal 中断不表示已撤销远端处理。
+ */
 export async function postEvents<T>(url: string, body: unknown, onEvent: (event: T) => void, signal: AbortSignal): Promise<void> {
   if (!state.csrf) state.csrf = (await api<{ token: string }>('GET', '/auth/csrf')).token;
   const response = await fetch(url, { method: 'POST', credentials: 'include', signal,
@@ -92,7 +120,14 @@ export async function postEvents<T>(url: string, body: unknown, onEvent: (event:
   } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
 
+/**
+ * 读取当前会话能力列表以控制界面可见性；不考虑对象范围，也不授予后端执行权限。
+ */
 export const can = (capability: string) => Boolean(state.me?.capabilities.includes(capability));
+/**
+ * 向 notifications 容器追加纯文本操作反馈，5 秒后移除。
+ * failed 决定错误样式与 alert 语义，消息通过 DOM 辅助函数渲染，不解释为 HTML。
+ */
 export function toast(message: string, failed = false) {
   const item = h(
     'div',
@@ -105,6 +140,11 @@ export function toast(message: string, failed = false) {
 }
 
 /** 失败会明确显示原因；按钮等待返回，避免界面把未保存的授权显示成成功。 */
+/**
+ * 包装一次页面操作：等待期间禁用按钮，成功可提示文案，失败显示原因并返回 null。
+ * finally 恢复按钮状态；返回值只有实际 action 成功才可用于替换界面数据。
+ * 这里捕获异常供交互反馈，不代表事务补偿或请求重试，调用方应检查返回值后再更新 UI。
+ */
 export async function run<T>(
   action: () => Promise<T>,
   success?: string,

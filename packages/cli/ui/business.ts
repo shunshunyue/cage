@@ -1,6 +1,11 @@
+/**
+ * 业务地图页面渲染器，由 app 根据 URL 的板块、流程、步骤及页签调用。
+ * 依次组织板块入口、流程图、说明与按需源码预览，并在同一流程内保存视野和手动布局。
+ * 所有数据来自抽取快照；图谱不调度业务，离开视图需释放监听器，复制源码/上下文只写系统剪贴板。
+ */
 import type { GraphSnapshot, GraphSource } from '../src/graph-snapshot.js';
 import { type GraphModel, type ViewNode } from '../src/graph-model.js';
-import { approvalFlowForStep } from '../src/graph-approvals.js';
+import { approvalFlowForStep, type ApprovalGroup } from '../src/graph-approvals.js';
 import {
   businessBlocks,
   businessOwner,
@@ -27,28 +32,50 @@ const chartScenes = new WeakMap<
 >();
 
 /** 离开业务视图时释放画布监听器，保留同一流程的手动布局和视野。 */
+/**
+ * 释放当前 host 的画布监听器并移除活动实例，保留场景缓存供同流程再次进入。
+ * @param host 业务视图容器。
+ */
 export function disposeBusiness(host: HTMLElement) {
   chartViews.get(host)?.dispose();
   chartViews.delete(host);
 }
 
+/**
+ * 业务视图 URL 参数补丁；字符串写入参数，null 清除参数，便于同一导航处理器组合。
+ */
 type Navigation = Record<string, string | null>;
+/**
+ * 由 app 提供的导航与技术视图入口；showSystem 仅控制展示，不改变服务器权限。
+ */
 interface Actions {
+  /** 是否将系统组织板块加入当前业务导航。 */
   showSystem: boolean;
+  /** 合并 URL 参数并触发页面渲染；null 表示删除对应参数。 */
   navigate: (patch: Navigation) => void;
+  /** 将指定节点切换到结构图或完整图解释入口。 */
   inspect: (key: string, view: 'structure' | 'all') => void;
 }
+/**
+ * 创建 HTML 元素并用 textContent 填充文案，源码与业务标题都不能注入 HTML。
+ */
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text = '') => {
   const node = document.createElement(tag);
   node.className = className;
   node.textContent = text;
   return node;
 };
+/**
+ * 建立仅在当前页面执行回调的按钮；需要可复制地址或新标签行为的导航使用 link。
+ */
 const action = (text: string, run: () => void, className = 'button secondary') => {
   const button = h('button', className, text);
   button.onclick = run;
   return button;
 };
+/**
+ * 从当前 URL 合并导航参数并返回可用于真实链接的路径，null 删除参数，支持新标签打开。
+ */
 function route(patch: Navigation) {
   const url = new URL(location.href);
   for (const [key, value] of Object.entries(patch))
@@ -58,6 +85,12 @@ function route(patch: Navigation) {
 }
 
 /** 源码来自本次抽取保存的声明，不将任意路径发送给服务，也不执行预览内容。 */
+/**
+ * 创建只读声明代码预览，首次展开才请求当前快照中的已注册节点。
+ * @param key 完整节点 key，不接受任意文件路径。
+ * @param open 默认展开并在微任务开始加载。
+ * @returns details 元素；错误展示重试，DOM 已卸载时忽略返回，复制仅写剪贴板。
+ */
 export function sourcePreview(key: string, open = true): HTMLElement {
   const details = h('details', 'source-preview');
   details.open = open;
@@ -65,6 +98,10 @@ export function sourcePreview(key: string, open = true): HTMLElement {
   const body = h('div', 'source-body');
   details.append(body);
   let requested = false;
+  /**
+   * 首次展开后加载一次已索引声明；进行中的请求不重复发送，失败后由重试按钮重置 requested。
+   * DOM 卸载只忽略迟到结果，当前实现不主动取消网络请求。
+   */
   const load = async () => {
     if (requested) return;
     requested = true;
@@ -155,6 +192,14 @@ const typeName: Record<string, string> = {
 
 /** 板块与流程入口逐层导航，因果步骤使用可交互流程图，说明与代码按需展开。
  * 地址保存板块、流程、步骤和代码页签，刷新、复制与前进后退使用同一入口。 */
+/**
+ * 按地址构建板块、流程列表或流程详情，替换旧 DOM 前释放旧画布。
+ * @param host 页面容器，由 app 持有。
+ * @param model 语义投影。
+ * @param snapshot 标签及源码快照来源。
+ * @param actions 导航、系统展示和技术详情回调。
+ * 同场景保留滚动/焦点/手动布局；不执行业务命令，失效 URL 明确提示并回到现有入口。
+ */
 export function renderBusiness(
   host: HTMLElement,
   model: GraphModel,
@@ -176,6 +221,9 @@ export function renderBusiness(
   const labels = snapshot.presentation.labels;
   const name = (node: ViewNode) => businessLabel(node, labels);
   const blocks = businessBlocks(model, labels, actions.showSystem);
+  /**
+   * 创建真实 href 保留新标签和修饰键行为，普通主键点击才交给应用更新 URL。
+   */
   const link = (text: string, patch: Navigation, className = 'business-link') => {
     const a = h('a', className, text);
     a.href = route({ view: 'business', ...patch });
@@ -200,6 +248,9 @@ export function renderBusiness(
   crumb.setAttribute('aria-label', '业务地图导航');
   crumb.append(link('全部业务', home));
   host.append(crumb);
+  /**
+   * 重建后恢复同场景滚动和可识别焦点；换流程回到页面顶部，防止旧长流程滚动位置遮住新入口。
+   */
   const finish = () => {
     host.scrollTop = scroll;
     // 长流程会滚动整个页面，换板块或流程时让新入口从顶部开始。
@@ -625,18 +676,32 @@ export function renderBusiness(
     }
     const approvalFlow = approvals.get(selected.id);
     if (approvalFlow) {
-      const rules = section('审批步骤与条件', '按下列顺序执行；条件不满足时跳过该组审批。');
-      const list = h('ol', 'business-approval-steps');
-      for (const group of approvalFlow.groups) {
-        const row = h('li');
-        if (group.condition) row.append(h('strong', '', `当${group.condition}时`));
-        for (const task of group.tasks) {
-          row.append(h('strong', '', `${task.number}. ${task.title}`));
-          row.append(h('p', '', `审批人：${task.actor} · ${task.rule}`));
+      const rules = section('审批步骤与条件', '顺序节点依次执行；并行分支同时开始，全部活动分支完成后汇合。条件在启动时判断。');
+      /** 阅读说明与图保持同一嵌套结构，编号只作定位，不把兄弟分支写成前后执行。 */
+      const describeGroups = (groups: readonly ApprovalGroup[]): HTMLElement => {
+        const list = h('ol', 'business-approval-steps');
+        for (const group of groups) {
+          const row = h('li');
+          if (group.condition) row.append(h('strong', '', `当${group.condition}时`));
+          for (const task of group.tasks) {
+            row.append(h('strong', '', `${task.number}. ${task.title}`));
+            row.append(h('p', '', `审批人：${task.actor} · ${task.rule}`));
+          }
+          if (group.groups) row.append(describeGroups(group.groups));
+          if (group.parallel) {
+            row.append(h('strong', '', `${group.parallel.title} · AND 并行`));
+            const branches = h('ul', 'business-approval-branches');
+            for (const branch of group.parallel.branches) {
+              const branchRow = h('li'); branchRow.append(h('strong', '', branch.title), describeGroups(branch.groups)); branches.append(branchRow);
+            }
+            row.append(branches, h('p', 'source-note', '各分支同时开始；全部活动分支完成 → AND 汇合后继续'));
+          }
+          if (group.condition) row.append(h('p', 'source-note', '条件不满足 → 跳过整组，继续后续步骤'));
+          list.append(row);
         }
-        if (group.condition) row.append(h('p', 'source-note', '条件不满足 → 跳过，继续后续步骤'));
-        list.append(row);
-      }
+        return list;
+      };
+      const list = describeGroups(approvalFlow.groups);
       rules.append(
         list,
         h(

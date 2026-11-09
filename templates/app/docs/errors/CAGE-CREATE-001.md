@@ -35,18 +35,19 @@ cage create . 覆盖当前已有业务项目
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/cli/src/create-prompt.ts:12`
 - `packages/cli/src/create-prompt.ts:17`
-- `packages/cli/src/create.ts:20`
-- `packages/cli/src/create.ts:22`
-- `packages/cli/src/create.ts:29`
+- `packages/cli/src/create-prompt.ts:24`
+- `packages/cli/src/create-prompt.ts:29`
+- `packages/cli/src/create.ts:45`
+- `packages/cli/src/create.ts:47`
+- `packages/cli/src/create.ts:54`
 
 实现片段（位置随框架版本更新）：
 
 ```ts
-  if (template !== undefined && !isAppTemplate(template))
-    throw new Error('[CAGE-CREATE-001] --template 只能是 blank 或 purchase');
-
-  // 管道和 CI 没有可操作的终端，不隐式选择业务模板，也不让安装任务挂在提示上。
-  if ((!target || !template) && (!process.stdin.isTTY || !process.stdout.isTTY))
+ * @returns 完整创建选择；用户取消返回 null，由入口转换为取消退出码。
+ * @throws 非交互缺项或模板名无效时抛出 CAGE-CREATE-001。
+ */
+export async function chooseApp(
+  target?: string,
 ```

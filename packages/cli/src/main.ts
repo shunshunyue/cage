@@ -1,3 +1,8 @@
+/**
+ * Cage 命令行总入口，负责参数解析、按需加载、输出和退出状态。
+ * 先处理帮助与创建，再分发无需环境变量的查询，其他命令加载项目 .env 后调用各职责模块。
+ * 不在入口复制领域运行规则；命令 IO、副作用和是否可只读由分支决定，异常由 bin 包装器转为失败退出。
+ */
 // 命令入口只负责参数、输出和退出码；分析、生成、迁移都保留独立公共函数供测试调用。
 import { parseArgs } from 'node:util';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -40,6 +45,12 @@ const help = `cage ${VERSION}
   migrate                          在已配置的数据库中执行表结构迁移，不创建数据库
   通用选项：--root <目录> --help --version`;
 
+/**
+ * 解析命令并分发职责模块，供两个 bin 包装器复用。
+ * @param argv 不含 Node 与脚本路径的参数，默认 process.argv.slice(2)。
+ * @returns 命令退出码；doctor 的 2 表示无失败但证据不完整，取消创建返回 130。
+ * @throws 参数、配置和子模块异常交给 bin 处理；不强制退出进程，graph/dev 的句柄保持运行。
+ */
 export async function main(argv = process.argv.slice(2)): Promise<number> {
   const { values: o, positionals } = parseArgs({
     args: argv,

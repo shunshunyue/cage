@@ -1,9 +1,17 @@
+/**
+ * 派生性质测试的诊断回归，区分样本准备失败与真正执行业务时的失败，并核对固定种子重放。
+ * 预算夹具要求 total=available+frozen 且 currency=CNY，故意让通用默认样本不能满足业务不变量。
+ * 使用真实隔离测试环境；每个用例在 finally teardown，异常详情仅保留脱敏轨迹和已观察的失败前缀。
+ */
 // 将非法准备数据与实际执行故障分开；固定种子和已观察失败前缀用于重放，诊断一律脱敏。
 import { aggregate, command, fail, int, scope, text } from '@yss123/cage-kernel';
 import * as org from '@yss123/cage-admin/domain';
 import { expect, it } from 'vitest';
 import { derived, DerivedTestError, type DerivedInvariantResult, type DerivedOptions } from '../src/index.js';
 
+/**
+ * 具有跨字段守恒与币种限制的聚合，证明 schema 类型合法不意味着任意生成样本都是合法业务记录。
+ */
 const Budget = aggregate('DerivedBudget', {
   fields: { total: int(), available: int(), frozen: int(), currency: text(3), phone: text(80).sensitive('phone').optional() },
   scope: scope.none(),
@@ -12,6 +20,9 @@ const Budget = aggregate('DerivedBudget', {
 const freeze = command(Budget, { name: 'freeze', from: 'active', to: null, handler: (row) => row.available < 1 ? fail('NO_AVAILABLE') : { available: row.available - 1, frozen: row.frozen + 1 } });
 const release = command(Budget, { name: 'release', from: 'active', to: null, handler: (row) => row.frozen < 1 ? fail('NOT_FROZEN') : { available: row.available + 1, frozen: row.frozen - 1 } });
 const domain = { ...org, Budget, freeze, release };
+/**
+ * 满足守恒规则的显式初始数据，phone 使用合成隐私标记，供断言错误及轨迹未泄露输入。
+ */
 const valid = { total: 5, available: 5, frozen: 0, currency: 'CNY', phone: 'PRIVATE_FIXTURE_MARKER' };
 
 it('默认样本不满足预算不变量时明确报告fixture阶段，未执行业务命令', async () => {

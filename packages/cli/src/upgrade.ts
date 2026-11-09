@@ -1,3 +1,8 @@
+/**
+ * 目标版本 CLI 携带的清单升级及早期声明 codemod，供 upgrade 命令调用。
+ * 收集待改清单和领域源码，dryRun 只返回路径；实际应用写入文件后同步 AGENTS 托管区。
+ * 这里只支持当前 CLI 版本，不安装依赖或执行验证；后续步骤由 main 完成，失败保留可审查改动，不改历史 SQL。
+ */
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { Project, SyntaxKind } from 'ts-morph';
@@ -8,6 +13,11 @@ import { listTs } from './static-check.js';
 import { VERSION } from './version.js';
 export { VERSION } from './version.js';
 
+/**
+ * 递归收集清单，跳过隐藏目录、node_modules、dist 与 generated。
+ * @param root 扫描根目录。
+ * @returns package.json 路径；只读目录，不安装依赖，访问错误抛出。
+ */
 export function projectManifests(root: string): string[] {
   const out: string[] = [];
   const walk = (dir: string) => {
@@ -23,6 +33,11 @@ export function projectManifests(root: string): string[] {
 }
 
 /** 0.1 接收早期样例里的 caller 写法，运行时规范名为 invokedBy。只改从 kernel 导入的 command。 */
+/**
+ * 把直接 kernel command 调用中的旧 caller 属性改为 invokedBy。
+ * @param source 内存源码文本，不在本函数写盘。
+ * @returns 改写文本；新旧属性同时存在抛错误，命名空间或其他调用不猜改。
+ */
 export function codemodSource(source: string): string {
   const project = new Project({ useInMemoryFileSystem: true });
   const file = project.createSourceFile('domain.ts', source);
@@ -48,6 +63,12 @@ export function codemodSource(source: string): string {
   return file.getFullText();
 }
 
+/**
+ * 收集并按需应用目标版本清单与领域 codemod。
+ * @param cfg 当前应用位置。
+ * @param opts to 须等于当前 CLI，dryRun 只列路径，codemodsOnly 不升级清单。
+ * @returns 清单/源码变化路径，AGENTS 同步不列入其中；不自动回滚或运行后续安装验证。
+ */
 export function upgrade(
   cfg: CageConfig,
   opts: { to?: string; dryRun?: boolean; codemodsOnly?: boolean } = {},

@@ -261,7 +261,7 @@ export const poRoute = route('po-approval', [
 
 `approval` 绑定事件与结论命令；`route` 决定步骤与人；`routable` 限制交给路由的数据字段。`onApproved/onRejected` 必须属于同一聚合，且允许 process 调用。
 
-内置选人器是 `approver.deptLeader(字段名)`、`approver.role(角色code)`、`approver.user(用户id)`。条件使用 `gt/gte/lt/lte/eq/ne/isIn` 等封闭表达式。`mode: 'any'/'all'` 描述一步内的人如何完成，不表示任意并行分支。可以在代码组合这些能力；任意函数选人、转签和加签需框架扩展或外部审批适配器，当前不能直接写成现成 API。
+内置选人器是 `approver.deptLeader(字段名)`、`approver.role(角色code)`、`approver.user(用户id)`。条件使用 `gt/gte/lt/lte/eq/ne/isIn` 等封闭表达式。`mode: 'any'/'all'` 描述一步内的人如何完成，不表示任意并行分支。人工节点可通过 `actions: { transfer: true, delegate: true, addSign: true }` 显式开放转办、委派归还和当前节点并行必签，默认关闭；任务版本、权限、SDK 与边界见[审批任务流转](approvals.md)。任意函数选人、前后加签和并行流程分支仍需扩展。
 
 被选中的审批人还要具备结论命令所需能力、范围和额度。部门负责人为空会产生 `CAGE-APPR-007`，详见[排错](troubleshooting.md)。
 

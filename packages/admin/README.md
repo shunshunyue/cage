@@ -1,8 +1,6 @@
 # @yss123/cage-admin
 
-组织模型声明与 /admin 系统管理
-
-Cage 是通过 TypeScript 声明业务、由框架统一执行权限和数据规则的中后台框架。此包是框架的一部分。
+组织模型声明与 `/admin/` 系统管理。提供用户、部门、角色、能力授权、数据范围和防提权规则，以及配套的系统管理接口和页面。适合 Cage 应用的基础组织与运营管理；业务审批、文件和 AI 管理入口按实际启用能力提供。
 
 ## 使用
 
@@ -11,6 +9,36 @@ pnpm add @yss123/cage-admin
 ```
 
 首次使用建议通过脚手架创建完整项目，所需依赖由模板统一配置。需要 Node.js 24 或更新版本。
+
+## 注册组织模型并初始化
+
+在应用 `packages/domain/src/index.ts` 保留这一行，同时导出自己的业务模块：
+
+```ts
+/** 组织声明与业务共同进入注册表；导入本模块不创建账号或连接数据库。 */
+export * from '@yss123/cage-admin/domain';
+```
+
+标准 API 通过 `@yss123/cage-http` 的 `createServer({ domain })` 自动装配管理接口和静态页面，默认开启 `/admin/`，不需要另写管理路由。API 与 worker 使用同一 domain；前端不要导入本包服务端入口。
+
+在脚手架项目中填写已有 PostgreSQL 数据库的本地配置，运行 `pnpm exec cage init`、构建与 `pnpm gen`，审查后执行 `pnpm migrate`。然后显式初始化组织：
+
+```powershell
+pnpm exec cage bootstrap --credentials-file .cage/admin-credentials.json
+pnpm dev
+```
+
+初始凭据只交付到新的受限文件，交付后移除；不要提交到 Git 或贴入日志。服务启动不会自动重置管理员密码。管理员再配置用户、部门、角色、业务命令能力与数据范围；新增业务能力不会自动授予生产角色。
+
+| 公开入口 | 用途 |
+| --- | --- |
+| `@yss123/cage-admin/domain` | `Dept/User/Role` 聚合及创建、修改、角色分配和授权命令，供 domain 组合 |
+| `bootstrapOrg` | 受控初始化工具调用的组织准备，普通服务启动不调用 |
+| `adminRoutes`、`adminCatalog` | HTTP 装配层的管理接口与展示目录 |
+| `noEscalation`、`noEscalationViaRoles`、`noWiderScope`、`knownCapability` | 组织授权命令使用的防提权与能力目录约束 |
+| `hashPassword` | 服务端密码处理辅助函数，不在浏览器调用或存储明文 |
+
+角色选人、菜单显示和中文标签不授予权限。最终写入通过命令执行，授权变更也受当前操作者的能力与范围约束。`grantAll/grantAllToSuperadmin` 是显式管理工具，不应在日常启动或升级中自动执行。
 
 ## 中文管理界面
 

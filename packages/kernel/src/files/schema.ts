@@ -1,4 +1,9 @@
 // 追加系统迁移，文件字节不进入数据库、审计或 outbox。
+/**
+ * 上传会话记录用户、目标命令/字段、字节政策和幂等摘要；bound 与 bound_id 的约束固定文件归属。
+ * 分片由 upload_id/number 唯一定位，token/lease_until 解决并发写入和中断恢复，storage_key 指向字节存储。
+ * bound 文件不按临时会话过期清理；SQL 是历史迁移，修改结构须追加迁移而非编辑字符串。
+ */
 export const FILE_MIGRATION = {
   name: 'cage:0004_files',
   sql: `

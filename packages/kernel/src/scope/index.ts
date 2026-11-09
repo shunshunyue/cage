@@ -37,6 +37,7 @@ export const scope = {
 /** 没有任何授权时按「仅本人」处理（默认拒绝的一部分） */
 export const DEFAULT_GRANTS: ScopeGrant[] = [{ combinator: 'self' }];
 
+/** 显式聚合授权优先于通配授权；缺省或空集合回退到本人范围，不能解释为全部可见。 */
 export function grantsFor(ctx: Ctx, aggName: string): ScopeGrant[] {
   const g = ctx.scopes[aggName] ?? ctx.scopes['*'];
   return g && g.length > 0 ? g : DEFAULT_GRANTS;
@@ -77,6 +78,10 @@ export function compileScope(s: ScopeSpec, aggName: string, ctx: Ctx, alias?: st
 
 /**
  * 内存判定：与 SQL 翻译语义一致。deptSubtree 需要知道记录所在部门的祖先路径，由调用方提供。
+ */
+/**
+ * row 的字段名按业务快照格式读取；提供 tenantId 时先隔离租户。
+ * 未提供部门祖先解析器时 deptSubtree 无法证实可见而返回 false，不以字符串部门 ID 猜测树关系。
  */
 export function scopeMatches(
   s: ScopeSpec,

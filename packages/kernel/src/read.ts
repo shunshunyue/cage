@@ -14,21 +14,31 @@ import { snake } from './util/names.js';
 import { csvCell } from './transfer/csv.js';
 import { relationTable } from './relations.js';
 
+/** HTTP 查询参数与服务端查询共用；页码从 1 开始，字符串值在执行前按字段类型严格转换。 */
 export interface ListParams {
+  /** 从 1 开始的页码，省略默认 1；接受正安全整数或纯数字字符串，非法值明确拒绝。 */
   page?: number | string;
+  /** 请求每页条数，省略默认 20；普通列表/关联读取最多 200，导出内部另设分批上限。 */
   pageSize?: number | string;
   /** 排序：字段名，前面加 - 表示倒序，例如 -createdAt */
   sort?: string;
+  /** 创建时间下界（包含边界），接受合法日期或带时区 ISO 时间；省略不限制下界。 */
   createdAfter?: string;
+  /** 创建时间上界（不含边界），格式同 createdAfter，必须晚于已指定的下界。 */
   createdBefore?: string;
   /** 其他键：字段等值过滤；status 可以逗号分隔多个 */
   [field: string]: unknown;
 }
 
+/** total 是当前权限/筛选条件内的总数，items 仅是当前页，不能据此推断完整关联集合。 */
 export interface Page<T> {
+  /** 当前页可见记录，已经安全投影；空数组只说明本页无结果。 */
   items: T[];
+  /** 同权限与筛选条件的总条数，不是数据库全局行数。 */
   total: number;
+  /** 实际使用的一基页码。 */
   page: number;
+  /** 实际采用的分页大小，可能受服务端上限限制。 */
   pageSize: number;
 }
 
@@ -39,6 +49,7 @@ function invalid(path: string, message: string): never {
   throw cageError('INVALID_INPUT', [{ path, message }]);
 }
 
+/** 拒绝负数、小数、Infinity 和非数字字符串；只有缺省值可采用默认值，错误输入不静默归一。 */
 function pageNumber(value: unknown, path: string, fallback: number): number {
   if (value === undefined) return fallback;
   if ((typeof value !== 'number' && typeof value !== 'string') || (typeof value === 'string' && !/^[0-9]+$/.test(value)))
@@ -47,12 +58,14 @@ function pageNumber(value: unknown, path: string, fallback: number): number {
   return Number.isSafeInteger(n) && n > 0 ? n : invalid(path, '必须为有限的正安全整数');
 }
 
+/** 日期过滤只接受合法日期或带时区的 ISO 时间，避免服务器本地时区猜测用户输入。 */
 function dateParam(value: unknown, path: string): Date {
   if (typeof value !== 'string' || !(z.iso.date().safeParse(value).success || z.iso.datetime({ offset: true }).safeParse(value).success))
     return invalid(path, '必须为合法日期或带时区的 ISO 时间');
   return new Date(value);
 }
 
+/** 先将 URL 数值/布尔文本转换，再用字段基础 schema 校验；金额保持字符串而不转浮点数。 */
 function coerce(field: AnyField | undefined, value: unknown, path: string): unknown {
   let v = value;
   if (field?.kind === 'int' || field?.kind === 'number' || path === 'version') {
@@ -76,10 +89,15 @@ function coerce(field: AnyField | undefined, value: unknown, path: string): unkn
   return v;
 }
 
+/**
+ * 面向用户的统一只读服务。能力检查在 TypeScript 层，行级范围与敏感掩码由 safe 视图执行。
+ * 有明文交付或导出时先可靠写审计；审计失败不会返回已经查询到的数据，避免先泄露后补日志。
+ */
 export class ReadSide {
   constructor(private readonly k: Kernel) {}
 
   /** 读侧账号上的只读事务，已写入会话变量 */
+  /** 所有查询共享此边界；repeatable read 用于多次读取必须看到同一快照的关联/导出场景。 */
   async tx<T>(ctx: Ctx, fn: (tx: Transaction<any>) => Promise<T>, isolation: 'read committed' | 'repeatable read' = 'read committed'): Promise<T> {
     return this.k.readDb
       .transaction()
@@ -91,12 +109,14 @@ export class ReadSide {
       });
   }
 
+  /** 解析注册聚合，未知名称统一 NOT_FOUND，不暴露内部注册细节。 */
   private agg(a: AnyAggregate | string): AnyAggregate {
     const agg = typeof a === 'string' ? this.k.registry.aggregate(a) : a;
     if (!agg) throw cageError('NOT_FOUND');
     return agg;
   }
 
+  /** read/export 能力与数据范围分开检查；通过此函数不意味着某条记录可见。 */
   private need(ctx: Ctx, cap: string) {
     if (!ctx.actor || ctx.actor.kind === 'anonymous') throw cageError('UNAUTHENTICATED');
     if (!ctx.capabilities.has(cap)) throw cageError('FORBIDDEN', { capability: cap });
@@ -118,6 +138,7 @@ export class ReadSide {
     }
   }
 
+  /** 查询单条安全视图记录；非法 ID、范围外和不存在都按 NOT_FOUND 处理，明文审计后才交付。 */
   async get(a: AnyAggregate | string, id: string, ctx: Ctx): Promise<Record<string, any>> {
     const agg = this.agg(a);
     this.need(ctx, `${agg.name}.read`);
@@ -128,6 +149,7 @@ export class ReadSide {
     return viewRowToObject(row);
   }
 
+  /** 普通页面最多每页 200 条；输出由安全视图已掩码，关联集合需另调 related。 */
   async list(a: AnyAggregate | string, params: ListParams, ctx: Ctx): Promise<Page<Record<string, any>>> {
     const agg = this.agg(a);
     this.need(ctx, `${agg.name}.read`);
@@ -156,6 +178,11 @@ export class ReadSide {
     return res;
   }
 
+  /**
+   * 构造安全视图分页和同口径计数，restrict 让关联读取复用相同过滤逻辑。
+   * 隐藏、敏感、JSON 和集合字段不能被普通等值筛选旁路探测；默认排除 deleted。
+   * 排序追加 id 作为稳定次序；时间窗口为 createdAfter 含边界、createdBefore 不含边界。
+   */
   private async listIn(tx: Transaction<any>, agg: AnyAggregate, params: ListParams, maxPageSize: number, count = true, restrict: (q: any) => any = (q) => q): Promise<Page<Record<string, any>>> {
     const page = pageNumber(params.page, 'page', 1);
     const pageSize = Math.min(maxPageSize, pageNumber(params.pageSize, 'pageSize', 20));
@@ -227,6 +254,10 @@ export class ReadSide {
   }
 
   /** 执行 query 声明：需要 reads 里每个聚合的 read 能力；手写 SQL 用 :name 占位，全部参数化 */
+  /**
+   * SQL/build 在只读事务中执行；任意报表无法反推出全部对象 ID，因此按声明 reads 保守记录明文审计。
+   * audit.purpose 另形成用途审计，任一可靠审计失败都会阻止交付，不能以空结果冒充成功。
+   */
   async run(q: AnyQuery | string, raw: unknown, ctx: Ctx): Promise<Record<string, any>[]> {
     const query = typeof q === 'string' ? this.k.registry.queries.find((x) => x.name === q) : q;
     if (!query) throw cageError('NOT_FOUND');
@@ -259,6 +290,7 @@ export class ReadSide {
 }
 
 /** :name 占位 → 参数化 SQL（:: 类型转换不受影响） */
+/** SQL 模板必须来自可信声明，用户只能提供占位参数；缺少命名参数立即报 INVALID_INPUT。 */
 export function compileNamedSql(text: string, input: Record<string, unknown>) {
   const parts: any[] = [];
   const re = /(?<![:\w]):([a-zA-Z_][a-zA-Z0-9_]*)/g;
@@ -274,4 +306,5 @@ export function compileNamedSql(text: string, input: Record<string, unknown>) {
   return sql<Record<string, unknown>>`${sql.join(parts, sql.raw(''))}`;
 }
 
+/** 外层接收字段名动态的查询参数；具体白名单、类型、分页边界在 listIn 中结合聚合校验。 */
 export const listParamsSchema = z.record(z.string(), z.unknown());

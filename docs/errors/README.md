@@ -44,12 +44,12 @@
 
 | 诊断码 | 含义 |
 | --- | --- |
-| [CAGE-APPR-001](CAGE-APPR-001.md) | 可路由字段不存在 |
+| [CAGE-APPR-001](CAGE-APPR-001.md) | 审批字段声明无效 |
 | [CAGE-APPR-002](CAGE-APPR-002.md) | 审批结论落到其他聚合 |
 | [CAGE-APPR-003](CAGE-APPR-003.md) | 审批结论未允许流程调用 |
 | [CAGE-APPR-004](CAGE-APPR-004.md) | 路由没有对应审批绑定 |
 | [CAGE-APPR-005](CAGE-APPR-005.md) | 流程名称格式错误 |
-| [CAGE-APPR-006](CAGE-APPR-006.md) | 流程没有步骤 |
+| [CAGE-APPR-006](CAGE-APPR-006.md) | 审批步骤配置无效 |
 | [CAGE-APPR-007](CAGE-APPR-007.md) | 找不到审批人 |
 | [CAGE-APPR-010](CAGE-APPR-010.md) | 流程专用命令没有调用者 |
 

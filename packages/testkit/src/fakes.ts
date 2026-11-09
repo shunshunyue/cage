@@ -1,9 +1,18 @@
+/**
+ * 纯 handler 单测的样例数据与内存只读依赖工具。
+ * 样例按字段形状生成，不能推导任意业务规则；直接调用 handler 跳过权限、状态、事务和审计，应另用集成测试覆盖。
+ * fast-check 生成器用于探索字段空间，不承诺所生成的每个记录都满足聚合不变量或外键存在性。
+ */
 // handler 单测工具：handler 不碰数据库，把读依赖换成内存假对象，直接调用函数。毫秒级。
 import { randomUUID } from 'node:crypto';
 import fc from 'fast-check';
 import type { AnyAggregate, AnyCommand, AnyField, Draft, Fields, ReadRepo } from '@yss123/cage-kernel';
 
-/** 字段的示例值：满足字段校验，便于构造草稿和种子数据 */
+/** 字段形状的基础示例，用于构造草稿和种子候选，不推导任意业务约束。 */
+/**
+ * 为一个字段生成基础样例；可选字段默认 null，force=true 才强制构造非空候选。
+ * name 影响普通文本，敏感类型用固定测试示例，金额用十进制字符串；引用 ID 不保证已有目标记录。
+ */
 export function sampleValue(f: AnyField, name = '', force = false): unknown {
   if (f.isOptional && !force) return null;
   switch (f.kind) {
@@ -45,6 +54,10 @@ export function sampleValue(f: AnyField, name = '', force = false): unknown {
 }
 
 /** 字段的 fast-check 生成器：用于不变量的性质测试 */
+/**
+ * 根据字段种类构造有界 fast-check 候选生成器，集合限制数量以控制测试规模。
+ * 金额通过整数分映射为两位小数字符串，可选字段混入 null；输入仍需业务校验，不是成功路径夹具保证。
+ */
 export function arbitraryOf(f: AnyField): fc.Arbitrary<unknown> {
   let a: fc.Arbitrary<unknown>;
   switch (f.kind) {
@@ -89,11 +102,19 @@ export function arbitraryOf(f: AnyField): fc.Arbitrary<unknown> {
   return f.isOptional ? fc.option(a, { nil: null }) : a;
 }
 
+/**
+ * 组合聚合持久字段的候选对象，跳过只读 hasMany 反查。
+ * 不附加系统列，也不替调用方建立外键目标或满足跨字段不变量。
+ */
 export function arbitrarySnapshot(agg: AnyAggregate): fc.Arbitrary<Record<string, unknown>> {
   return fc.record(Object.fromEntries(Object.entries(agg.fields as Fields).filter(([, f]) => f.kind !== 'hasMany').map(([k, f]) => [k, arbitraryOf(f)])));
 }
 
-/** 一条合法的示例记录（所有字段都有值） */
+/** 按字段形状构造候选记录；合法业务前置条件由具体测试补齐。 */
+/**
+ * 按聚合字段构造候选记录，再用 overrides 覆盖指定值，跳过非持久 hasMany。
+ * 可选值可能为 null；函数不执行聚合不变量、命令规则或数据库校验。
+ */
 export function sampleRecord(agg: AnyAggregate, overrides: Record<string, unknown> = {}): Record<string, any> {
   const out: Record<string, any> = {};
   for (const [k, f] of Object.entries(agg.fields as Fields)) if (f.kind !== 'hasMany') out[k] = sampleValue(f, k);
@@ -103,6 +124,11 @@ export function sampleRecord(agg: AnyAggregate, overrides: Record<string, unknow
 /**
  * 构造命令 handler 的草稿：状态取命令的第一个起始状态（新建命令取目标状态）
  *   const order = draftOf(approve, { items: [{ sku: 'A-01', qty: 10 }] })
+ */
+/**
+ * 构造直接传给 handler 的测试草稿，补 ID、版本和当前时间等系统字段。
+ * 新建命令取目标状态，已有记录命令取首个起始状态；overrides 最后覆盖以支持边界场景。
+ * 此草稿未持久化，也未经过内核权限和不变量检查。
  */
 export function draftOf<C extends AnyCommand>(cmd: C, overrides: Partial<Draft<C['agg']>> = {}): Draft<C['agg']> {
   const now = new Date().toISOString();
@@ -119,6 +145,10 @@ export function draftOf<C extends AnyCommand>(cmd: C, overrides: Partial<Draft<C
 }
 
 /** 内存只读仓储：等值条件查询，与内核的 ReadRepo 接口一致 */
+/**
+ * 用给定 rows 模拟 ReadRepo 的基本 get/find/findOne/count 等值读取，返回深拷贝避免测试污染夹具。
+ * find 支持 limit，但不模拟数据库排序、范围、锁、事务或安全视图；适合纯 handler 分支测试。
+ */
 export function fakeRepo<A extends AnyAggregate = AnyAggregate>(rows: Record<string, any>[]): ReadRepo<A> {
   const match = (r: Record<string, any>, where?: Record<string, unknown>) =>
     Object.entries(where ?? {}).every(([k, v]) => v === undefined || JSON.stringify(r[k] ?? null) === JSON.stringify(v));
@@ -132,6 +162,10 @@ export function fakeRepo<A extends AnyAggregate = AnyAggregate>(rows: Record<str
 }
 
 /** 直接调用 handler 时的第四个参数 */
+/**
+ * 生成 handler 使用的冻结上下文，包含当前时间与可空操作者 ID。
+ * 省略操作者时给随机测试 ID；不包含能力信息，也不完成身份认证。
+ */
 export function handlerCtx(actorUserId: string | null = randomUUID()) {
   return Object.freeze({ now: new Date(), actorUserId });
 }

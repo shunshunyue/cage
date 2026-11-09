@@ -1,3 +1,8 @@
+/**
+ * 迁移历史不可变的真实数据库回归，使用 createTestEnv 已记录的初始化迁移作为基线。
+ * 重复提交相同迁移应不再执行；篡改校验和必须在后续新迁移运行前拒绝，并核对目标表确实未创建。
+ * 测试中的 SQL 是隔离数据库输入，不修改仓库已发布迁移；afterAll 销毁测试环境。
+ */
 // 在真实数据库上验证迁移不可变性，防止 checksum 仅写入却没有参与校验。
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { createTableSql, schemaModel, runMigrations } from '@yss123/cage-kernel/db';

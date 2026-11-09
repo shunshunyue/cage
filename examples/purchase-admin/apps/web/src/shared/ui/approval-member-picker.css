@@ -1,0 +1,10 @@
+/** 协作名录的复选行布局供采购和审批模块复用；不覆盖其他表单，窄屏单列保持可点击标签。 */
+.approval-member-picker { border: 1px solid #dbe3d9; border-radius: 8px; padding: 14px; margin: 14px 0; min-width: 0; }
+.approval-member-picker legend { font-size: 12px; padding: 0 6px; font-weight: 600; }
+.approval-member-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; margin: 12px 0; max-height: 250px; overflow-y: auto; }
+.approval-member-options label { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid #e5e9e2; border-radius: 6px; cursor: pointer; }
+.approval-member-options input[type='checkbox'] { width: 16px; height: 16px; flex: 0 0 auto; }
+.approval-member-options small { display: block; margin-top: 3px; color: #647365; }
+/* 开关与选人复选框保留原生尺寸，避免通用表单的 width:100% 让标签错位。 */
+label.review-checkbox { display: flex; align-items: center; gap: 10px; }
+label.review-checkbox input { width: auto; flex: none; }

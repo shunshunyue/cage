@@ -2,7 +2,7 @@
 /* eslint-disable */
 
 import { z } from 'zod';
-import { client, useCageList, useCageQuery, type TransferTask } from '@yss123/cage-client';
+import { client, useCageList, useCageQuery, type TransferTask, type RequestOptions } from '@yss123/cage-client';
 
 /** 角色：读侧快照（敏感字段是按权限掩码后的值） */
 export const RoleSchema = z.object({
@@ -22,12 +22,12 @@ export const RoleStates = ['active', 'archived'] as const;
 
 /** 命令输入：和后端命令的输入校验完全一致 */
 export const RoleInputs = {
-  archive: z.object({ id: z.string().uuid() }),
+  archive: z.object({ id: z.string().uuid().regex(new RegExp("^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$")) }),
   create: z.object({ code: z.string().min(1).max(64).regex(new RegExp("^[a-z][a-z0-9_]*$")), name: z.string().min(1).max(100) }),
-  grantCapability: z.object({ id: z.string().uuid(), capability: z.string().min(1).max(200), params: z.record(z.string(), z.unknown()).optional() }),
-  rename: z.object({ id: z.string().uuid(), name: z.string().min(1).max(100) }),
-  revokeCapability: z.object({ id: z.string().uuid(), capability: z.string().min(1).max(200) }),
-  setScope: z.object({ id: z.string().uuid(), aggregate: z.string().min(1).max(100), combinator: z.enum(["all", "self", "dept", "deptSubtree", "deptSet"]).nullable(), deptIds: z.array(z.string().uuid()).optional() }),
+  grantCapability: z.object({ id: z.string().uuid().regex(new RegExp("^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$")), capability: z.string().min(1).max(200), params: z.record(z.string(), z.unknown()).optional() }),
+  rename: z.object({ id: z.string().uuid().regex(new RegExp("^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$")), name: z.string().min(1).max(100) }),
+  revokeCapability: z.object({ id: z.string().uuid().regex(new RegExp("^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$")), capability: z.string().min(1).max(200) }),
+  setScope: z.object({ id: z.string().uuid().regex(new RegExp("^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$")), aggregate: z.string().min(1).max(100), combinator: z.enum(["all", "self", "dept", "deptSubtree", "deptSet"]).nullable(), deptIds: z.array(z.string().uuid().regex(new RegExp("^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"))).optional() }),
 };
 
 /** Role.archive 可能返回的错误码 */
@@ -60,21 +60,21 @@ export interface RoleListParams {
 /** 调用方法：每个命令一个；client 自动生成并附带幂等键和 CSRF 令牌 */
 export const role = {
   /** 停用角色 */
-  archive: (id: string, expectedVersion?: number) => client.post<Role, RoleArchiveError>(`/api/role/${encodeURIComponent(id)}/archive`, { expectedVersion }),
+  archive: (id: string, expectedVersion?: number, options: RequestOptions = {}) => client.post<Role, RoleArchiveError>(`/api/role/${encodeURIComponent(id)}/archive`, { expectedVersion }, options),
   /** 新建角色（默认没有任何能力） */
-  create: (input: z.input<typeof RoleInputs.create>) => client.post<Role, RoleCreateError>('/api/role/create', input),
+  create: (input: z.input<typeof RoleInputs.create>, options: RequestOptions = {}) => client.post<Role, RoleCreateError>('/api/role/create', input, options),
   /** 给角色授予能力点（不能授出自己没有的能力点） */
-  grantCapability: (id: string, input: Omit<z.input<typeof RoleInputs.grantCapability>, 'id'>, expectedVersion?: number) => client.post<Role, RoleGrantCapabilityError>(`/api/role/${encodeURIComponent(id)}/grant-capability`, { ...input, expectedVersion }),
+  grantCapability: (id: string, input: Omit<z.input<typeof RoleInputs.grantCapability>, 'id'>, expectedVersion?: number, options: RequestOptions = {}) => client.post<Role, RoleGrantCapabilityError>(`/api/role/${encodeURIComponent(id)}/grant-capability`, { ...input, expectedVersion }, options),
   /** 修改角色名称 */
-  rename: (id: string, input: Omit<z.input<typeof RoleInputs.rename>, 'id'>, expectedVersion?: number) => client.post<Role, RoleRenameError>(`/api/role/${encodeURIComponent(id)}/rename`, { ...input, expectedVersion }),
+  rename: (id: string, input: Omit<z.input<typeof RoleInputs.rename>, 'id'>, expectedVersion?: number, options: RequestOptions = {}) => client.post<Role, RoleRenameError>(`/api/role/${encodeURIComponent(id)}/rename`, { ...input, expectedVersion }, options),
   /** 收回角色的能力点 */
-  revokeCapability: (id: string, input: Omit<z.input<typeof RoleInputs.revokeCapability>, 'id'>, expectedVersion?: number) => client.post<Role, RoleRevokeCapabilityError>(`/api/role/${encodeURIComponent(id)}/revoke-capability`, { ...input, expectedVersion }),
+  revokeCapability: (id: string, input: Omit<z.input<typeof RoleInputs.revokeCapability>, 'id'>, expectedVersion?: number, options: RequestOptions = {}) => client.post<Role, RoleRevokeCapabilityError>(`/api/role/${encodeURIComponent(id)}/revoke-capability`, { ...input, expectedVersion }, options),
   /** 设置角色在某个聚合上的数据范围（不能授出比自己更宽的范围） */
-  setScope: (id: string, input: Omit<z.input<typeof RoleInputs.setScope>, 'id'>, expectedVersion?: number) => client.post<Role, RoleSetScopeError>(`/api/role/${encodeURIComponent(id)}/set-scope`, { ...input, expectedVersion }),
+  setScope: (id: string, input: Omit<z.input<typeof RoleInputs.setScope>, 'id'>, expectedVersion?: number, options: RequestOptions = {}) => client.post<Role, RoleSetScopeError>(`/api/role/${encodeURIComponent(id)}/set-scope`, { ...input, expectedVersion }, options),
   /** 异步导出 CSV：返回任务，使用 client.transfer(id) 查状态，完成后下载。需要 Role.export 能力。 */
-  export: (params: RoleListParams = {}, options: { idempotencyKey?: string } = {}) => client.post<TransferTask, 'CONFLICT'>('/api/role/export', params, options),
-  get: (id: string) => client.get<Role>(`/api/role/${encodeURIComponent(id)}`),
-  list: (params: RoleListParams = {}) => client.get<{ items: Role[]; total: number; page: number; pageSize: number }>('/api/role', params as Record<string, unknown>),
+  export: (params: RoleListParams = {}, options: RequestOptions = {}) => client.post<TransferTask, 'CONFLICT'>('/api/role/export', params, options),
+  get: (id: string, options: RequestOptions = {}) => client.get<Role>(`/api/role/${encodeURIComponent(id)}`, undefined, options),
+  list: (params: RoleListParams = {}, options: RequestOptions = {}) => client.get<{ items: Role[]; total: number; page: number; pageSize: number }>('/api/role', params as Record<string, unknown>, options),
 };
 
 /** 详情查询 hook：响应也用 schema 校验；范围外返回 NOT_FOUND */

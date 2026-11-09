@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { RouteInfo } from './routes.js';
 
+/** 任务枚举、提交、状态与下载共用的系统路由，供 OpenAPI 和客户端能力发现使用。 */
 export const transferRoutes: RouteInfo[] = [
   { method: 'GET', url: '/api/sys/transfers', kind: 'transfer-list' },
   { method: 'GET', url: '/api/sys/transfers/options', kind: 'transfer-options' },
@@ -19,6 +20,12 @@ export function transferKey(req: FastifyRequest): string {
   return key;
 }
 
+/**
+ * 挂载通用导入导出入口：options 按当前能力筛选候选，任务服务在提交、执行和下载时继续复核授权。
+ * 导入只接受用户可调用命令，CSV 列来自命令输入 schema，逐行写入仍经过完整命令流水线。
+ * 提交返回 202 与任务 ID；状态和结果属于提交者，下载不通过公开静态目录暴露文件。
+ * options 中的 limits 是前端交互提示，实际资源限制由内核任务服务强制执行。
+ */
 export function registerTransfers(app: FastifyInstance, k: Kernel) {
   app.get('/api/sys/transfers', (req) => k.transfers.list(req.cageCtx, (req.query as { aggregate?: string }).aggregate));
   app.get('/api/sys/transfers/options', async (req) => {

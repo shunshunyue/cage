@@ -16,6 +16,7 @@ const EVENT = 'cage:DataTransferRequested';
 const hash = (value: unknown) => createHash('sha256').update(stableStringify(value)).digest('hex');
 export const importRequestSchema = z.object({ command: z.string(), csv: z.string(), atomic: z.boolean().default(false) }).strict();
 
+/** 对外任务视图；queued/processing/retrying 只是进度，只有 completed 才能尝试下载结果。 */
 export interface TransferTask {
   id: string;
   kind: 'export' | 'import';
@@ -25,6 +26,7 @@ export interface TransferTask {
   expiresAt: string;
   finishedAt: string | null;
   errorCode: string | null;
+  /** 只存计数和文件元数据；结果可过期为 null，不包含导入输入或命令返回的业务快照。 */
   result: { rows: number; succeeded?: number; failed?: number; filename?: string; atomic?: boolean } | null;
 }
 
@@ -37,12 +39,14 @@ function requireCap(ctx: Ctx, capability: string) {
   if (!ctx.capabilities.has(capability)) throw cageError('FORBIDDEN', { capability });
 }
 
+/** 排队、执行、下载都重读有效授权，防止任务排队期间撤权后继续沿用旧权限。 */
 async function liveContext(k: Kernel, userId: string, tenantId: string, db: Kysely<any> = k.app): Promise<Ctx> {
   const grants = await loadUserGrants(db, userId, tenantId);
   if (!grants?.active) throw cageError('FORBIDDEN', '用户已被禁用或删除');
   return userCtx(grants);
 }
 
+/** 只有已注册、可由用户调用且对象输入可映射 CSV 的命令才能导入，仍逐行走完整写流水线。 */
 function importCommand(k: Kernel, capability: string, ctx: Ctx) {
   const command = k.registry.command(capability);
   if (!command || !command.cmd.invokedBy.includes('user')) throw cageError('NOT_FOUND');
@@ -65,6 +69,7 @@ async function accessHash(k: Kernel, ctx: Ctx, aggregate: string, db: Kysely<any
 export class DataTransfers {
   constructor(private readonly k: Kernel) {}
 
+  /** 校验当前导出能力后入队；返回任务而非文件，实际范围读取由 worker 再次鉴权执行。 */
   async export(aggregate: string, params: Record<string, unknown>, ctx: Ctx, key: string) {
     const user = requireUser(ctx), current = await liveContext(this.k, user, ctx.tenantId);
     if (!this.k.registry.aggregate(aggregate)) throw cageError('NOT_FOUND');
@@ -72,6 +77,7 @@ export class DataTransfers {
     return this.enqueue('export', aggregate, params, ctx, key);
   }
 
+  /** 提交时先拒绝坏 CSV 结构，单行业务错误留在任务报告；二次认证时间随任务保存供执行检查。 */
   async import(request: unknown, ctx: Ctx, key: string) {
     const user = requireUser(ctx), current = await liveContext(this.k, user, ctx.tenantId);
     const parsed = importRequestSchema.safeParse(request);
@@ -83,6 +89,10 @@ export class DataTransfers {
     return this.enqueue('import', command, { csv, atomic, stepUpAt: ctx.stepUpAt ?? null }, ctx, key);
   }
 
+  /**
+   * 用事务咨询锁串行化同一租户/用户/幂等键，内容摘要不符即 CONFLICT，重复内容返回已有任务。
+   * 新任务、outbox 和提交审计共同提交；队列只保存 taskId，CSV/查询输入仅在受控任务记录中保存。
+   */
   private async enqueue(kind: 'export' | 'import', target: string, input: object, ctx: Ctx, key: string): Promise<TransferTask> {
     if (!key || key.length > 200) throw cageError('INVALID_INPUT', '请提供不超过 200 字符的 Idempotency-Key');
     // 二次认证时间属于会话上下文，不属于用户提交的文件；重试时不要因此误报冲突。
@@ -117,11 +127,13 @@ export class DataTransfers {
     return this.get(id, ctx);
   }
 
+  /** 所有任务查询先固定租户和提交人；系统运维权限不赋予读取他人文件的隐含通道。 */
   private own(ctx: Ctx) {
     return this.k.app.selectFrom('sys.data_transfer as t').innerJoin('sys.outbox as o', 'o.id', 't.outbox_id')
       .where('t.tenant_id', '=', ctx.tenantId).where('t.user_id', '=', requireUser(ctx));
   }
 
+  /** 返回本人最近 100 个匹配任务；聚合筛选覆盖该对象的导出和各命令导入。 */
   async list(ctx: Ctx, aggregate?: string): Promise<TransferTask[]> {
     let query = this.own(ctx);
     // 业务列表只需要当前对象的任务；先在数据库筛选再取最近 100 条，
@@ -144,6 +156,10 @@ export class DataTransfers {
 
   async get(id: string, ctx: Ctx): Promise<TransferTask> { return taskView(await this.row(id, ctx)); }
 
+  /**
+   * 下载前确认终态、实时能力及导出访问指纹；范围/部门树/明文权限变化需要重新生成文件。
+   * 必须先完成可靠下载审计，再返回文件内容，防止审计故障时仍泄露既有导出。
+   */
   async download(id: string, ctx: Ctx) {
     const row = await this.row(id, ctx);
     if (taskView(row).status !== 'completed') throw cageError('INVALID_TRANSITION', '任务尚未完成或文件已过期');
@@ -164,6 +180,7 @@ export class DataTransfers {
   }
 }
 
+/** 将任务状态与 outbox 投递证据合并；时间已过期时优先标 expired，隐藏已失效的结果元数据。 */
 function taskView(row: any): TransferTask {
   const expired = new Date(row.expires_at).getTime() <= Date.now();
   const status = expired ? 'expired' : row.status !== 'queued' ? row.status : row.delivery === 'dead' || row.delivery === 'done' ? 'failed' : row.delivery === 'processing' ? 'processing' : row.attempts > 0 ? 'retrying' : 'queued';
@@ -212,6 +229,10 @@ async function runImport(k: Kernel, tx: Transaction<any>, task: any, ctx: Ctx) {
   return { result, body: JSON.stringify({ ...result, results }, null, 2), access: null };
 }
 
+/**
+ * 消费者锁定任务并重读用户权限；导入/导出结果与 processed_event 在同一事务提交，崩溃可安全重投。
+ * 业务拒绝通过保存点记录 failed；内部故障/并发冲突抛给 outbox 重试，不能伪装成已完成任务。
+ */
 export function transferConsumer(k: Kernel): EventConsumer {
   return {
     name: 'cage:data-transfer', event: EVENT,

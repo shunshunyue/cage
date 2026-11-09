@@ -1,9 +1,20 @@
+/**
+ * 验证客户端请求、会话隔离和命令结果的错误边界。
+ * 注入 fetch 模拟断流、401、CSRF、取消与超时，检查身份清理、幂等键保留和写请求重试次数。
+ * 所有请求为内存桩，不启动 HTTP 服务；服务端授权仍由服务端测试覆盖。
+ */
 import { expect, it } from 'vitest';
 import { CageClient, CageCommandError, commandData, currentUser, loadMe } from '../../client/src/index.js';
 
 const user = { id: 'one', username: 'one', name: 'One', deptId: 'dept' };
+/**
+ * 将内存协议数据包装成 Response，状态码可由认证和 CSRF 场景指定；不发出网络请求。
+ */
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 
+/**
+ * 即使响应头表示成功，读取正文失败也必须返回 NETWORK；POST 只发送一次，避免网络不确定时重复写入。
+ */
 it('response body failures are typed network results; POST is not retried ambiguously', async () => {
   let writes = 0;
   const client = new CageClient({ fetch: (async url => {
@@ -17,6 +28,9 @@ it('response body failures are typed network results; POST is not retried ambigu
   expect(writes).toBe(1);
 });
 
+/**
+ * 分别建立两个客户端实例，验证身份与能力不串号；退出或收到 401 后二者必须一起清空。
+ */
 it('session identity is isolated and logout/401 clear identity and capabilities together', async () => {
   let unauthorized = false;
   const first = new CageClient({ fetch: (async url => String(url).endsWith('/auth/csrf') ? response({ token: 't' }) : unauthorized ? response({ code: 'UNAUTHENTICATED' }, 401) : String(url).endsWith('/api/me') ? response({ user, capabilities: ['A.read'] }) : response({ ok: true })) as typeof fetch });
@@ -33,6 +47,9 @@ it('session identity is isolated and logout/401 clear identity and capabilities 
   expect(first.getSession()).toMatchObject({ user: null, capabilities: [] });
 });
 
+/**
+ * 先挂起 loadMe，再清空会话，最后交付旧响应；版本边界必须阻止旧身份复活。
+ */
 it('a late identity response cannot restore a cleared session', async () => {
   let finish!: (response: Response) => void;
   const client = new CageClient({ fetch: (() => new Promise(resolve => { finish = resolve; })) as typeof fetch });
@@ -43,6 +60,9 @@ it('a late identity response cannot restore a cleared session', async () => {
   expect(client.getSession()).toMatchObject({ user: null, capabilities: [] });
 });
 
+/**
+ * 401 的正文也可能读取失败；认证失效应优先保留，不能被一般网络错误掩盖。
+ */
 it('an unreadable 401 still clears the session and preserves its HTTP error', async () => {
   const client = new CageClient({ fetch: (async () => ({ status: 401, ok: false, text: async () => { throw new Error('lost body'); } })) as typeof fetch });
   client.setSession(user, ['A.read']);
@@ -50,6 +70,9 @@ it('an unreadable 401 still clears the session and preserves its HTTP error', as
   expect(client.getSession()).toMatchObject({ user: null, capabilities: [] });
 });
 
+/**
+ * 只在明确 CSRF 拒绝后刷新 token 并重试一次，两次写请求必须使用同一个业务幂等键。
+ */
 it('CSRF rejection retries exactly once using the original idempotency key', async () => {
   const writes: RequestInit[] = [];
   let tokens = 0;
@@ -65,6 +88,9 @@ it('CSRF rejection retries exactly once using the original idempotency key', asy
   expect(writes.map(write => (write.headers as Record<string, string>)['x-csrf-token'])).toEqual(['token-1', 'token-2']);
 });
 
+/**
+ * 主动取消和请求时限分别产生 CANCELLED/TIMEOUT，调用方才能选择合适的交互。
+ */
 it('cancel and timeout are distinct typed results', async () => {
   const client = new CageClient({ fetch: (async (_url, options) => new Promise((_resolve, reject) => options?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true }))) as typeof fetch });
   const abort = new AbortController();
@@ -73,6 +99,9 @@ it('cancel and timeout are distinct typed results', async () => {
   expect(await client.get('/timeout', undefined, { timeoutMs: 5 })).toMatchObject({ code: 'TIMEOUT' });
 });
 
+/**
+ * 供 mutation 使用的 commandData 抛出带原始业务结果的类型化错误，成功时只解包 data。
+ */
 it('mutation failures reject with the original typed business result', async () => {
   const failure = { ok: false as const, code: 'DOMAIN_ERROR', domainCode: 'BUDGET_EMPTY', status: 422 };
   await expect(commandData(Promise.resolve(failure))).rejects.toBeInstanceOf(CageCommandError);

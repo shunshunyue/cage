@@ -1,9 +1,20 @@
+/**
+ * 校验 businessProcess 阅读规格是否引用真实实现并表达有依据的流程连线。
+ * 规则根据本体节点和触发边检查引用、入口、可达性、结束路径及人工/自动/等待边。
+ * 只输出诊断，不调度流程，也不证明 handler 条件成立；读取依赖与同状态不会被当作自动触发证据。
+ */
 // 业务规格不能凭名称制造执行链。自动连线只沿真实触发关系核对，
 // 人工/等待步骤保留自己的语义；这些检查不执行 handler 或映射函数。
 import type { Finding } from './findings.js';
 import { projectGraph, type GraphModel, type ViewNode } from './graph-model.js';
 import type { Ontology } from './ontology.js';
 
+/**
+ * 取声明上可继续触发的直接节点，排除派生归属与读取关系。
+ * @param model 展示图。
+ * @param key 当前节点 key。
+ * @returns emits/triggers/targets 及审批结论目标，不执行 map 或条件。
+ */
 export function causalSuccessors(model: GraphModel, key: string): string[] {
   const node = model.nodes.find(n => n.key === key);
   return model.edges.filter(e => e.from === key && !e.derived && (
@@ -11,6 +22,12 @@ export function causalSuccessors(model: GraphModel, key: string): string[] {
   )).map(e => e.to);
 }
 
+/**
+ * 以队列计算有向可达集合，seen 防止循环无限展开。
+ * @param start 起点 key。
+ * @param next 提供直接后继的纯函数。
+ * @returns 包含起点的可达 key 集合。
+ */
 function reachable(start: string, next: (key: string) => string[]): Set<string> {
   const seen = new Set<string>([start]);
   const queue = [start];
@@ -20,6 +37,11 @@ function reachable(start: string, next: (key: string) => string[]): Set<string> 
   return seen;
 }
 
+/**
+ * 核对业务阅读规格与实际声明的连通和入口身份。
+ * @param graph 当前本体。
+ * @returns 可达性、结束路径、关联依据和模式不符的 Finding；不证明运行条件成立。
+ */
 export function checkBusinessProcesses(graph: Ontology): Finding[] {
   const model = projectGraph(graph);
   const nodes = new Map(model.nodes.map(n => [n.key, n]));

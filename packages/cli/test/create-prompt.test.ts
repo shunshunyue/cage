@@ -1,3 +1,8 @@
+/**
+ * 验证交互创建入口的选项传递及取消分支。
+ * 模拟提示库和 TTY 状态，确保目录或模板取消后不继续下一步；每例恢复流属性与桩。
+ * 这里只检查 chooseApp 的交互结果，不执行项目复制或依赖安装。
+ */
 // 验证真实用户分支：选项能传入创建流程，取消不继续，也不留下项目。
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { CANCEL_SYMBOL, cancel, select, text } from '@clack/prompts';

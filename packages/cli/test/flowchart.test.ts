@@ -1,7 +1,16 @@
+/**
+ * 验证业务流程的排布、连线路由与方向箭头几何。
+ * 构造分支、汇合、循环和长标签，分别检查横向/纵向布局、矩形不重叠及折线路段不穿过无关节点。
+ * 这里断言计算结果，不模拟浏览器字体渲染或完整指针交互。
+ */
 import { expect, it } from 'vitest';
 import { flowDirectionArrow, flowEdgeGeometry, layoutBusinessFlow } from '../ui/flowchart.js';
 import type { BusinessStep } from '../src/graph-business.js';
 
+/**
+ * 创建最小可布局步骤，children 决定分支，approval 只切换节点种类以触发对应几何。
+ * 不经过业务注册，适用于纯布局断言，不作为合法领域声明样例。
+ */
 function step(id: string, children: BusinessStep[] = [], approval = false): BusinessStep {
   return {
     id,

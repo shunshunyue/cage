@@ -1,3 +1,8 @@
+/**
+ * 验证模块化目录门禁及 TypeScript 导入边界。
+ * 在独立临时项目中构造平铺源码、路径别名、转导出和合法公开入口，确保检查沿真实依赖解析。
+ * 不执行项目代码；套件仅创建并清理自身临时目录。
+ */
 // 定向验证脚手架目录门禁：真实反例能被定位，正确的组合和公开入口保持可用。
 import { afterAll, expect, it } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -9,6 +14,10 @@ import { checkProjectStructure } from '../src/project-structure.js';
 const temporary = mkdtempSync(join(tmpdir(), 'cage-structure-'));
 afterAll(() => rmSync(temporary, { recursive: true, force: true }));
 
+/**
+ * 建立启用 modular 门禁且配置 @/* 别名的临时项目，再覆盖用例指定源码。
+ * 文件均位于当前测试目录，返回 CageConfig 供静态分析，不执行这些模块。
+ */
 function project(name: string, files: Record<string, string>) {
   const root = join(temporary, name);
   const put = (file: string, content: string) => {

@@ -1,8 +1,24 @@
+/**
+ * CLI 获取运行态诊断的受控 HTTP 客户端，供 doctor、timeline、explain 调用。
+ * 校验同源 HTTP 地址，从单行 Cookie 文件读会话；POST 先取 CSRF 并合并服务端 Cookie，再提交解释请求。
+ * 不把凭据放进返回报告，不跟随重定向；单请求超时为 5 秒，网络/JSON 错误传播，HTTP 拒绝保留状态。
+ */
 // Credentials stay in controlled files. Diagnostic POST explains authorization without executing the command.
 import { readFileSync } from 'node:fs';
 import { abs, type CageConfig } from './config.js';
 
-export interface RuntimeOptions { runtimeUrl?: string; cookieFile?: string; fetch?: typeof fetch }
+/**
+ * 运行证据请求配置；地址不带凭据，Cookie 来自文件，fetch 可注入测试实现。
+ */
+export interface RuntimeOptions { /** 用户显式指定的运行实例 HTTP(S) 根地址，不能夹带凭据。 */ runtimeUrl?: string; /** 可选纯 Cookie 头文件路径，仅请求时读取，不回显到诊断报告。 */ cookieFile?: string; /** 可注入网络实现供测试使用；缺省使用平台 fetch。 */ fetch?: typeof fetch }
+/**
+ * 请求实际服务的诊断，POST 先取得 CSRF 并合并 Cookie。
+ * @param cfg 解析 Cookie 文件的应用根。
+ * @param options HTTP(S) 地址、Cookie 文件与可注入 fetch。
+ * @param path 必须位于指定服务同一 origin。
+ * @param request query 省略 undefined 值，body 存在时使用 POST。
+ * @returns 时间、HTTP 状态与数据，HTTP 拒绝为 ok=false；网络、超时、JSON 错误抛出。
+ */
 export async function runtimeDiagnostic(cfg: CageConfig, options: RuntimeOptions, path: string, request: { query?: Record<string, string | undefined>; body?: unknown } = {}) {
   if (!options.runtimeUrl) throw new Error('[CAGE-DIAG-001] 指定 --runtime-url；会话凭据通过 --cookie-file 传入，不放在命令行或 URL');
   let base: URL;

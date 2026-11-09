@@ -3,6 +3,11 @@ import { businessProcess } from '@yss123/cage-kernel';
 import { PurchaseOrder, create, submit, approve, reject, cancel, markReceived, poApproval, returnForChanges, explainPurpose } from '../modules/purchase/index.js';
 import { InventoryLock, acquireLock, releaseLock } from '../modules/inventory/index.js';
 
+/**
+ * 面向人和 agent 的流程阅读规格，引用真实命令、审批和资源对象，供本体图展示及一致性检查。
+ * stages/transitions 说明人工、自动和等待关系，本声明本身不调度命令，也不新增权限或运行时副作用。
+ * 自动动作的真实事务和异步边界分别以 approval、reaction、connector 声明为准。
+ */
 export const purchaseLifecycle = businessProcess('purchase-lifecycle', {
   title: '采购全流程', description: '从填写申请、提交审批到确认收货，查看库存占用与释放。',
   area: { id: 'purchase', title: '采购管理', description: '采购申请、审批、收货与库存协作。' },

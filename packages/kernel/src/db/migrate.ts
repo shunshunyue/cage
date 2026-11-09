@@ -8,11 +8,13 @@ import { SCHEMA_MIGRATIONS_SQL, SYSTEM_MIGRATIONS, safeLayerSql, type SchemaMode
 
 const MIGRATION_LOCK = 727274; // 固定的咨询锁编号
 
+/** applied 只列出本次新提交的迁移；safeLayerRebuilt 表示最后的安全层事务也已成功提交。 */
 export interface MigrateResult {
   applied: string[];
   safeLayerRebuilt: boolean;
 }
 
+/** name 是持久迁移身份而非展示名称；同名 SQL 的摘要一旦落库，后续执行必须保持一致。 */
 export interface MigrationFile {
   name: string;
   sql: string;
@@ -35,6 +37,7 @@ export function snapshotOf(m: MigrationFile): SchemaModel | null {
   return hit ? (JSON.parse(hit[1]) as SchemaModel) : null;
 }
 
+/** 从已排序迁移末尾向前查找最近的结构快照；它是生成基线，不是实际数据库结构扫描。 */
 export function latestSnapshot(files: MigrationFile[]): SchemaModel | null {
   for (let i = files.length - 1; i >= 0; i--) {
     const s = snapshotOf(files[i]);
@@ -43,12 +46,19 @@ export function latestSnapshot(files: MigrationFile[]): SchemaModel | null {
   return null;
 }
 
+/** 把期望结构附到迁移注释中，供下一次 gen 比较；不解析或验证手工 SQL 的实际效果。 */
 export function embedSnapshot(sql: string, model: SchemaModel): string {
   return `${sql.trimEnd()}\n\n/* cage:schema\n${JSON.stringify(model)}\n*/\n`;
 }
 
 const checksum = (s: string) => createHash('sha256').update(s).digest('hex').slice(0, 16);
 
+/**
+ * 用独立迁移连接取得数据库咨询锁，先核对全部已执行迁移摘要，再逐个事务应用缺失迁移。
+ * 系统、扩展和项目迁移按组合顺序执行；后一个失败不会撤销此前已经提交的迁移。
+ * 最后单独重建安全层和审计分区，只有此事务也成功才返回；finally 始终尝试释放锁并关闭连接。
+ * 不创建数据库或账号，不修正历史迁移，不推断真实 schema 是否存在人工漂移。
+ */
 export async function runMigrations(opts: {
   migrateUrl: string;
   registry: Registry;

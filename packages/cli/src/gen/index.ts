@@ -1,3 +1,8 @@
+/**
+ * 声明生成器的写盘协调层，生成契约、阅读资料以及待审查迁移草稿。
+ * 先收集 schema 表达限制，再更新可再生资料、清理带生成器签名的旧契约，最后比较迁移内嵌结构快照。
+ * check 模式只比较需提交的结果，不写文件；不会连接真实库扫描漂移，也不会执行迁移或改写已执行迁移。
+ */
 // cage gen：从声明生成 contracts、路由清单、安全视图与策略 DDL、迁移草稿、状态图、本体图。
 import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
@@ -20,6 +25,12 @@ import { contractsFiles } from './contracts.js';
 import { runtimeOntology } from '@yss123/cage-ontology';
 import { schemaDiagnostics } from './zod-code.js';
 
+/**
+ * 把一个聚合的迁移和资源持有标签转换为 Mermaid 状态图。
+ * @param g 当前本体。
+ * @param agg 聚合名。
+ * @returns 图源码字符串；静态标签不代表实际持有记录。
+ */
 export function stateDiagram(g: Ontology, agg: string): string {
   const lines = ['stateDiagram-v2'];
   const states = g.nodes.filter((n) => n.kind === 'state' && n.id.startsWith(`${agg}.`));
@@ -35,12 +46,27 @@ export function stateDiagram(g: Ontology, agg: string): string {
   return lines.join('\n') + '\n';
 }
 
+/**
+ * 生成阶段输出，written 为已写/清理路径，findings 为差异和限制，migrationDraft 可选。
+ */
 export interface GenResult {
+  /** 本次实际写入或清理的生成路径，用于命令报告。 */
   written: string[];
+  /** 生成不一致、不可完整表达的校验或迁移等诊断。 */
   findings: Finding[];
+  /** 本次计算出的迁移草稿路径，缺省表示没有草稿需要报告。 */
   migrationDraft?: string;
 }
 
+/**
+ * 仅内容有差异时写入文件，check 模式改为记录诊断。
+ * @param path 目标文件路径。
+ * @param content 期望文本。
+ * @param check 是否只比较。
+ * @param written 累积实际修改路径。
+ * @param findings 累积差异诊断。
+ * @param code 差异错误码，默认契约不一致。
+ */
 function writeIf(
   path: string,
   content: string,
@@ -69,6 +95,10 @@ function writeIf(
  * 升级目录布局或删除聚合后，旧契约不能继续留在包里参与编译和导出。
  * 只清理由生成器签名标记的文件；用户自己添加的代码不属于生成器的删除范围。
  * check 仅报告，不写文件，因此 CI 不会悄悄“修正”待审查的工作区。
+ */
+/**
+ * 递归识别旧契约，只清理带本生成器签名且不在期望集合内的文件。
+ * check 模式仅报告；不删除用户手写文件，不递归清空整个契约目录。
  */
 function removeStaleContracts(
   root: string,
@@ -104,6 +134,15 @@ function removeStaleContracts(
   visit(root);
 }
 
+/**
+ * 生成契约、可再生阅读资料并比较迁移内嵌快照以产生新草稿。
+ * @param cfg 输出位置。
+ * @param reg 当前注册表。
+ * @param g 当前本体。
+ * @param sites 源码位置及业务错误码。
+ * @param opts check 只检查需提交产物，不写盘。
+ * @returns 修改清单与诊断；迁移只是草稿，不查询真实库或自动执行。
+ */
 export function generate(
   cfg: CageConfig,
   reg: Registry,
@@ -190,6 +229,11 @@ export function generate(
   return { written, findings, migrationDraft };
 }
 
+/**
+ * 根据注册表列出可公开接口及所需能力说明。
+ * @param reg 当前领域与扩展声明。
+ * @returns 方法、URL 和能力文本；这是清单，不创建 HTTP 路由或替代服务端授权。
+ */
 export function routes(reg: Registry) {
   const out: { method: string; url: string; capability: string }[] = [
     { method: 'POST', url: '/api/sys/uploads', capability: '目标用户命令能力及字段限制' },

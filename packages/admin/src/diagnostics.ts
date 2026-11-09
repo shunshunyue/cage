@@ -1,3 +1,8 @@
+/**
+ * 提供当前进程、授权解释及异步执行时间线的只读诊断。
+ * 接口要求登录和 Sys.ops.read；涉及具体对象时继续检查读取能力与数据范围。
+ * 时间线只展示已存在的执行记录，不把静态关系当作成功证据；错误内容仅保留可检索代码。
+ */
 // 诊断只关联实际记录，不从静态图推断某一次操作已经执行；入口复用运维与安全读权限。
 import { cageError, compileScope, loadScoped, registryFingerprint, type Ctx, type Kernel } from '@yss123/cage-kernel';
 import { workerSnapshot } from '@yss123/cage-kernel/worker';
@@ -9,6 +14,10 @@ const request = z.object({ requestId: z.string().min(1).max(200).optional(), out
 const authorization = z.object({ command: z.string().min(1), input: z.record(z.string(), z.unknown()).default({}), userId: z.uuid().optional() });
 const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
 
+/**
+ * 检查诊断入口所需的登录身份与运维读取能力。
+ * 未登录与已登录但无权分别抛 UNAUTHENTICATED / FORBIDDEN，不执行任何授权变更。
+ */
 function requireOps(ctx: Ctx) {
   if (!ctx.userId) throw cageError('UNAUTHENTICATED');
   if (!ctx.capabilities.has('Sys.ops.read')) throw cageError('FORBIDDEN');
@@ -21,12 +30,22 @@ function failure(value: unknown): { code: string; detail: string } | null {
   return { code: code ?? 'INTERNAL', detail: '原始错误文本已隐藏；请按错误码和关联记录排查' };
 }
 
+/**
+ * 选取 worker 运行元数据用于诊断，缺记录返回 null。
+ * lastError 经 failure 隐去原始文本，避免外部响应或业务载荷进入诊断页面。
+ */
 function workerDetails(raw: any) {
   if (!raw) return null;
   return { id: raw.id, pid: raw.pid, status: raw.status, listenerHealthy: raw.listenerHealthy, schedulerHealthy: raw.schedulerHealthy,
     heartbeatAt: raw.heartbeatAt, inFlight: raw.inFlight, lastError: failure(raw.lastError) };
 }
 
+/**
+ * 将三个诊断接口注册到已有 Fastify 实例，复用认证层写入的 cageCtx。
+ * 总览比较 API/worker 指纹与心跳；授权解释复用内核判断但不执行 handler；时间线按对象范围筛选后限量。
+ * 解释其他用户身份还要求操作者能读取该用户。审计明细额外要求 Sys.audit.read。
+ * 返回记录受数量上限限制，truncated 表示尚有未返回证据；本函数不迁移、不重启进程或恢复失败任务。
+ */
 export function diagnosticRoutes(app: FastifyInstance, k: Kernel) {
   const loadedAt = new Date().toISOString();
   app.get('/api/sys/diagnostics', async (req) => {

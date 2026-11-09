@@ -1,8 +1,18 @@
+/**
+ * 管理助理性格、租户默认项与未保存草稿试聊。
+ * 草稿按 key 保留于内存，保存使用版本校验；试聊为独立 SSE 请求，切换编辑对象、导航或会话过期时取消。
+ * 性格只影响表达，业务授权与工具执行仍由运行时处理，预览不执行业务操作。
+ */
 import type { AiPersonality, AiPersonalityAdmin, AiPersonalityFields, AiPersonalitySettings, AiPersonalityPreviewEvent } from '@yss123/cage-ai-protocol';
 import { api, postEvents, run } from '../../shared/api.js';
 import { badge, field, h } from '../../shared/dom.js';
 
 /** 编辑器只提交框架协议；配置与试聊的权限、模型和持久化全部由 AI 运行时处理。 */
+/**
+ * 读取性格目录并装配默认选择、卡片、编辑器和试聊区。
+ * 保存期间冻结表单，成功才清草稿并替换服务端版本；失败保留输入，finally 恢复控件。
+ * 试聊逐段追加文本并在 done 时校准最终回复；断流和取消保留已收到内容并给出明确状态。
+ */
 export async function renderPersonalities(main: HTMLElement) {
   let catalog = await api<AiPersonalityAdmin>('GET', '/api/ai/admin/personalities');
   let selected = catalog.settings.defaultKey, saving = false, activePreview: AbortController | null = null;
@@ -11,6 +21,9 @@ export async function renderPersonalities(main: HTMLElement) {
   const editor = h('div', { class: 'persona-editor-area' });
   const defaults = h('div', { class: 'persona-default' });
   const current = () => drafts.get(selected) ?? catalog.items.find(p => p.key === selected)!;
+  /**
+   * 重建默认性格选择，只列已启用项；提交携带 settings.version，成功后更新目录和默认标记。
+   */
   function drawDefault() {
     const select = h('select', { 'aria-label': '默认性格', value: catalog.settings.defaultKey },
       catalog.items.filter(p => p.enabled).map(p => h('option', { value: p.key }, `${p.avatar} ${p.label}`)));
@@ -23,6 +36,9 @@ export async function renderPersonalities(main: HTMLElement) {
     defaults.replaceChildren(h('div', {}, h('strong', {}, '默认的相处方式'), h('p', {}, '跟随默认的会话，从下一条消息开始使用此性格。')),
       h('div', { class: 'persona-default-actions' }, select, save));
   }
+  /**
+   * 合并已保存目录与新建草稿生成卡片；选择只改变本页编辑对象，保存期间禁止切换。
+   */
   function drawCards() {
     const all = new Map(catalog.items.map(p => [p.key, p]));
     for (const [key, draft] of drafts) if (!all.has(key)) all.set(key, draft);
@@ -32,6 +48,10 @@ export async function renderPersonalities(main: HTMLElement) {
       h('strong', {}, profile.label), h('small', {}, profile.description)),
       h('span', { class: 'persona-card-tags' }, profile.key === catalog.settings.defaultKey ? badge('默认', 'green') : !profile.enabled ? badge('已停用') : badge(profile.builtin ? '预设' : '自定义')))));
   }
+  /**
+   * 取消上一份预览，再依据当前草稿/目录构造编辑器。
+   * 表单 input 保存内存草稿；试聊使用当前未保存字段，保存与设默认是独立请求。
+   */
   function drawEditor() {
     activePreview?.abort(); activePreview = null;
     let profile = current();

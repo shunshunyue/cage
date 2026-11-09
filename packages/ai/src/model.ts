@@ -1,13 +1,25 @@
+/**
+ * 将 OpenAI 兼容 Chat Completions SSE 转换为框架统一的模型结果。
+ * 由 ai 声明或模型管理器创建 provider，实际网络请求复用连接器的主机、密钥、超时与限速边界；这里只解析模型输出，不执行工具，也不把生成文本当作业务成功。
+ */
 import { connector, stage, streamJson, type ConnectorDef } from '@yss123/cage-connectors';
 import { z } from 'zod';
 import type { ModelProvider, ModelRequest, ModelResult } from './types.js';
 import { ModelResponseError, parseModelJson, providerErrorCode } from './model-failure.js';
 
+/**
+ * 限定统一结果的文本、工具调用、用量与远端状态形状。
+ * 单轮最多 40 个调用、文本最多 100000 字符；schema 只验证结构，调用名和参数的业务授权由工具目录继续校验。
+ */
 const resultSchema = z.object({ text: z.string().max(100_000), calls: z.array(z.object({
   id: z.string().min(1).max(160), name: z.string().min(1).max(160), arguments: z.record(z.string(), z.unknown()),
 }).strict()).max(40), usage: z.object({ inputTokens: z.number().int().nonnegative(), outputTokens: z.number().int().nonnegative() }).optional(), finishReason: z.string().optional(),
   responseId: z.string().min(1).max(512).optional(), outputItems: z.array(z.record(z.string(), z.unknown())).max(100).optional() });
 
+/**
+ * 验证真实或 fake provider 的统一输出，并拒绝重复工具调用 ID。
+ * 返回经过 schema 解析的数据；结构错误统一抛 ModelResponseError，避免原始模型正文随解析诊断泄漏。该检查不执行工具，也不验证用量是否为厂商真实计费。
+ */
 export function validateModelResult(value: unknown): ModelResult {
   const parsed = resultSchema.safeParse(value);
   if (!parsed.success) throw new ModelResponseError('invalid_output');
@@ -16,21 +28,39 @@ export function validateModelResult(value: unknown): ModelResult {
   return result;
 }
 
+/**
+ * Chat 协议 provider 的声明配置。
+ * 主机按连接器环境选择，凭据只在服务端发请求时解析；默认上下文窗口供请求预算使用，不代表网关实际限制已被探测。
+ */
 export interface ChatModelOptions {
-  model: string; hosts: ConnectorDef<{}>['hosts']; secret?: string; path?: string; timeoutMs?: number;
+  /**
+   * 网关模型标识，原样写入请求；与 Cage 声明使用的模型别名不同。
+   */
+  model: string; /** 按 fake/test/prod 环境声明的允许主机，实际出站由连接器检查。 */ hosts: ConnectorDef<{}>['hosts']; /** 可选的服务端密钥名称；配置中不保存密钥明文。 */ secret?: string; /** 模型接口绝对路径；省略时使用 Chat Completions 标准路径。 */ path?: string; /** 连接器请求超时，单位毫秒；省略时为 90000。 */ timeoutMs?: number;
   /** 模型可独立连接测试服务，不要求 ERP 等其他连接器同时切换环境。省略时沿用 CAGE_STAGE。 */
   environment?: 'fake' | 'test' | 'prod';
   /** 默认 HTTPS；显式声明 HTTP 可连接本地或内网模型网关。 */
   protocol?: 'http:' | 'https:';
   /** 服务端凭据解析器；不进入 spec、注册表、请求正文或日志。 */
   credential?: () => Promise<string>;
+  /**
+   * 可选每秒请求限额，具体调度由连接器承担。
+   */
   rateLimit?: { perSecond: number };
+  /**
+   * 声明的模型总上下文窗口，单位 Token；省略时为 32768，预算估算并非厂商 tokenizer。
+   */
   contextWindowTokens?: number;
   /** 本地/CI 不生成看似可信的随机裁决，必须显式提供 fake。 */
   fake?: (request: ModelRequest) => Promise<ModelResult> | ModelResult;
 }
 
 /** OpenAI-compatible chat/completions 协议适配；不依赖特定厂商或 Agent 框架。 */
+/**
+ * 构造延迟执行的 Chat Completions provider，默认路径为 /v1/chat/completions、超时 90 秒。
+ * 每次 generate 在 fake 环境要求显式回调；真实请求只发送模型协议消息与工具 schema，按 index 拼接工具参数碎片并逐块等待 onText。
+ * 流结束必须同时收到 [DONE] 和 stop/tool_calls 终止原因；截断、无效 JSON 或不完整输出拒绝进入工具执行。返回的 provider 不自行重试请求。
+ */
 export function chatModel(name: string, options: ChatModelOptions): ModelProvider {
   const transport = connector(name, { hosts: options.hosts, secret: options.secret, timeoutMs: options.timeoutMs ?? 90_000,
     rateLimit: options.rateLimit, operations: {} });

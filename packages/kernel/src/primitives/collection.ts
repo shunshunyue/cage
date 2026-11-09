@@ -1,3 +1,7 @@
+/**
+ * 把事件中的有界集合展开成按稳定键串行执行的命令输入，并保留失败定位信息。
+ * 由 same/outbox 反应消费者复用，集合本身不写数据库；排序用于稳定锁顺序和重试定位，事务、权限及审计仍由每项目标命令保证。
+ */
 // 有界集合只负责展开和排序；写入、授权、审计和回滚继续使用同一命令流水线。
 import type { z } from 'zod';
 import { CageError, cageError, declError, toCageError } from '../errors.js';
@@ -5,30 +9,58 @@ import type { AnyCommand } from './command.js';
 import type { AnyEvent, PayloadOf } from './event.js';
 import { reaction, type AnyReaction, type Reaction, type TxMode } from './flow.js';
 
+/** 一次实际命令调用及其来源坐标；过滤项后仍保留排序前的位置，便于定位集合失败。 */
 export interface ReactionEntry<Input = unknown> {
+  /**
+   * 该项实际传给目标命令的输入，已由纯映射产生，仍需命令 input schema 校验。
+   */
   readonly input: Input;
   /** 实际执行命令输入的 0 基索引；返回 null 的项不占位。 */
   readonly itemIndex: number;
+  /**
+   * 集合按 orderBy 升序后的位置，零基；被 map 跳过的项仍占该排序位置，普通反应省略。
+   */
   readonly sortedIndex?: number;
+  /**
+   * 选择器原数组中的零基位置，用于对照事件载荷；普通反应省略。
+   */
   readonly originalIndex?: number;
+  /**
+   * 该集合项已验证的唯一排序键，非空字符串或有限数值；用于稳定诊断，不携带整项载荷。
+   */
   readonly itemKey?: string | number;
 }
 
 // 保留公开 map 的输入数组协议，同时给运行时留下 null 跳过之前的定位信息。
 const collections = new WeakMap<object, (payload: any) => ReactionEntry[]>();
 
+/**
+ * 把有界集合声明转换为普通反应协议，执行时先检查数量和唯一排序键，再稳定串行展开。
+ * map 收到排序后的索引，返回 null 的项被跳过；键必须同类型且唯一，避免重试时顺序漂移。
+ * collection 保存选择器/映射源码供静态诊断，真正写入仍逐项调用目标命令并遵守 tx 模式。
+ */
 export function reactionEach<E extends AnyEvent, C extends AnyCommand, Item>(
   event: E,
   def: {
+    /** 每个未跳过集合项最终调用的命令，写入、权限、状态和审计均复用其流水线。 */
     command: C;
+    /** 从事件载荷同步选择只读集合的纯函数，必须返回数组；不得外呼或修改业务状态。 */
     items: (event: PayloadOf<E>) => readonly Item[];
+    /** 单次事件允许的集合总项数上限，正安全整数；在跳过 null 前检查，超限直接拒绝而非截断。 */
     maxItems: number;
+    /** 每项中用于升序排序的字段名；值须同类型、唯一，且为非空字符串或有限数值。 */
     orderBy: keyof Item & string;
+    /** 按排序后的项、完整事件和零基 sortedIndex 生成命令输入；返回 null 跳过，该项不占实际 itemIndex。 */
     map: (item: Item, event: PayloadOf<E>, index: number) => z.input<C['input']> | null;
+    /** 可选同一事件/事务模式的步骤序号，非负安全整数；使用后整个分组须完整且唯一声明。 */
     order?: number;
+    /** 默认 outbox 异步消费者事务；same 与触发命令共同提交，任一集合项失败均按该事务边界回滚。 */
     tx?: TxMode;
+    /** 可选取得资源标签，仅用于静态资源配对，真实占用必须由目标命令完成。 */
     acquires?: string;
+    /** 可选释放资源标签，仅用于静态资源配对，不自动释放锁或库存。 */
     releases?: string;
+    /** 可选反应标识，用于图谱和集合错误定位；省略时诊断可使用事件名作为路径说明。 */
     name?: string;
   },
 ): Reaction<E, C> {
@@ -75,6 +107,10 @@ export function reactionInputs(reaction: AnyReaction, payload: unknown): unknown
   return reactionEntries(reaction, payload).map(({ input }) => input);
 }
 
+/**
+ * 集合声明走保存于 WeakMap 的展开器；普通 map 的单个输入或数组被归一化为调用序列。
+ * null/undefined 表示本事件无需处理；这里只计算输入，不授权、不执行命令或吞并异常。
+ */
 export function reactionEntries(reaction: AnyReaction, payload: unknown): ReactionEntry[] {
   const expand = collections.get(reaction);
   if (expand) return expand(payload);

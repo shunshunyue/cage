@@ -1,3 +1,8 @@
+/**
+ * 原生 AI 的真实持久化与授权回归，覆盖助理上下文、工具确认、会话恢复、三态审批和 HTTP/worker 装配。
+ * 模型由每例可控函数驱动，数据库与领域命令真实执行；模型 fake 不代表真实模型推理质量已验收。
+ * 用户、另一用户、人工审查者和自动角色分别授权，避免测试无意依赖全能系统身份。结束时关闭运行时及隔离库。
+ */
 import { randomUUID } from 'node:crypto';
 import { beforeAll, afterAll, beforeEach, describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
@@ -10,6 +15,9 @@ import { startWorker } from '@yss123/cage-http/worker';
 import { createTestEnv, type TestEnv, type TestUser } from '../src/index.js';
 
 // 无采购语义的框架夹具：验证授权、恢复及步骤结果，模型由显式脚本控制。
+/**
+ * 与采购无关的最小审核对象，计数用于检测重复写，phone/secret 分别检验掩码和隐藏字段。
+ */
 const Document = aggregate('Document', { fields: { createdBy: ref('User'), deptId: ref('Dept').optional(), reason: text(), count: int(), phone: text().sensitive('phone'), secret: text().hidden().optional() },
   states: states('draft', 'reviewing', 'accepted', 'rejected', 'withdrawn', { terminal: ['accepted', 'rejected', 'withdrawn'] }), scope: scope.self('createdBy') });
 const Submitted = event('DocumentSubmitted', { id: id() });
@@ -22,8 +30,14 @@ const accept = command(Document, { name: 'accept', from: 'reviewing', to: 'accep
 const reject = command(Document, { name: 'reject', from: 'reviewing', to: 'rejected', invokedBy: 'process', handler: o => o });
 const revise = command(Document, { name: 'revise', from: 'reviewing', to: 'draft', invokedBy: 'process', handler: o => o });
 const withdraw = command(Document, { name: 'withdraw', from: 'reviewing', to: 'withdrawn', emits: [Withdrawn], handler: o => o });
+/**
+ * 将同一安全记录复制为 205 行的查询夹具，检验工具结果上限和截断说明，不模拟真实业务统计。
+ */
 const documentCopies = query('documentCopies', { reads: [Document], input: z.object({ id: z.uuid() }),
   sql: 'select d.id from safe.document d cross join generate_series(1, 205) n where d.id = :id' });
+/**
+ * 审批声明指定自动角色与通过/拒绝/退回命令，验证 AI 建议必须通过领域命令和实际授权落地。
+ */
 const review = approval(Document, { process: 'document-review', start: Submitted, cancelOn: [Withdrawn], routable: [], onApproved: accept, onRejected: reject, onReturned: revise, automatedBy: 'auto_reviewer' });
 let model: (request: ModelRequest) => Promise<ModelResult> | ModelResult = () => ({ text: '完成', calls: [] });
 const intelligence = ai({ models: { main: { spec: { kind: 'scripted-test' }, generate: request => Promise.resolve(model(request)) } }, assistant: { model: 'main', limits: { maxSteps: 6 } } });
@@ -41,13 +55,28 @@ beforeAll(async () => {
 });
 afterAll(async () => { await runtime?.close(); await env?.close(); });
 beforeEach(() => { model = () => ({ text: '完成', calls: [] }); vi.restoreAllMocks(); });
+/**
+ * 以指定用户的真实上下文创建待处理记录，默认使用主测试用户，不能把系统种子插入误当用户创建。
+ */
 const doc = async (who = user) => env.kernel.execute('Document.create', { reason: '审核材料', count: 0, phone: '13812345678' }, await who.ctx());
+/**
+ * 新建归属当前 ctx 的会话并提交一轮；只返回已接受运行，实际执行需显式 tick。
+ */
 const start = async (ctx: Ctx, message: string, pageContext?: any) => {
   const session = await runtime.createSession(ctx);
   return runtime.submit(ctx, session.id, { message, pageContext }, randomUUID());
 };
+/**
+ * 构造单次模型工具调用回包，callId 默认随机，工具名与输入由用例决定。
+ */
 const toolCall = (name: string, args: Record<string, unknown>, callId = randomUUID()): ModelResult => ({ text: '', calls: [{ id: callId, name, arguments: args }] });
+/**
+ * 构造 pass/return/manual 的审核建议；return 附补充建议，最终状态仍由审批运行时与领域命令验证。
+ */
 const decision = (kind: 'pass' | 'return' | 'manual') => toolCall('review_decide', { decision: kind, reason: '依据当前材料', evidence: [{ source: 'subject', detail: '当前申请说明' }], suggestions: kind === 'return' ? ['补充说明'] : [] });
+/**
+ * 从记录 ID 和已观察版本构造页面快照；pageInstanceId 区分标签页，快照内容不是可信授权事实。
+ */
 const page = (record: any, pageInstanceId = 'tab-a') => ({ pageInstanceId, revision: 1, capturedAt: new Date().toISOString(), page: { id: 'detail', title: '对象详情', kind: 'detail', route: `/documents/${record.id}` }, subject: { aggregate: 'Document', id: record.id, observedVersion: record.version } });
 
 describe('本体助理、页面上下文与持久动作', () => {
@@ -212,13 +241,28 @@ describe('本体助理、页面上下文与持久动作', () => {
     const budget = await start(ctx, '预算'); await runtime.tick(); expect((await runtime.run(ctx, budget.id)).error).toBe('AI_BUDGET_EXCEEDED');
   });
   it('模型不响应取消时仍按截止时间退出，迟到结果不能覆盖终态', async () => {
-    const ctx = await user.ctx(); let finish!: (result: ModelResult) => void;
-    model = () => new Promise(resolve => { finish = resolve; });
+    const ctx = await user.ctx(); let finish!: (result: ModelResult) => void, started!: () => void;
+    const entered = new Promise<void>(resolve => { started = resolve; });
+    model = () => new Promise(resolve => { finish = resolve; started(); });
     const run = await start(ctx, '故障模型');
-    await env.query("update sys.ai_run set limits = jsonb_set(limits, '{timeoutMs}', '100') where id = $1", [run.id]);
-    await runtime.tick(); expect((await runtime.run(ctx, run.id)).status).toBe('expired');
-    finish({ text: '不应覆盖', calls: [] }); await Promise.resolve();
-    expect((await runtime.run(ctx, run.id)).answer).toBeNull();
+    // 只控制 execute 创建的本轮截止信号，数据库、模型等待和终态持久化仍走真实流程。
+    // 原来的 100ms 墙钟在并发数据库回归时可能早于模型进入，根本没有触发“迟到模型”场景。
+    const deadline = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValueOnce(deadline.signal);
+    const task = runtime.tick();
+    try {
+      await entered;
+      deadline.abort(new DOMException('测试截止时间已到', 'TimeoutError'));
+      await task;
+      expect((await runtime.run(ctx, run.id)).status).toBe('expired');
+      finish({ text: '不应覆盖', calls: [] }); await Promise.resolve();
+      expect((await runtime.run(ctx, run.id)).answer).toBeNull();
+    } finally {
+      // 断言失败也终止本轮并恢复全局方法，避免影响后续真实时间的取消和租约测试。
+      deadline.abort();
+      await task;
+      timeout.mockRestore();
+    }
   });
   it('租约被接管后旧执行者不能保存结果，新执行者可以恢复', async () => {
     const ctx = await user.ctx(); let release!: (result: ModelResult) => void, started!: () => void;

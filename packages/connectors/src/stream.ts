@@ -1,7 +1,16 @@
+/**
+ * 模型等 SSE 请求的传输适配：复用连接器主机、密钥、限流和超时边界，只传递 data 帧文本。
+ * JSON 业务解析与模型语义由上层负责，本层不记录提示词、响应正文或多租户凭据。
+ */
 import { ConnectorError, secrets, stage, take } from './runtime.js';
 import type { Connector } from './primitives.js';
 
 /** 模型等流式协议共用连接器的地址、密钥、限流和取消边界。响应正文不写通用日志。 */
+/**
+ * 只向所选白名单主机 POST，禁止重定向和 fake 外呼；凭据可按本次调用独立读取。
+ * 逐块 UTF-8 解码并按 SSE 空行合并多个 data 行，await onData 提供消费背压；总响应上限 4 MiB。
+ * 取消、超限或回调失败都向上传播，finally 取消 reader 并释放锁；HTTP 错误只保留状态和稳定供应商码。
+ */
 export async function streamJson(connector: Connector, path: string, body: unknown, signal: AbortSignal,
   onData: (data: string) => Promise<void>, options: { environment?: string; protocol?: 'http:' | 'https:'; credential?: () => Promise<string> } = {}): Promise<void> {
   const environment = options.environment ?? stage(), protocol = options.protocol ?? 'https:';

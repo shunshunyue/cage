@@ -34,8 +34,8 @@ secret: 'ERP_API_TOKEN'，运行环境提供该变量
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/connectors/src/runtime.ts:24`
-- `packages/http/src/routes.ts:76`
+- `packages/connectors/src/runtime.ts:25`
+- `packages/http/src/routes.ts:88`
 
 实现片段（位置随框架版本更新）：
 

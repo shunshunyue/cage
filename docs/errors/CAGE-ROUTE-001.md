@@ -34,14 +34,15 @@ app.post('/api/order/submit', handler)
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/lint/src/rules/no-manual-routes.ts:11`
+- `packages/lint/src/rules/no-manual-routes.ts:3`
+- `packages/lint/src/rules/no-manual-routes.ts:23`
 
 实现片段（位置随框架版本更新）：
 
 ```ts
-    docs: { description: '禁止在业务项目里手写 HTTP 路由' },
-    messages: { route: '[CAGE-ROUTE-001] 不要手写路由 {{call}}：在 domain 里声明命令或查询，路由由框架生成' },
-    schema: [],
-  },
-  create(context) {
+ * 检查业务代码是否绕过声明直接注册 HTTP 路由。
+ * 通过常见接收器名、HTTP 方法和路径形状识别调用，命中返回 CAGE-ROUTE-001。
+ * 这是有界语法检查，不解析任意变量别名或运行时动态路由；框架自己的 HTTP 实现由其维护边界管理。
+ */
+// 业务项目里禁止手写 HTTP 路由：没有声明就没有路由，所有写入都经过内核
 ```

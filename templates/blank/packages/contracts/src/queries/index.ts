@@ -2,7 +2,7 @@
 /* eslint-disable */
 
 import { z } from 'zod';
-import { client, useCageQuery } from '@yss123/cage-client';
+import { client, useCageQuery, type RequestOptions } from '@yss123/cage-client';
 
 /** 查询输入 */
 export const QueryInputs = {

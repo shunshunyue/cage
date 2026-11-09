@@ -10,6 +10,10 @@ import * as domain from '../../index.js';
 let env: TestEnv;
 let buyer: TestUser;
 let manager: TestUser;
+/**
+ * 夹具通过真实命令建立部门负责人和库存，不绕过领域规则直接造业务行。
+ * 申请人和经理能力分开，经理额度限定为 50000，确保后续断言真的经过职责分离与额度分支。
+ */
 beforeAll(async () => {
   env = await createTestEnv({
     domain,
@@ -27,6 +31,7 @@ beforeAll(async () => {
 });
 afterAll(() => env?.close());
 
+/** 创建并提交一张 1200 元、两件 A-01 的采购单；只推进领域状态，不在此助手中消费 outbox。 */
 async function submitted() {
   const ctx = await buyer.ctx();
   const order = await env.kernel.execute(
@@ -37,6 +42,7 @@ async function submitted() {
   return env.kernel.execute('PurchaseOrder.submit', { id: order.id }, ctx);
 }
 
+/** 同时验证同步提交边界、异步释放与审计条数，避免把命令成功返回当作后台已完成。 */
 it('审批成功同事务建锁；取消后 worker 释放锁，且每步都有审计', async () => {
   const order = await submitted();
   const process = env.kernel.processCtx({
@@ -62,6 +68,7 @@ it('审批成功同事务建锁；取消后 worker 释放锁，且每步都有�
   ).toHaveLength(1);
 });
 
+/** process 只是调用来源，onBehalfOf 仍保留实际操作者；流程身份不得消除创建人分离约束。 */
 it('提单人不能借流程身份审批自己的采购单', async () => {
   const order = await submitted();
   const process = env.kernel.processCtx({
@@ -75,6 +82,7 @@ it('提单人不能借流程身份审批自己的采购单', async () => {
   );
 });
 
+/** 通过控制事件消费顺序模拟 ERP 响应迟到，覆盖取消和收货两条终态路径及后续锁释放。 */
 it.each(['cancelled', 'received'] as const)(
   '采购单进入 %s 后，延迟的 ERP 回写保留终态且不会阻塞解锁',
   async (status) => {
@@ -118,6 +126,7 @@ it.each(['cancelled', 'received'] as const)(
   },
 );
 
+/** 低额度反例检查硬约束阻止批准，且同事务反应没有留下半成功的占用记录。 */
 it('审批额度不够时保留待审批状态，不创建库存锁', async () => {
   const order = await submitted();
   const lowLimit = await env.user({

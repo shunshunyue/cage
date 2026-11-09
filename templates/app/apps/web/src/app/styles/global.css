@@ -1,3 +1,7 @@
+/**
+ * 采购应用的全局视觉与布局基础，随浏览器入口加载；依次定义主题、工作台、业务表格、表单及登录页。
+ * 模块专用样式在模块附近维护。状态类只映射已有 UI 状态，不承担权限、审批或数据计算。
+ */
 /* 暖白纸面配墨绿导航；用边线、字重和留白建立信息层次，避免装饰压过业务数据。 */
 :root {
   font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
@@ -83,6 +87,9 @@ h3 {
   font-family: Consolas, 'Courier New', monospace;
   font-size: 12px;
 }
+/**
+ * 固定侧栏与主内容区的桌面组合；窄屏规则在文件后部覆盖布局，保留导航可达性。
+ */
 .workspace {
   display: flex;
   min-height: 100vh;
@@ -301,6 +308,9 @@ header {
 .toolbar > button {
   font-size: 11px;
 }
+/**
+ * 宽表格在容器中横向滚动，避免列内容把页面宽度撑出视口。
+ */
 .table-wrap {
   overflow: auto;
 }
@@ -470,6 +480,9 @@ input {
 input:focus {
   outline: 2px solid #b2cb8b;
 }
+/**
+ * 创建弹窗的遮罩与居中层；具体采购弹窗高度及内部滚动由模块样式补充。
+ */
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -560,6 +573,9 @@ input:focus {
   color: var(--muted);
 }
 /* 窄屏将导航转成横向工具栏，表格保留横向滚动，操作列不会挤成不可点击的小按钮。 */
+/**
+ * 在九百像素及以下调整导航与表单布局，减少桌面侧栏对内容宽度的挤占。
+ */
 @media (max-width: 900px) {
   aside {
     position: static;
@@ -656,6 +672,9 @@ input:focus {
     padding: 10px;
   }
 }
+/**
+ * 尊重系统减少动画偏好，避免将过渡效果作为理解操作反馈的唯一依据。
+ */
 @media (prefers-reduced-motion: reduce) {
   * {
     transition: none !important;

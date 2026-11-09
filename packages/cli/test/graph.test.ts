@@ -1,3 +1,8 @@
+/**
+ * 验证本体图的身份、中文解释、结构卡片布局及本地浏览服务。
+ * 纯函数用例检查派生边与原始图隔离；服务用例使用临时声明和真实 HTTP 覆盖刷新、源码白名单及跨站拒绝。
+ * 服务与临时目录在结束时关闭清理，不访问业务数据库。
+ */
 import { afterAll, expect, it } from 'vitest';
 import { mkdtempSync, writeFileSync, rmSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -124,6 +129,10 @@ const labels = {
   'aggregate:Dept': '部门',
   'field:Order.amount': '采购金额',
 };
+/**
+ * 根据完整端点 key 选取夹具中唯一关系，再调用公共解释器；中文覆盖只影响说明文案。
+ * 夹具确保关系存在，缺失时应让测试失败，不在这里补造边。
+ */
 const explanation = (from: string, to: string) =>
   explainEdge(
     relationModel.edges.find((e) => e.from === from && e.to === to)!,
@@ -291,6 +300,8 @@ it('Web 服务从最新声明刷新，保留可定位的图规则问题，并拒
       'flowchart',
       'flowchart-interaction',
       'approval-flow',
+      'approval-parallel',
+      'approval-tree',
       'graph-approvals',
     ])
       expect((await fetch(`${url}/${module}.js`)).status).toBe(200);

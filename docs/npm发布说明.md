@@ -1,6 +1,16 @@
 # Cage 的 npm 发包步骤
 
-更新日期：2026-11-05。本文针对本仓库的公开框架包，使用 PowerShell、Node.js 24 和 pnpm 10。当前已发布版本为 `0.2.0`（latest），验收见[发布记录](release-0.2.0.md)；下面首版操作保留供历史参考，路径和版本按当前目标替换。新增原生 AI 相关包目前为工作区实现，下次发布须统一升级版本，不能覆盖已发布的 `0.2.0`。
+更新日期：2026-11-07。本文针对本仓库的公开框架包，使用 PowerShell、Node.js 24 和 pnpm 10。当前已发布版本为 `0.3.0`（latest），共 14 个公开包，验收见[本次发布记录](release-0.3.0.md)。下面首版操作保留供历史参考，路径和版本按当前目标替换；已发布版本不能覆盖。
+
+## 当前发布方式
+
+先统一版本，执行 `pnpm release:prepare` 与 `pnpm release:smoke`，再核对本轮框架、范例和预算检查结果。每个公开包必须有自己的 README，清楚说明职责、安装、真实 API 用法和运行边界；`release:pack` 会检查 README 确实进入 tarball。
+
+实际上传使用 `.cage/releases/<版本>/manifest.json` 中依赖顺序排列的已检查 tarball：逐包执行 `npm publish <包文件.tgz> --access public --tag latest --registry=https://registry.npmjs.org/`。这与仓库内 CI 发布路径一致，`workspace:*` 已在 pack 时转换，不能改为直接发布源码目录。上传前后均核对 manifest 的 SHA-512，逐包确认注册表版本与 latest；失败时先查回执和注册表，不覆盖或盲目重发已存在版本。
+
+发布后在仓库外分别从公开 npm 创建 blank、purchase，完成安装、构建、声明与生成一致性检查；这里不使用 `.tgz` 覆盖或源码链接。数据库回归可使用 testkit 的独立内嵌 PostgreSQL；环境变量覆盖范例旧测试地址，不能连接业务数据库代替隔离验收。测试须同时检查实际报告，不只看外层进程退出码。
+
+源码提交、GitHub 推送和标签按用户授权另行执行。保存本轮 tarball、manifest、测试报告和注册表核对记录，使发布内容可追溯。
 
 ## 1. 已确定的发布信息
 
@@ -153,7 +163,7 @@ pnpm --filter "./packages/*" -r publish --dry-run --access public --registry=htt
 pnpm --filter "./packages/*" -r publish --access public --registry=https://registry.npmjs.org/ --report-summary
 ```
 
-这是对十个框架包的批量公开发布，不会发布 private 工作区。终端需要双重认证时按 npm 提示完成；浏览器未确认时不要把命令退出或等待状态当作发布成功。
+当前共有 14 个公开包，批量发布不会发布 private 工作区。终端需要双重认证时按 npm 提示完成；浏览器未确认时不要把命令退出或等待状态当作发布成功。
 
 首版直接发布可能为每个包分别打开一次认证。建议账号持有人在自己的可见终端执行，出现 `Press ENTER to open in the browser` 就按回车，完成当前页面认证后返回终端等待下一步。认证链接属于当次请求，旧链接出现 404 时先看终端是否已经进入下一个包，不要反复打开旧链接。
 
@@ -209,7 +219,7 @@ pnpm release:prepare
 pnpm release:smoke
 ```
 
-`release:version` 同步十个包的版本，不自动提交或发布。CLI、upgrade、AGENTS 托管区和模板都从包版本读取当前版本；修改版本后仍需运行 prepare 生成对应分发资源。
+`release:version` 自动扫描并同步全部公开包的版本（当前 14 个），不自动提交或发布。CLI、upgrade、AGENTS 托管区和模板都从包版本读取当前版本；修改版本后仍需运行 prepare 生成对应分发资源。
 
 更新 `CHANGELOG.md`、做本次改动所需验证、提交并推送后，再发布。同一个包的同一个版本只能发布一次。
 

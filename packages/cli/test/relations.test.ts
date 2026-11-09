@@ -1,3 +1,8 @@
+/**
+ * 验证关联原语、关系本体和生成 SDK 的一致性。
+ * 覆盖反向外键、自动中间表冲突、四种基数及影响传播，并用真实 TypeScript 程序检查生成契约与 hooks。
+ * 生成产物写入测试临时目录；本套件不迁移业务数据库。
+ */
 // 关系声明、生成契约和图谱的定向回归；数据库行为由 testkit 的真实 PG 用例覆盖。
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

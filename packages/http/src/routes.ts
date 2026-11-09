@@ -1,4 +1,4 @@
-// 路由生成：启动时遍历注册表，为每个命令、聚合、查询、入站回调挂路由。路由本身不做任何判断，全部交给内核。
+// 路由生成：启动时遍历注册表，为命令、聚合、查询、入站回调挂路由；这里只做协议适配，业务授权与状态判断交给内核。
 // 业务项目里禁止调用 app.get / app.post（lint 拦截），所以没有声明就没有路由。
 import { cageError, isRelation, kebab, systemCtx, type AnyAggregate, type Fields, type Kernel, type RegisteredCommand } from '@yss123/cage-kernel';
 import type { FastifyInstance } from 'fastify';
@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { registerTransfers, transferKey, transferRoutes } from './transfers.js';
 import { fileRoutes } from './files.js';
 
+/** HTTP 与 OpenAPI 共用的路由描述；capability 是文档元数据，不能替代执行时授权。 */
 export interface RouteInfo {
   method: 'GET' | 'POST';
   url: string;
@@ -20,12 +21,17 @@ export interface RouteInfo {
   input?: z.ZodType;
 }
 
+/** 创建命令尚无对象 ID，其余命令将 ID 放入路径；命名转换与生成契约保持一致。 */
 export function commandUrl(c: RegisteredCommand): string {
   const base = `/api/${kebab(c.cmd.agg.name)}`;
   return c.cmd.from === 'new' ? `${base}/${kebab(c.name)}` : `${base}/:id/${kebab(c.name)}`;
 }
 
-/** 注册表 → 路由清单（cage gen 也用它生成路由清单和前端 SDK） */
+/**
+ * 注册表转换为路由清单，供 HTTP 文档及生成工具使用；本函数本身不注册 Fastify handler。
+ * 仅 user 命令有浏览器入口，流程/任务/外部命令必须通过各自受控调用链执行。
+ * 关联读取列出源、目标双方能力；查询列出 reads 依赖，使消费者看到完整读权限边界。
+ */
 export function routeTable(k: Kernel): RouteInfo[] {
   const out: RouteInfo[] = [...transferRoutes, ...fileRoutes];
   for (const c of k.registry.commands) {
@@ -50,6 +56,12 @@ export function routeTable(k: Kernel): RouteInfo[] {
   return out;
 }
 
+/**
+ * 将请求上下文与输入交给内核，并返回相同注册表派生的文档清单。
+ * 对象命令使用路径 ID 覆盖请求体 ID，防止 URL 与实际写目标不一致；用户命令幂等键最多取 200 字符。
+ * 入站回调先使用原始请求体验签，再验证载荷并映射命令；external 身份仅持有该目标命令能力。
+ * 文件路由在 server 中另行注册，通用导入导出在这里注册；二者仍出现在返回的完整清单中。
+ */
 export function registerRoutes(app: FastifyInstance, k: Kernel): RouteInfo[] {
   const table = routeTable(k);
   registerTransfers(app, k);
@@ -88,6 +100,7 @@ export function registerRoutes(app: FastifyInstance, k: Kernel): RouteInfo[] {
   return table;
 }
 
+/** 聚合读取统一经过安全读侧；导出只创建异步任务并返回 202，不在 HTTP 请求里遍历全部数据。 */
 function registerAggregate(app: FastifyInstance, k: Kernel, a: AnyAggregate) {
   const base = `/api/${kebab(a.name)}`;
   app.get(base, async (req) => k.read.list(a, req.query as Record<string, unknown>, req.cageCtx));
@@ -103,7 +116,11 @@ function registerAggregate(app: FastifyInstance, k: Kernel, a: AnyAggregate) {
   });
 }
 
-/** 查询字符串都是字符串：按输入 schema 把数字和布尔转换过来 */
+/**
+ * 为对象型查询输入适配 URL 字符串，只转换顶层数字与布尔字段；最终合法性仍由读侧 schema 校验。
+ * 布尔值采用当前协议的精确字符串规则：只有 true 字符串转换为真；其余字符串转换为假。
+ * 不修改原始 query，也不在这里递归展开数组或嵌套对象。
+ */
 function coerceQuery(schema: z.ZodType, q: Record<string, unknown>): Record<string, unknown> {
   if (!(schema instanceof z.ZodObject)) return q;
   const out: Record<string, unknown> = { ...q };
@@ -117,6 +134,7 @@ function coerceQuery(schema: z.ZodType, q: Record<string, unknown>): Record<stri
   return out;
 }
 
+/** 去除可选、可空和默认值包装，只为识别基础标量类型；不执行默认值或实际校验。 */
 function unwrap(s: z.ZodType): z.ZodType {
   let cur: any = s;
   while (cur && (cur instanceof z.ZodOptional || cur instanceof z.ZodNullable || cur instanceof z.ZodDefault)) cur = cur.unwrap();

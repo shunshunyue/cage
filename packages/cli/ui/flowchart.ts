@@ -1,3 +1,8 @@
+/**
+ * 业务流程图的测量、排布、避让布线与 SVG 交互组件，供 business 页面创建。
+ * 先展开步骤与审批子图，按拓扑层级保持主轴，再分配分支通道；渲染后接入手势、缩放、键盘与 resize。
+ * 布局是阅读状态，不修改业务声明；调用方持有 FlowChartState，DOM 挂载后调用 mount，移除前调用 dispose。
+ */
 import type { BusinessStep } from '../src/graph-business.js';
 import { isApprovalRejection, type ApprovalFlow } from '../src/graph-approvals.js';
 import { layoutApprovalFlow, renderApprovalFlow, type ApprovalFlowLayout } from './approval-flow.js';
@@ -12,30 +17,62 @@ import {
   type FlowPoint,
 } from './flowchart-interaction.js';
 
+/**
+ * 主流程阅读方向：tb 从上到下，lr 从左到右；审批容器内部仍纵向。
+ */
 export type FlowDirection = 'tb' | 'lr';
+/**
+ * 流程节点的缩放前矩形，单位为 SVG 画布单位，支持用户拖动改 x/y。
+ */
 export interface FlowPosition {
+  /** 节点矩形左边，单位为缩放前 SVG 坐标。 */
   x: number;
+  /** 节点矩形上边，单位与 x 一致。 */
   y: number;
+  /** 根据标题、状态或审批子图测量出的宽度。 */
   width: number;
+  /** 根据标题、状态或审批子图测量出的高度。 */
   height: number;
 }
+/**
+ * 流程阅读边，step 保存目标及连线语义，loop 标记回到已有节点，routing 为分支通道。
+ */
 export interface FlowEdge {
+  /** 源步骤的路径 ID，不能用裸节点 ID 替代。 */
   from: string;
+  /** 目标步骤的路径 ID，循环时指向已有步骤。 */
   to: string;
+  /** 此分支语义及可打开详情的步骤对象。 */
   step: BusinessStep;
+  /** 是否回到祖先步骤，影响侧绕与到达标签。 */
   loop: boolean;
+  /** 显式次要分支的端口和侧向通道分配；普通线可缺省。 */
   routing?: FlowEdgeRouting;
 }
+/**
+ * 分支避让参数；端口比例位于节点边缘，lane/targetLane 分隔共享来源或终点的通道。
+ */
 export interface FlowEdgeRouting {
+  /** 侧绕通道序号，用于错开可能重叠的次要分支。 */
   lane: number;
+  /** 沿源节点侧边的端口比例，通常在 0 与 1 之间。 */
   sourcePort: number;
+  /** 沿目标节点入口边的端口比例，避免多条线完全重叠。 */
   targetPort: number;
+  /** 同一终点的入线序号，用于错开接近目标的水平/垂直段。 */
   targetLane: number;
+  /** 离开源层后预留的主轴间距；缺省使用普通侧绕路径。 */
   sourceOffset?: number;
+  /** 源节点是菱形时修正边缘命中点。 */
   sourceDecision?: boolean;
+  /** 目标节点是菱形时修正边缘命中点。 */
   targetDecision?: boolean;
 }
+/**
+ * 一次确定性布局的节点测量、连线及边界，供渲染与后续拖动重算使用。
+ */
 export interface FlowLayout {
+  /** 包含步骤、测量文字、形状和可选审批子布局的节点数组。 */
   nodes: {
     step: BusinessStep;
     position: FlowPosition;
@@ -45,18 +82,32 @@ export interface FlowLayout {
     association?: boolean;
     approval?: ApprovalFlowLayout;
   }[];
+  /** 已解析节点身份和分支通道的连线。 */
   edges: FlowEdge[];
+  /** 初始布局的整体横向边界，未包含后续手动拖动的新边界。 */
   width: number;
+  /** 初始布局的整体纵向边界。 */
   height: number;
 }
+/**
+ * 由业务页面跨重渲染持有的临时阅读状态，不保存到领域或数据库。
+ */
 export interface FlowChartState {
+  /** 原地更新的共享相机，重渲染时保留视野。 */
   camera: FlowCamera;
+  /** 按步骤 ID 保存用户手动移动的位置，单位为业务坐标。 */
   positions: Map<string, FlowPoint>;
+  /** select 允许拖节点，pan 强制平移；空格可临时覆盖。 */
   tool: 'select' | 'pan';
+  /** 工作区是否覆盖视窗展开，和业务内容无关。 */
   expanded: boolean;
+  /** 上次选择的步骤/关系 ID；null 表示没有选中项。 */
   selection: string | null;
 }
 
+/**
+ * 创建新场景的独立视野和手动位置容器，未初始化相机由 mount 决定可读起点或适应全图。
+ */
 export const createFlowChartState = (): FlowChartState => ({
   camera: { x: 0, y: 0, scale: 1, initialized: false },
   positions: new Map(),
@@ -65,7 +116,10 @@ export const createFlowChartState = (): FlowChartState => ({
   selection: null,
 });
 
-/** 按实际字宽换行，长中文完整留在节点内；业务标题不再用省略号截断。 */
+/** 按中英文近似字宽换行，完整保留长业务标题；测量不是浏览器字体引擎的精确宽度。 */
+/**
+ * 按中英文近似宽度换行以保留完整业务标题，不用省略号隐藏流程含义。
+ */
 function wrap(text: string, length: number): string[] {
   const lines: string[] = [];
   let line = '',
@@ -86,6 +140,15 @@ function wrap(text: string, length: number): string[] {
 
 /** 主流程分层，对象关联放在阶段侧面。循环和汇合回连已有阶段，
  * 关联节点不参与流程深度，避免把“涉及设备”误读为“下一步执行设备”。 */
+/**
+ * 测量步骤/审批，拓扑分层后压紧分支并为侧边关联与回路预留通道。
+ * @param root 已有界阅读树。
+ * @param name 步骤中文名称函数。
+ * @param state 步骤状态或参与人摘要函数。
+ * @param direction 主阅读方向，默认纵向。
+ * @param approvals 按步骤 ID 提供的审批投影。
+ * @returns 新布局，不修改声明；重复步骤回连原节点，关联不参与主流程层级。
+ */
 export function layoutBusinessFlow(
   root: BusinessStep,
   name: (step: BusinessStep) => string,
@@ -98,6 +161,9 @@ export function layoutBusinessFlow(
   const sizes = new Map<string, { cross: number; along: number; rank: number }>();
   const related = new Map<string, FlowLayout['nodes']>();
   const relatedGaps = new Map<string, number>();
+  /**
+   * 测量步骤并收集边；重复步骤指回祖先或已出现节点，关联对象单独测量且不加入主流程递归。
+   */
   const walk = (step: BusinessStep, depth: number, ancestors: BusinessStep[]) => {
     if (step.repeated) {
       const ancestor = [...ancestors].reverse().find((n) => n.node.key === step.node.key);
@@ -258,6 +324,9 @@ export function layoutBusinessFlow(
   // 第一条后续路径与父节点共用轴线，分支只在重叠的层级让位。
   // 这样主线不会因为侧面的对象关联左右摇摆，结束分支也不会占据整列。
   type Packed = { centers: Map<string, number>; contour: Map<number, { left: number; right: number }> };
+  /**
+   * 按层轮廓压紧子树，首条主线共轴，后续分支只在相交层横向让位；重复和关联步骤已在外层处理。
+   */
   const pack = (step: BusinessStep): Packed => {
     const size = sizes.get(step.id)!;
     const item = nodes.find((n) => n.step.id === step.id)!;
@@ -350,6 +419,9 @@ export function layoutBusinessFlow(
   };
 }
 
+/**
+ * 缩短已知触发链标签以适应连线，未知业务标题原样保留，不据文案推断执行类别。
+ */
 const shortEdgeLabel = (label: string) =>
   (
     ({
@@ -366,6 +438,16 @@ const shortEdgeLabel = (label: string) =>
   )[label] ?? label;
 
 /** 连线几何从实时节点位置生成；手动移动节点后，箭头与标签共同跟随。 */
+/**
+ * 根据实时矩形计算正交折线、标签锚点和辅助方向箭头所需路径点。
+ * @param a 起点矩形。
+ * @param b 终点矩形。
+ * @param direction 连线主方向。
+ * @param loop 是否回路。
+ * @param obstacles 需避让的节点矩形。
+ * @param routing 可选预分配分支通道。
+ * @returns 路径与标签坐标；仅计算几何，不承诺任意拖动后全图最优布线。
+ */
 export function flowEdgeGeometry(
   a: FlowPosition,
   b: FlowPosition,
@@ -556,6 +638,11 @@ export function flowEdgeGeometry(
 }
 
 /** 箭头同时出现在终点与长线中段，目标在画布之外时也能看出走向。 */
+/**
+ * 为首个足够长的线段补方向三角形，让目标在视口外也能看见走向。
+ * @param points 按路径顺序排列的画布点。
+ * @returns SVG polygon 点串，无长度至少 140 的线段则为空。
+ */
 export function flowDirectionArrow(points: readonly FlowPoint[]): string {
   let length = 0,
     start: FlowPoint | undefined,
@@ -578,6 +665,13 @@ export function flowDirectionArrow(points: readonly FlowPoint[]): string {
   return `${x},${y} ${x - dx * 12 - dy * 6},${y - dy * 12 + dx * 6} ${x - dx * 12 + dy * 6},${y - dy * 12 - dx * 6}`;
 }
 
+/**
+ * 创建交互流程图，复用调用方保存的视野、位置和工具状态。
+ * @param root 阅读流程根，不代表运行时流程实例。
+ * @param options 名称/摘要、方向、选择回调、共享状态和审批子图。
+ * @returns element、mount、dispose；挂载后安装 resize 与全局键盘监听，移除前必须 dispose 清理。
+ * 拖动和展开仅改变阅读状态，点击回调由页面更新 URL，组件不执行任何领域命令。
+ */
 export function createFlowChart(
   root: BusinessStep,
   options: {
@@ -702,6 +796,9 @@ export function createFlowChart(
         11 +
       20;
     const height = captionLines.length * 14 + 6;
+    /**
+     * 根据侧绕或普通连线选择标签位置，使长分支说明留在相应出口附近；拖动后用新几何重新计算。
+     */
     const captionPosition = (geometry: ReturnType<typeof flowEdgeGeometry>) => {
       if (geometry.side)
         return edgeDirection === 'tb'
@@ -764,6 +861,9 @@ export function createFlowChart(
       );
       arrival.append(label);
     }
+    /**
+     * 回路终点额外标注来源；根据最后折线路段方向偏移标签，避免与终点端口重叠。
+     */
     const moveArrival = (geometry: ReturnType<typeof flowEdgeGeometry>) => {
       if (!arrival) return;
       const a = geometry.points[geometry.points.length - 3],
@@ -931,6 +1031,9 @@ export function createFlowChart(
     },
     zoomControls,
   );
+  /**
+   * 将共享相机同步到 SVG 变换、缩放控件和网格背景；不更改节点业务坐标。
+   */
   const apply = () => {
     viewport.setAttribute('transform', `translate(${camera.x},${camera.y}) scale(${camera.scale})`);
     percentage.textContent = `${Math.round(camera.scale * 100)}%`;
@@ -941,6 +1044,9 @@ export function createFlowChart(
     canvas.style.backgroundSize = `${grid}px ${grid}px`;
     canvas.style.backgroundPosition = `${camera.x}px ${camera.y}px`;
   };
+  /**
+   * 读取已挂载 SVG 的实际内容边界并适应可用区域，保留外侧标签空间；调用会主动重置相机。
+   */
   const fit = () => {
     // 手动移动后的节点也必须进入“适应”范围，包括移到原点左侧的节点。
     const bounds = viewport.getBBox();
@@ -959,6 +1065,9 @@ export function createFlowChart(
     camera.height = canvas.clientHeight;
     apply();
   };
+  /**
+   * 以固定可读倍率定位流程起点，适合长业务流程；记录画布尺寸供后续 resize 保持相对视野。
+   */
   const readStart = () => {
     const start = byId.get(root.id)!.position;
     camera.scale = 0.9;
@@ -977,6 +1086,9 @@ export function createFlowChart(
   };
   if (options.readable) button('起点', '以可读字号回到流程起点', readStart, zoomControls);
   // 保存画布尺寸而非 DOM 实例：切到其他视图时仍可能调整窗口大小。
+  /**
+   * 容器尺寸变化时按中心差平移并露出选中项，保留倍率与手动位置，不重新执行完整布局。
+   */
   const resize = () => {
     const width = canvas.clientWidth,
       height = canvas.clientHeight;
@@ -988,12 +1100,18 @@ export function createFlowChart(
     if (selectedItem) revealFlowPosition(camera, selectedItem.position);
     apply();
   };
+  /**
+   * 以指定屏幕点按相对倍率缩放，缺省锚点为画布中心；共用限幅函数并立即刷新显示。
+   */
   const zoom = (factor: number, x = canvas.clientWidth / 2, y = canvas.clientHeight / 2) => {
     zoomFlowCamera(camera, camera.scale * factor, { x, y });
     apply();
   };
   let space = false;
   const tools = new Map<'select' | 'pan', HTMLButtonElement>();
+  /**
+   * 把持久工具选择和临时空格抓手同步到光标及 aria 状态，临时抓手不覆盖保存的工具。
+   */
   const updateTool = () => {
     canvas.classList.toggle('mode-pan', view.tool === 'pan' || space);
     for (const [tool, node] of tools) node.setAttribute('aria-pressed', String(view.tool === tool));
@@ -1019,6 +1137,9 @@ export function createFlowChart(
     node.setAttribute('aria-pressed', String(options.direction === direction));
   }
   const expanded = button('展开画布', '展开画布', () => expand(!view.expanded));
+  /**
+   * 同步工作区展开样式和按钮可访问名称，尺寸改变交给 ResizeObserver 处理。
+   */
   const expand = (value: boolean) => {
     view.expanded = value;
     host.parentElement?.classList.toggle('expanded', value);
@@ -1027,6 +1148,9 @@ export function createFlowChart(
     expanded.title = value ? '退出展开画布（Esc）' : '展开画布';
     expanded.setAttribute('aria-pressed', String(value));
   };
+  /**
+   * 把浏览器视窗坐标转换为相对 SVG 的屏幕像素，后续手势层再换算业务坐标。
+   */
   const localPoint = (event: MouseEvent | PointerEvent | WheelEvent) => {
     const bounds = svg.getBoundingClientRect();
     return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
@@ -1062,6 +1186,9 @@ export function createFlowChart(
   svg.addEventListener('pointermove', (event) => {
     gestures.move(event.pointerId, localPoint(event));
   });
+  /**
+   * 结束或取消捕获的指针；只有 pointerup 可触发点击，取消与失去捕获不能误开详情。
+   */
   const stop = (event: PointerEvent) => {
     gestures.end(event.pointerId, event.type !== 'pointerup');
     if (svg.hasPointerCapture(event.pointerId)) svg.releasePointerCapture(event.pointerId);
@@ -1107,6 +1234,9 @@ export function createFlowChart(
       else zoom(event.key === '1' ? 1 / camera.scale : event.key === '-' ? 1 / 1.2 : 1.2);
     }
   });
+  /**
+   * Esc 退出展开，空格仅在画布获得关注且不编辑文本/按钮时临时启用抓手；监听在 dispose 移除。
+   */
   const keydown = (event: KeyboardEvent) => {
     if (event.key === 'Escape' && view.expanded) {
       event.preventDefault();
@@ -1124,10 +1254,16 @@ export function createFlowChart(
       updateTool();
     }
   };
+  /**
+   * 松开空格或窗口失焦时清除临时抓手，避免漏收 keyup 后画布持续处于平移模式。
+   */
   const releaseSpace = () => {
     space = false;
     updateTool();
   };
+  /**
+   * 只响应空格释放，其余快捷键由画布自身监听处理。
+   */
   const keyup = (event: KeyboardEvent) => {
     if (event.code === 'Space') releaseSpace();
   };
@@ -1144,6 +1280,9 @@ export function createFlowChart(
   let observer: ResizeObserver | undefined;
   return {
     element: host,
+    /**
+     * 在 element 加入 DOM 后初始化视野和 ResizeObserver，再安装全局键盘/失焦监听；调用方每个实例只挂载一次。
+     */
     mount() {
       expand(view.expanded);
       updateTool();
@@ -1162,6 +1301,9 @@ export function createFlowChart(
       document.addEventListener('keyup', keyup);
       window.addEventListener('blur', releaseSpace);
     },
+    /**
+     * 离开场景前断开观察器、取消手势并撤销全局监听；持久 view 由调用方保留以便恢复阅读。
+     */
     dispose() {
       observer?.disconnect();
       gestures.cancel();

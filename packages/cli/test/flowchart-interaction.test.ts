@@ -1,3 +1,8 @@
+/**
+ * 验证流程画布的坐标换算和指针状态机。
+ * 纯内存相机与回调覆盖锚点缩放、节点拖动、抓手/触控平移、双指接管、取消及点击阈值。
+ * 测试不依赖 DOM，几何与手势结果仍需浏览器层正确完成命中检测和事件捕获。
+ */
 import { expect, it, vi } from 'vitest';
 import {
   createFlowGestures,
@@ -8,6 +13,10 @@ import {
   type FlowPoint,
 } from '../ui/flowchart-interaction.js';
 
+/**
+ * 建立固定画布、单节点位置及可观测激活回调，允许用例改变初始缩放倍数。
+ * pointer 工厂产生鼠标节点命中数据；用例显式覆盖 touch/pan 来验证接管逻辑。
+ */
 function fixture(scale = 1) {
   const camera: FlowCamera = { x: 10, y: 20, scale, initialized: true, width: 800, height: 600 };
   const positions = new Map<string, FlowPoint>([['approve', { x: 100, y: 100 }]]);

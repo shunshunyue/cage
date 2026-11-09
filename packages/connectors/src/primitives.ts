@@ -10,6 +10,7 @@ import { outboundConsumer } from './runtime.js';
 /** 副作用等级：read 只读；retryableWrite 可重试写（对方按幂等键去重）；write 不可重试写（失败直接进死信，人工处理） */
 export type Effect = 'read' | 'retryableWrite' | 'write';
 
+/** 声明单次外部协议；effect 必须反映远端真实幂等保证，不能仅为方便重试而标 retryableWrite。 */
 export interface OpDef<Req extends z.ZodObject<any> = z.ZodObject<any>, Res extends z.ZodType = z.ZodType> {
   effect: Effect;
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -25,11 +26,13 @@ export interface Op<Req extends z.ZodObject<any> = z.ZodObject<any>, Res extends
   readonly connector: Connector;
 }
 
+/** 保存操作规格并检查绝对路径形式；此时没有连接器环境/密钥，也不会发出请求。 */
 export function op<Req extends z.ZodObject<any>, Res extends z.ZodType>(def: OpDef<Req, Res>): OpDef<Req, Res> {
   if (!def.path.startsWith('/')) throw declError('CAGE-CONN-002', `操作路径 ${def.path} 必须以 / 开头`);
   return def;
 }
 
+/** 外部系统的固定边界；hosts 按运行阶段选择，密钥仅声明名字，超时毫秒、限流每秒请求数。 */
 export interface ConnectorDef<Ops extends Record<string, OpDef<any, any>>> {
   /** 地址白名单：按环境各一个，代码里写不了任意地址 */
   hosts: { test?: string; prod?: string; [stage: string]: string | undefined };
@@ -52,6 +55,10 @@ export interface Connector<Ops extends Record<string, OpDef<any, any>> = Record<
   readonly operations: { readonly [K in keyof Ops]: Op<Ops[K]['request'], Ops[K]['response']> };
 }
 
+/**
+ * 校验名称、超时、限流与主机形式，冻结操作并回链到所属连接器。
+ * hosts 不含路径/协议，运行时按阶段选择；构造不读取密钥或访问网络，便于静态抽取与离线检查。
+ */
 export function connector<Ops extends Record<string, OpDef<any, any>>>(name: string, def: ConnectorDef<Ops>): Connector<Ops> {
   if (!/^[a-z][a-z0-9-]*$/.test(name)) throw declError('CAGE-CONN-001', `连接器名 ${name} 必须是小写短横线`);
   if (def.timeoutMs !== undefined && (!Number.isSafeInteger(def.timeoutMs) || def.timeoutMs <= 0 || def.timeoutMs > 300_000)) {
@@ -92,6 +99,10 @@ export interface Outbound<E extends AnyEvent = AnyEvent, O extends Op = Op> {
   readonly [CONSUMERS]: (k: Kernel) => EventConsumer[];
 }
 
+/**
+ * 把领域事件映射为事务外写操作；只读操作不允许挂出站，成功回写必须指向领域命令。
+ * map 返回 null 可跳过当前事件，幂等键需要跨重投稳定；消费器由 CONSUMERS 在 worker 装配。
+ */
 export function outbound<E extends AnyEvent, O extends Op>(
   ev: E,
   operation: O,
@@ -118,6 +129,7 @@ export function outbound<E extends AnyEvent, O extends Op>(
 
 // ---------------- 入站回调 ----------------
 
+/** 入站原始字节验签协议；secret 是注入名称，verify 不解析业务载荷或决定其领域权限。 */
 export interface Verifier {
   readonly kind: string;
   readonly secret: string;
@@ -125,6 +137,7 @@ export interface Verifier {
 }
 
 /** HMAC-SHA256 验签：签名放在请求头（默认 x-signature），值为 hex 或 sha256=hex */
+/** 签名基于原始正文计算，接受 hex 或 sha256=hex；长度校验后恒定时间比较，不能对解析后 JSON 重算。 */
 export function hmacSha256(secret: string, opts: { header?: string } = {}): Verifier {
   const header = (opts.header ?? 'x-signature').toLowerCase();
   return Object.freeze({
@@ -151,6 +164,10 @@ export interface Inbound<P extends z.ZodType = z.ZodType> {
   readonly map: (p: z.output<P>) => unknown;
 }
 
+/**
+ * 声明验签后的回调映射，HTTP 适配器校验载荷后以 external 身份执行目标命令。
+ * 事件名决定自动路由；这里不注册服务器，也不因签名通过而绕过命令状态、版本或业务约束。
+ */
 export function inbound<P extends z.ZodType>(
   conn: Connector<any>,
   eventName: string,

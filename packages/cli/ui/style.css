@@ -1,5 +1,7 @@
 /* 图谱工作台使用低饱和的纸面色与矿物绿。节点颜色承担类型区分，装饰保持克制，
    让长名称、连线和选中状态始终是画面的第一层信息。 */
+/* 本体工作台的基础外观与完整图/对象字段视图样式，由 index.html 先加载。
+ * 主题变量、布局和 SVG 状态与 app.ts/model.ts/structure.ts 约定配合；业务流程专属覆盖放在后续 business.css。 */
 :root {
   font-family: 'Bahnschrift', 'Microsoft YaHei UI', 'PingFang SC', sans-serif;
   color: #283d37;
@@ -56,6 +58,7 @@ a {
 [hidden] {
   display: none !important;
 }
+/* 顶部、侧栏与主体的共享页面骨架；侧栏宽度由断点覆盖，主体必须允许内部画布收缩。 */
 .app-shell {
   min-height: 100vh;
   display: grid;
@@ -209,6 +212,7 @@ a {
   color: #225d49;
   text-decoration: underline;
 }
+/* 业务对象导航与类型筛选使用同一选择状态；active 表示当前筛选，不代表服务端授权。 */
 .aggregate-list {
   display: grid;
   gap: 3px;
@@ -490,6 +494,7 @@ h1 {
   font-size: 12px;
   white-space: pre-wrap;
 }
+/* 完整图的画布和解释栏并排组成探索区；窄屏断点将解释栏移到画布下方。 */
 .explorer {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 267px;
@@ -569,6 +574,7 @@ h1 {
   padding: 1px 4px;
   color: #a6afa0;
 }
+/* 检索结果浮在工具条下方，不参与画布几何；长名称截断仅影响显示，节点身份由数据保持。 */
 .search-results {
   position: absolute;
   z-index: 10;
@@ -643,6 +649,7 @@ h1 {
   color: #a8b19f;
   white-space: nowrap;
 }
+/* SVG 画布自身裁剪平移内容；缩放、拖动和节点位置由脚本更新 transform，本层只提供容器与光标。 */
 .canvas {
   flex: 1;
   min-height: 0;
@@ -738,6 +745,7 @@ h1 {
   border-top-style: dashed;
   margin-left: 7px;
 }
+/* 边与节点的可读状态：派生关系、邻域高亮、选中和淡出分开表达，颜色不改变关系语义。 */
 .edge {
   fill: none;
   stroke: #aebdb0;
@@ -847,6 +855,7 @@ h1 {
     transform: rotate(360deg);
   }
 }
+/* 解释栏承载节点、关系和证据，长内容独立滚动；来源位置与原始 JSON 不参与图谱布局。 */
 .inspector {
   border-left: 1px solid #e5eadd;
   background: #fff;
@@ -1072,6 +1081,7 @@ dialog::backdrop {
   background: #263c2d44;
   backdrop-filter: blur(3px);
 }
+/* 检查结果使用原生 dialog 的内容布局，打开关闭和 findings 列表由 app.ts 管理。 */
 .dialog-heading {
   display: flex;
   align-items: center;
@@ -1121,6 +1131,7 @@ dialog::backdrop {
     margin-bottom: 29px;
   }
 }
+/* 中等宽度逐步压缩边距和工具条，保留交互控件；更窄断点再切换单列布局。 */
 @media (max-width: 1200px) {
   :root {
     --sidebar: 186px;
@@ -1578,6 +1589,7 @@ dialog::backdrop {
 .table-card.selected .table-shadow {
   opacity: 1;
 }
+/* 对象字段视图的 SVG 卡片。表头拖动整卡，字段行提供独立命中与选择，字体大小与 structure.ts 测量约定配合。 */
 .table-body {
   fill: #fafcf6;
   stroke: #d7e2cc;

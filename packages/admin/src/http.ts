@@ -1,3 +1,8 @@
+/**
+ * 系统管理 HTTP 装配层，组合目录、审计、异步运维与第三方同步查询。
+ * 组织业务写操作由声明生成的命令路由承接；这里仅提供系统查询和受控运维动作。
+ * 请求上下文来自上游认证，读取与管理能力分开检查，任务受理和异步完成不能混为一谈。
+ */
 // /api/sys/*：系统管理接口。组织与授权的写操作直接用生成的命令路由（/api/role/:id/grant-capability 等），
 // 这里只放内核系统表的查询与运维动作；每个接口都要求对应的系统能力点，运维动作写审计。
 import { cageError, type Ctx, type Kernel } from '@yss123/cage-kernel';
@@ -7,15 +12,32 @@ import type { FastifyInstance } from 'fastify';
 import { sql } from 'kysely';
 import { diagnosticRoutes } from './diagnostics.js';
 
+/**
+ * 读取上游认证钩子已装配的可信上下文；本辅助函数本身不解析 Cookie 或验证身份。
+ */
 const ctxOf = (req: any): Ctx => req.cageCtx as Ctx;
 
+/**
+ * 在每个系统入口检查登录及指定能力，失败立即抛出标准 Cage 错误。
+ * 这层能力检查不能替代具体查询中的租户条件或安全读侧范围过滤。
+ */
 function need(ctx: Ctx, cap: string) {
   if (!ctx.userId) throw cageError('UNAUTHENTICATED');
   if (!ctx.capabilities.has(cap)) throw cageError('FORBIDDEN', { capability: cap });
 }
 
+/**
+ * 为管理列表把数字输入限制在 1 至 max 的区间，缺值或不能转为有效数字时采用默认值 d。
+ * 沿用 Number 转换行为；这里没有额外承诺严格整数格式校验。
+ */
 const intParam = (v: unknown, d: number, max: number) => Math.min(max, Math.max(1, Number(v ?? d) || d));
 
+/**
+ * 在 Fastify 实例注册管理接口，同时接入只读 diagnosticRoutes。
+ * 审计从安全视图读取；outbox、死信和连接器记录按当前租户查询，列表有固定上限。
+ * 死信重放/丢弃与任务开关要求 Sys.ops.manage，并在操作后记录审计；重放只重新排队，不表示执行成功。
+ * 任务开关以注册任务名管理调度状态；本函数不授予领域能力，也不替调用方初始化组织。
+ */
 export function adminRoutes(app: FastifyInstance, k: Kernel, labels: AdminLabels = {}) {
   diagnosticRoutes(app, k);
   const opsAudit = (ctx: Ctx, command: string, detail: unknown) =>

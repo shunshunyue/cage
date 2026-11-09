@@ -34,14 +34,15 @@ PurchaseOrder.anything // 没有对应声明
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/admin/src/domain/constraints.ts:13`
+- `packages/admin/src/domain/constraints.ts:21`
+- `packages/admin/src/domain/constraints.ts:26`
 
 实现片段（位置随框架版本更新）：
 
 ```ts
-  check: (_role, _ctx, input, meta) =>
-    meta.catalog().includes(input.capability) ? ok() : violation(`[CAGE-GRANT-003] 能力点 ${input.capability} 不在能力目录里`),
-});
-
-/** 防提权：不能授出自己没有的能力点；数值参数（额度）不能超过自己的 */
+ * 构造目录存在性约束。check 使用内核提供的实时目录核对 input.capability，
+ * 未知能力返回 CAGE-GRANT-003；该检查不负责判断操作者是否拥有这个能力。
+ */
+export const knownCapability = (): Constraint => ({
+  name: 'knownCapability',
 ```

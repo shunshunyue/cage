@@ -1,6 +1,7 @@
 // 生成物：由 cage gen 从 domain 声明生成，不要手改。
 /* eslint-disable */
 
+export * from './aggregates/approval-member';
 export * from './aggregates/dept';
 export * from './aggregates/inventory';
 export * from './aggregates/inventory-lock';
@@ -9,6 +10,7 @@ export * from './aggregates/role';
 export * from './aggregates/user';
 export * from './queries';
 import { can as baseCan, useCan as baseUseCan } from '@yss123/cage-client';
+import { ApprovalMemberInputs } from './aggregates/approval-member';
 import { DeptInputs } from './aggregates/dept';
 import { InventoryInputs } from './aggregates/inventory';
 import { InventoryLockInputs } from './aggregates/inventory-lock';
@@ -19,6 +21,11 @@ export { client, configureClient, loadMe, currentUser, CageQueryError, CageComma
 
 /** 能力目录（由代码派生）：写错能力点名会编译失败 */
 export const capabilities = [
+  'ApprovalMember.create',
+  'ApprovalMember.export',
+  'ApprovalMember.read',
+  'ApprovalMember.retire',
+  'ApprovalMember.update',
   'Dept.archive',
   'Dept.create',
   'Dept.export',
@@ -42,6 +49,7 @@ export const capabilities = [
   'PurchaseOrder.reject',
   'PurchaseOrder.returnForChanges',
   'PurchaseOrder.setAttachments',
+  'PurchaseOrder.setReviewers',
   'PurchaseOrder.submit',
   'PurchaseOrder.unmask.phone',
   'Role.archive',
@@ -78,6 +86,7 @@ export const useCan = (capability: Capability): boolean => baseUseCan(capability
 
 /** 各聚合的命令输入 schema：按聚合名、命令名访问，可直接供表单库校验 */
 export const schemas = {
+  ApprovalMember: ApprovalMemberInputs,
   Dept: DeptInputs,
   Inventory: InventoryInputs,
   InventoryLock: InventoryLockInputs,

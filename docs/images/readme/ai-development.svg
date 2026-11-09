@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  README 中的 AI 协作开发流程图：由仓库首页引用，把需求、上下文检索、实现、生成审查和验证串成可读流程。
+  实线箭头表达推荐工作顺序；下方虚线把检查反馈带回业务修改，说明生成完成仍需审查和验证。
+  步骤依据 docs/ai/workflow.md 与 docs/ai/diagnostics.md；本图不承诺 AI 自动完成验收，也不替代实际浏览器和业务测试。
+  SVG 只包含静态矢量图形与系统字体，没有 foreignObject、外部字体、脚本或网络请求，适合 GitHub README 嵌入。
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="430" viewBox="0 0 1400 430" role="img" aria-labelledby="title description">
+  <title id="title">AI 协作开发，从需求到验证</title>
+  <desc id="description">先明确需求，再检索上下文，修改业务声明与实现，生成并审查契约和迁移，最后检查规则并验证业务。检查与验证发现的问题通过反馈线返回修改步骤，继续迭代。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 1 1 L 8 5 L 1 9" fill="none" stroke="#7C8372" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+  <rect width="1400" height="430" rx="24" fill="#F6F4EA"/>
+  <g font-family="'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', sans-serif" fill="#252820">
+    <text x="48" y="70" font-size="36" font-weight="700">AI 协作开发，从需求到验证</text>
+    <text x="48" y="109" font-size="21" fill="#6C7163">先找到业务依据，再修改实现；生成之后，继续审查与验证。</text>
+
+    <!-- 五个等宽阶段保持同等视觉权重；数字仅表示推荐顺序，不表示工具自动执行的任务状态。 -->
+    <g fill="#FFFEF8" stroke="#D9DDCE" stroke-width="1.5">
+      <rect x="48" y="158" width="232" height="152" rx="18"/>
+      <rect x="316" y="158" width="232" height="152" rx="18"/>
+      <rect x="584" y="158" width="232" height="152" rx="18"/>
+      <rect x="852" y="158" width="232" height="152" rx="18"/>
+      <rect x="1120" y="158" width="232" height="152" rx="18"/>
+    </g>
+    <g fill="#D5ED86">
+      <rect x="72" y="180" width="38" height="32" rx="10"/>
+      <rect x="340" y="180" width="38" height="32" rx="10"/>
+      <rect x="608" y="180" width="38" height="32" rx="10"/>
+      <rect x="876" y="180" width="38" height="32" rx="10"/>
+      <rect x="1144" y="180" width="38" height="32" rx="10"/>
+    </g>
+    <g font-size="18" font-weight="700" text-anchor="middle">
+      <text x="91" y="203">01</text>
+      <text x="359" y="203">02</text>
+      <text x="627" y="203">03</text>
+      <text x="895" y="203">04</text>
+      <text x="1163" y="203">05</text>
+    </g>
+    <g font-size="27" font-weight="700">
+      <text x="72" y="250">明确需求</text>
+      <text x="340" y="250">检索上下文</text>
+      <text x="608" y="250">修改业务</text>
+      <text x="876" y="250">生成与审查</text>
+      <text x="1144" y="250">检查与验证</text>
+    </g>
+    <g font-size="21" fill="#555C4C">
+      <text x="72" y="285">对象、操作与规则</text>
+      <text x="340" y="285">能力、本体与源码</text>
+      <text x="608" y="285">声明与业务实现</text>
+      <text x="876" y="285">契约与迁移草稿</text>
+      <text x="1144" y="285">规则与实际业务</text>
+    </g>
+    <g fill="none" stroke="#7C8372" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)">
+      <path d="M 287 234 H 307"/>
+      <path d="M 555 234 H 575"/>
+      <path d="M 823 234 H 843"/>
+      <path d="M 1091 234 H 1111"/>
+    </g>
+
+    <!-- 反馈始于实际检查阶段并回到实现阶段；虚线不指向“完成”，避免把尚未处理的问题绘制成成功结果。 -->
+    <path d="M 1236 311 V 366 H 700 V 318" fill="none" stroke="#7C8372" stroke-width="2" stroke-dasharray="6 7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+    <rect x="840" y="347" width="258" height="38" rx="19" fill="#F6F4EA"/>
+    <text x="969" y="374" text-anchor="middle" font-size="21" fill="#555C4C">根据诊断与验收结果迭代</text>
+  </g>
+</svg>

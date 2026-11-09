@@ -1,4 +1,6 @@
 <!doctype html>
+<!-- 本地本体探索器的静态骨架，由 graph 服务提供并由 app.js 填充。
+  ID 是脚本绑定契约；本页不嵌入领域执行代码，业务地图与完整本体共用导航和检查结果。 -->
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
@@ -33,6 +35,7 @@
         </button>
       </header>
 
+      <!-- 对象/板块导航与类型筛选由当前视图重建，移动端展开状态由按钮的 aria-expanded 同步。 -->
       <aside class="sidebar" id="sidebar">
         <div class="section-label">项目工作区 <span>01</span></div>
         <div class="nav-active"><span class="nav-symbol">◇</span> 本体图谱 <span class="nav-dot"></span></div>
@@ -99,6 +102,7 @@
           </div>
         </section>
 
+        <!-- 三个视图共享工具条；business-view 承载流程，canvas 承载完整图和对象字段图。 -->
         <section class="explorer business-mode" id="explorer" aria-label="交互式业务地图与本体图谱">
           <div class="graph-panel">
             <div class="graph-toolbar">
@@ -156,6 +160,7 @@
                     <path d="M0 0L10 5L0 10z" fill="#357c6c" />
                   </marker>
                 </defs>
+                <!-- 脚本只变换 viewport 来实现平移和缩放，边先于节点绘制以保留节点命中面。 -->
                 <g id="viewport">
                   <g id="edges"></g>
                   <g id="nodes"></g>
@@ -192,6 +197,7 @@
         </footer>
       </main>
     </div>
+    <!-- 规则发现保留在独立对话框，不因主画布能显示就隐藏声明错误。 -->
     <dialog id="findings-dialog">
       <div class="dialog-heading">
         <h2>声明检查</h2>
@@ -199,6 +205,7 @@
       </div>
       <div id="findings-list"></div>
     </dialog>
+    <!-- 模块入口在 DOM 骨架之后加载，固定资源由 CLI 构建脚本输出到 graph-ui。 -->
     <script type="module" src="/app.js"></script>
   </body>
 </html>

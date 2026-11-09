@@ -1,9 +1,21 @@
+/**
+ * 创建应用前的终端交互层，向 main 返回已经明确的目录与模板选择。
+ * 显式参数优先，缺项时使用 Clack 提示；非 TTY 必须提供完整参数，取消返回 null。
+ * 本模块不复制模板或安装依赖，因此交互取消不会留下创建到一半的应用。
+ */
 // 交互只收集创建选项，所有问题结束后才复制文件；Ctrl+C 不会留下半个项目。
 import { cancel, intro, isCancel, select, text } from '@clack/prompts';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { appTemplates, isAppTemplate, type AppTemplate } from './create.js';
 
+/**
+ * 补齐创建目录与模板选项，供 main 在任何文件复制前调用。
+ * @param target 显式目录；缺省时交互询问。
+ * @param template blank 或 purchase；缺省时交互选择而非在 CI 静默默认。
+ * @returns 完整创建选择；用户取消返回 null，由入口转换为取消退出码。
+ * @throws 非交互缺项或模板名无效时抛出 CAGE-CREATE-001。
+ */
 export async function chooseApp(
   target?: string,
   template?: string,

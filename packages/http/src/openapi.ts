@@ -2,9 +2,15 @@
 import { hiddenFields, isRelation, runtimeServices, type Fields, type Kernel } from '@yss123/cage-kernel';
 import { z } from 'zod';
 import type { RouteInfo } from './routes.js';
+import { approvalOpenApi } from '@yss123/cage-approval';
 
 const ERR = { $ref: '#/components/schemas/CageError' };
 
+/**
+ * 将输入 Zod schema 投影为 OpenAPI 可表达的 JSON Schema，不声称覆盖全部服务端行为。
+ * 自定义检查、转换和带标志正则等无法等价表示时标记服务端校验；避免文档产生错误的客户端约束。
+ * catch/overwrite 会改变接受值或结果，清除不再可靠的结构描述；实际请求仍按原 Zod 声明处理。
+ */
 function schemaOf(s: z.ZodType): unknown {
   return z.toJSONSchema(s, {
     unrepresentable: 'any', io: 'input',
@@ -21,6 +27,12 @@ function schemaOf(s: z.ZodType): unknown {
   });
 }
 
+/**
+ * 基于当前运行注册表生成 OpenAPI 3.1 文档，不读取业务数据，也不授予访问文档中操作的能力。
+ * 聚合响应排除隐藏字段和关系字段，敏感字段描述为可能掩码的字符串/空值；关联集合使用独立分页接口。
+ * 按路由种类补齐任务 202、文件 Range、上传分片和幂等头等协议，最后合并运行时扩展公开的操作。
+ * 生成结果表达接口形状与能力名称，真实授权、数据范围、状态和事务约束仍由执行路径判定。
+ */
 export function buildOpenApi(k: Kernel, routes: RouteInfo[], info: { title?: string; version?: string } = {}) {
   const schemas: Record<string, unknown> = {
     CageError: {
@@ -45,7 +57,8 @@ export function buildOpenApi(k: Kernel, routes: RouteInfo[], info: { title?: str
     for (const [f, p] of Object.entries(js.properties ?? {})) if (!hidden.has(f) && !isRelation((a.fields as Fields)[f])) props[f] = (a.fields as Fields)[f]?.sensitiveKind ? { type: ['string', 'null'], description: '敏感字段：按权限返回掩码值' } : p;
     schemas[a.name] = { type: 'object', properties: props };
   }
-  const paths: Record<string, Record<string, unknown>> = {};
+  const paths: Record<string, Record<string, unknown>> = k.registry.extensions.some(e => e.kind === 'ROUTE')
+    ? approvalOpenApi({ operations: k.registry.extensions.some(e => e.kind === 'RUNTIME' && e.value.name === 'approval-operations') }) : {};
   for (const r of routes) {
     const url = r.url.replace(/:([a-zA-Z]+)/g, '{$1}');
     const op: Record<string, unknown> = {

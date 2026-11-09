@@ -5,12 +5,17 @@ import { cageError, DEFAULT_TENANT, systemCtx, type Kernel } from '@yss123/cage-
 import type { FastifyInstance } from 'fastify';
 import { setSessionCookie, type AuthOptions, type Sessions } from './auth.js';
 
+/** 当前授权码流程实际消费的发现端点；access token 仅用于 userinfo，不作为 Cage 会话凭据。 */
 interface Discovery {
   authorization_endpoint: string;
   token_endpoint: string;
   userinfo_endpoint: string;
 }
 
+/** 按需注册 SSO 跳转和回调。签名短期 Cookie 保存 state/PKCE verifier，回调核对后即清除。
+ * 身份提供方网络访问发生在业务命令事务外；拿到 userinfo 后通过组织命令同步，再创建本地会话。
+ * 无 oidc 配置则不挂载路由；令牌或用户信息端点返回非成功状态时按 UNAUTHENTICATED 拒绝，不降级本地登录。
+ */
 export function oidcRoutes(app: FastifyInstance, k: Kernel, sessions: Sessions, opts: AuthOptions) {
   const o = opts.oidc;
   if (!o) return;
@@ -67,6 +72,10 @@ export function oidcRoutes(app: FastifyInstance, k: Kernel, sessions: Sessions, 
   });
 }
 
+/** 将可信 userinfo 映射为默认租户用户，按 SSO subject 或用户名寻找已有身份。
+ * 部门 claim 按 code 匹配，缺失/未命中时归根部门；已有禁用用户不可借 SSO 重新激活。
+ * external 上下文仅授 User.create/update，所有写入仍走内核审计；不会自动分配任何业务角色。
+ */
 export async function upsertUserFromSso(k: Kernel, claims: Record<string, any>, deptClaim = 'department'): Promise<{ id: string }> {
   const tenantId = DEFAULT_TENANT;
   const ctx = systemCtx({ kind: 'external', name: 'sso', tenantId, capabilities: ['User.create', 'User.update'] });

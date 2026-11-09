@@ -1,3 +1,8 @@
+/**
+ * 角色与授权管理界面，区分能力授予、能力参数和对象数据范围。
+ * 页面只按当前登录能力限制可操作项；实际防提权、状态与范围检查由服务端命令执行。
+ * 能力切换即时提交，范围编辑先保留草稿再保存，只有成功响应才更新已保存角色快照。
+ */
 import { api, can, run, state } from '../../shared/api.js';
 import { badge, emptyState, field, h, icon, modal, searchInput } from '../../shared/dom.js';
 import { invocation, objectName, scopes } from '../../shared/labels.js';
@@ -9,6 +14,10 @@ let tab: 'permissions' | 'scopes' = 'permissions';
 let query = '';
 let filter: 'all' | 'granted' | 'ungranted' = 'all';
 
+/**
+ * 读取角色与可访问部门，构建角色列表和权限/范围详情。
+ * 角色、筛选词及当前选项卡为页面内状态；列表数据来自有界查询，目录来自启动阶段。
+ */
 export async function renderRoles(main: HTMLElement) {
   const [result, departmentResult] = await Promise.all([
     api<List<Role>>('GET', '/api/role?pageSize=200'),
@@ -39,6 +48,9 @@ export async function renderRoles(main: HTMLElement) {
     );
   main.append(h('div', { class: 'role-workspace' }, sidebar, details));
 
+  /**
+   * 按角色名称或 code 过滤当前加载集合，选择后同步重画详情，不改角色状态或授权。
+   */
   function renderList() {
     const visible = roles.filter((role) => `${role.name} ${role.code}`.toLowerCase().includes(roleQuery));
     list.replaceChildren(
@@ -65,6 +77,10 @@ export async function renderRoles(main: HTMLElement) {
     if (!visible.length) list.append(h('p', { class: 'list-empty' }, '没有匹配的角色'));
   }
 
+  /**
+   * 提交新角色名称和 code，成功后把真实返回角色加入列表并选中。
+   * 新角色没有默认业务能力，后续需要显式授权。
+   */
   function createRole() {
     const name = h('input', { placeholder: '例如：采购经理', required: true, maxlength: 100 });
     const code = h('input', {
@@ -103,6 +119,10 @@ export async function renderRoles(main: HTMLElement) {
     name.focus();
   }
 
+  /**
+   * 为选中角色重建摘要与选项卡；已停用角色只展示配置。
+   * 局部 updateRole 仅接受服务端成功快照，避免界面把失败请求的临时选择当成已保存授权。
+   */
   function renderDetail() {
     let role = roles.find((item) => item.id === selectedRole);
     if (!role) {
@@ -217,6 +237,10 @@ export async function renderRoles(main: HTMLElement) {
         grid,
       );
 
+      /**
+       * 根据搜索词和已授权筛选生成能力分组，业务对象排在系统对象之前。
+       * 授权计数来自 role.capabilities，当前显示计数来自筛选集合，两者分别表达不同含义。
+       */
       function renderGroups() {
         const granted = new Map(role!.capabilities.map((item) => [item.capability, item.params]));
         const search = query.trim().toLowerCase();
@@ -271,6 +295,10 @@ export async function renderRoles(main: HTMLElement) {
           grid.append(emptyState('没有找到匹配的权限', '换一个关键词，或调整上方授权筛选。', 'search'));
       }
 
+      /**
+       * 构建能力开关及可选额度编辑器，按钮依据角色状态和当前操作者能力启用。
+       * 切换失败恢复旧勾选值，成功更新角色快照；额度保存保留已有参数并替换 ceiling。
+       */
       function permissionRow(capability: Capability, granted: Map<string, Record<string, unknown> | null>) {
         const checked = granted.has(capability.capability);
         const authorized =
@@ -406,6 +434,11 @@ export async function renderRoles(main: HTMLElement) {
       body.append(scopeGrid);
     }
 
+    /**
+     * 构建某聚合的范围编辑卡，区分显式范围、通配继承与未配置时 self。
+     * 可选组合子受聚合 owner/dept 字段约束；deptSet 保留已选 ID，即使当前部门列表无法读取。
+     * 提交 null 删除显式配置，成功后重画详情以反映真实服务端结果。
+     */
     function scopeCard(aggregate: Aggregate) {
       const current = role!.scopes.find((scope) => scope.aggregate === aggregate.name);
       const inherited = role!.scopes.find((scope) => scope.aggregate === '*');
@@ -470,11 +503,18 @@ export async function renderRoles(main: HTMLElement) {
         ),
         usable.map((kind) => h('option', { value: kind }, scopes[kind as ScopeKind].title)),
       );
+      /**
+       * 只标记当前范围表单有未保存变化并启用保存按钮，不立即修改角色快照。
+       */
       function dirty() {
         status.textContent = '尚未保存';
         status.classList.add('pending');
         save.disabled = !editable;
       }
+      /**
+       * 解释当前选择或继承后的范围效果；缺所需归属字段时明确无法匹配记录。
+       * 该提示不自动扩大授权，指定部门选择框仅在 deptSet 下显示。
+       */
       function updateDescription() {
         const kind = select.value as ScopeKind;
         description.textContent = kind ? scopes[kind].hint : '由默认数据范围决定；默认未配置时按仅本人处理。';

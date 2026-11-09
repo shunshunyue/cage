@@ -1,3 +1,7 @@
+/**
+ * 采购列表页：从 URL 恢复状态筛选与页码，查询真实单据，提供创建、提交、取消和后台导出入口。
+ * 通过采购模块入口进入路由；审批待办统计由 app 注入，查询和写入均消费生成契约。
+ */
 // 采购页面拥有筛选、分页、新建和导出状态；其他模块不用了解这些实现细节。
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -11,12 +15,20 @@ import { PurchaseOrderForm } from '../components/purchase-order-form';
 import { currency, statusLabels } from '../lib/presentation';
 import { PurchaseAssistantContext } from '../components/purchase-assistant-context';
 
+/**
+ * 按状态及每页十条读取服务端列表，加载、失败和空结果分别呈现。
+ * pendingTasks 可省略，表示待办数量尚不可用；创建弹窗和导出任务 ID 只保存在当前页面状态。
+ * 提交/取消携带读取到的 version，服务端负责并发、状态及授权检查；导出完成后才显示下载入口。
+ */
 export function PurchaseOrdersPage({ pendingTasks }: { pendingTasks?: number }) {
   // 可分享、刷新恢复的列表条件进入 URL；弹窗和提交中的临时状态继续留在组件里。
   const [search, setSearch] = useSearchParams();
   const status = search.get('status') ?? '';
   const requestedPage = Number(search.get('page') ?? 1);
   const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+  /**
+   * 更新 status/page 查询参数并保留其他参数；第一页省略 page。切换条件由调用方传入第一页。
+   */
   function filter(nextStatus: string, nextPage: number) {
     const params = new URLSearchParams(search);
     nextStatus ? params.set('status', nextStatus) : params.delete('status');
@@ -31,6 +43,10 @@ export function PurchaseOrdersPage({ pendingTasks }: { pendingTasks?: number }) 
   const { run, busy, message, clearMessage } = useCommand();
   // 列表和统计来自服务端；待办数量由 app 组合层传入，采购模块不依赖审批页面。
   const orders = usePurchaseOrderList({ status, page, pageSize: 10, sort: '-createdAt' });
+  /**
+   * 提交当前状态筛选的后台导出任务。成功只取得任务 ID，由 useTransfer 继续观察完成/失败/过期。
+   * 不把任务接受当作 CSV 已可下载，也不只导出当前十条表格数据。
+   */
   async function exportCsv() {
     setExporting(true);
     setExportError('');
@@ -154,6 +170,8 @@ export function PurchaseOrdersPage({ pendingTasks }: { pendingTasks?: number }) 
                         >
                           PO-{order.id.slice(0, 8).toUpperCase()}
                         </Link>
+                        {/* 用途摘要帮助采购员辨认单据；完整材料仍在详情页按安全读权限展示。 */}
+                        {order.reason && <small title={order.reason}>{order.reason.length > 48 ? `${order.reason.slice(0, 48)}…` : order.reason}</small>}
                         <small>{new Date(order.createdAt).toLocaleString('zh-CN')}</small>
                       </td>
                       <td>{order.items.map((i) => `${i.sku} × ${i.qty}`).join('、')}</td>

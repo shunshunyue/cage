@@ -1,9 +1,18 @@
+/**
+ * 把运行时注册表和静态声明位置抽取成可序列化本体，并提供节点差异计算。
+ * 聚合、字段、命令、事件、协作与业务流程生成节点和显式关系，源码及结构哈希用于影响判断。
+ * 不执行 handler、查询或外部调用；JSON Schema 与函数文本只能表达当前可抽取事实，不能证明任意程序语义等价。
+ */
 // 抽取器：把声明变成一张本体图（节点 + 边），写到 .cage/ontology.json。规则检查、影响分析、测试生成都读这张图。
 import { createHash } from 'node:crypto';
 import { brandOf, isRelation, snake, stableStringify, type AnyAggregate, type BusinessAction, type Fields, type Registry } from '@yss123/cage-kernel';
 import { z } from 'zod';
 import type { DeclSite } from './static-check.js';
+import { approvalRouteSteps } from './approval-tree.js';
 
+/**
+ * 本体节点语义类别，区分聚合、行为、字段、协作和业务阅读规格，身份须与 id 联合使用。
+ */
 export type NodeKind =
   | 'aggregate'
   | 'field'
@@ -22,16 +31,27 @@ export type NodeKind =
   | 'process'
   | 'stage';
 
+/**
+ * 可序列化节点，attrs 保存抽取事实，hash 表示当前可抽取内容而非运行状态。
+ */
 export interface OntNode {
+  /** 领域声明类别，和 id 一起确定节点身份。 */
   kind: NodeKind;
+  /** 领域原始标识，字段/状态通常带聚合前缀。 */
   id: string;
   /** 内容哈希：声明变化时哈希变化 */
   hash: string;
+  /** 已定位声明的项目相对源码路径；库内声明可缺失。 */
   file?: string;
+  /** 源码 1 起始行号，缺失表示尚无定位证据。 */
   line?: number;
+  /** 可序列化的声明语义属性，不是运行时实体记录。 */
   attrs: Record<string, unknown>;
 }
 
+/**
+ * 显式本体关系类型；读取、触发、状态迁移和阅读规格分别保留，不能混当执行先后。
+ */
 export type EdgeKind =
   | 'transition'
   | 'reads'
@@ -50,35 +70,64 @@ export type EdgeKind =
   | 'follows'
   | 'relates';
 
+/**
+ * 节点关系的存储形式，端点通常为业务 ID，规格边可补 kind 消除同名歧义。
+ */
 export interface OntEdge {
+  /** 关系种类，决定端点解释及影响传播方向。 */
   kind: EdgeKind;
+  /** 原始源节点 ID，尚未附加种类前缀。 */
   from: string;
+  /** 原始目标节点 ID。 */
   to: string;
+  /** 状态迁移对应命令等中间声明标识。 */
   via?: string;
+  /** reads/queries 等依赖在声明中的本地别名。 */
   alias?: string;
+  /** 命令声明的资源获取标签，只用于静态配对。 */
   acquires?: string;
+  /** 命令声明的资源释放标签，不会代替命令执行。 */
   releases?: string;
   /** uses 边的来源说明：约束、事件载荷、路由条件、出站映射、查询 */
   as?: string;
+  /** 字段引用关系的基数，区分外键、反查和自动中间表。 */
   cardinality?: 'many-to-one' | 'one-to-one' | 'one-to-many' | 'many-to-many';
+  /** 一对多反向引用的目标外键字段名。 */
   mappedBy?: string;
   /** 新的业务规格边显式保留端点类型，避免同名事件和命令混淆。 */
   fromKind?: NodeKind;
+  /** 目标节点显式种类，消除同名声明歧义。 */
   toKind?: NodeKind;
+  /** 流程阶段连线的人工作用、自动执行或等待语义。 */
   mode?: 'manual' | 'automatic' | 'wait';
+  /** 显式业务连线标题，未声明时由解释层生成。 */
   label?: string;
+  /** 次要分支标记，影响阅读和布局，不改变执行权限。 */
   branch?: boolean;
 }
 
+/**
+ * 版本化本体文件形状，是分析与生成共享的静态快照，不含业务数据库记录。
+ */
 export interface Ontology {
+  /** 当前本体 JSON 结构版本，固定为 1。 */
   version: 1;
+  /** 抽取的语义节点，包含依赖声明与字段等细分事实。 */
   nodes: OntNode[];
+  /** 节点之间可抽取的显式依赖与流程关系。 */
   edges: OntEdge[];
+  /** 静态扫描发现的 unsafe 使用数，用于预算与影响提示。 */
   unsafeCount: number;
 }
 
+/**
+ * 对稳定序列化值计算 SHA-256 并取前 12 位，作为本体节点语义变化标记，不用于密码或安全认证。
+ */
 const h = (v: unknown) => createHash('sha256').update(stableStringify(v)).digest('hex').slice(0, 12);
 
+/**
+ * 尽量把输入 schema 转成 JSON Schema，无法表达时返回 null；不会执行校验函数。
+ */
 function jsonSchema(s: z.ZodType): unknown {
   try {
     return z.toJSONSchema(s, { unrepresentable: 'any', io: 'input' });
@@ -87,6 +136,9 @@ function jsonSchema(s: z.ZodType): unknown {
   }
 }
 
+/**
+ * 抽取字段存储、可空、敏感、关系及文件限制，保留简化的列表结构供图规则和生成使用。
+ */
 function fieldAttrs(f: any) {
   return {
     kind: f.kind,
@@ -111,6 +163,13 @@ function fieldAttrs(f: any) {
   };
 }
 
+/**
+ * 从已构建注册表和源码位置生成本体节点与关系。
+ * @param reg 已校验注册表。
+ * @param sites 顶层声明位置及调用文本，依赖包可以没有位置。
+ * @param unsafeCount 静态扫描的逃生口数量，默认零。
+ * @returns version=1 本体；函数只读声明，不执行命令、查询或连接器。
+ */
 export function extract(reg: Registry, sites: DeclSite[] = [], unsafeCount = 0): Ontology {
   const nodes: OntNode[] = [];
   const edges: OntEdge[] = [];
@@ -328,21 +387,23 @@ export function extract(reg: Registry, sites: DeclSite[] = [], unsafeCount = 0):
       push(
         'route',
         `route:${v.process}`,
-        { process: v.process, nodes: v.nodes },
+        { process: v.process, nodes: v.nodes, ...(v.reminders ? { reminders: v.reminders } : {}) },
         { ...(siteOf.get(e.name) ? { file: siteOf.get(e.name)!.file, line: siteOf.get(e.name)!.line } : {}) },
       );
       if (binding) {
         edges.push({ kind: 'binds', from: `route:${v.process}`, to: binding.name });
-        for (const step of v.nodes.flatMap((n: any) => n.kind === 'when' ? n.steps : [n]).filter((n: any) => n.kind === 'ai')) {
-          for (const field of step.context.fields) edges.push({ kind: 'uses', from: `route:${v.process}`, to: `${binding.a.agg.name}.${field}`, as: 'AI 上下文' });
-          for (const query of step.context.queries ?? []) edges.push({ kind: 'queries', from: `route:${v.process}`, to: query });
+        // 条件和并行可嵌套，取证依赖必须完整遍历叶节点；不能只展开第一层而漏掉分支中的 AI。
+        for (const step of approvalRouteSteps(v.nodes).filter(node => node.kind === 'ai')) {
+          for (const field of step.context?.fields ?? []) edges.push({ kind: 'uses', from: `route:${v.process}`, to: `${binding.a.agg.name}.${field}`, as: 'AI 上下文' });
+          for (const query of step.context?.queries ?? []) edges.push({ kind: 'queries', from: `route:${v.process}`, to: query });
         }
         for (const f of v.fieldsUsed as string[])
           edges.push({
             kind: 'uses',
             from: `route:${v.process}`,
             to: `${binding.a.agg.name}.${f}`,
-            as: '路由条件',
+            // 催办申请人同样来自 routable，但它决定实例操作归属，不是审批分支或审批人。
+            as: v.reminders?.requesterField === f ? '催办申请人' : '路由条件',
           });
       }
     } else if (e.kind === 'CONNECTOR') {
@@ -455,12 +516,24 @@ export function extract(reg: Registry, sites: DeclSite[] = [], unsafeCount = 0):
   return { version: 1, nodes, edges, unsafeCount };
 }
 
+/**
+ * 按 kind+id 比较后的新增、删除和内容哈希变化，边变化通过相关节点属性体现。
+ */
 export interface NodeDiff {
+  /** 当前图新出现的节点。 */
   added: OntNode[];
+  /** 基线有而当前没有的节点。 */
   removed: OntNode[];
+  /** 同一身份内容哈希变化的前后节点对。 */
   changed: { before: OntNode; after: OntNode }[];
 }
 
+/**
+ * 比较两份本体节点稳定身份与内容哈希。
+ * @param base 修改前图。
+ * @param head 当前图。
+ * @returns 新增、删除和 before/after 变化对，不修改输入，不单独比较边数组。
+ */
 export function diffOntology(base: Ontology, head: Ontology): NodeDiff {
   const key = (n: OntNode) => `${n.kind}:${n.id}`;
   const b = new Map(base.nodes.map((n) => [key(n), n]));
@@ -475,4 +548,7 @@ export function diffOntology(base: Ontology, head: Ontology): NodeDiff {
   return out;
 }
 
+/**
+ * 按原始 ID 建立节点 Map；同名 ID 会由后出现节点覆盖，调用方须确认身份无歧义，公开查询使用完整 key。
+ */
 export const nodeById = (g: Ontology) => new Map(g.nodes.map((n) => [n.id, n]));

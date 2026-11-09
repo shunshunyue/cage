@@ -1,7 +1,12 @@
+/**
+ * 系统管理应用壳，负责 hash 页面映射、导航、账号操作与加载/错误状态。
+ * 页面模块经公开入口组合，模块只接收内容容器；权限提示按当前会话能力计算，后端仍做权威授权。
+ * 管理界面使用自身 hash 导航，返回业务首页通过普通链接，避免与业务 React Router 混用。
+ */
 import { api, can, run, state } from '../shared/api.js';
 import { emptyState, h, icon, panel } from '../shared/dom.js';
 import { navigate } from '../shared/navigation.js';
-import { renderTasks } from '../modules/tasks/index.js';
+import { renderTasks, renderApprovalRequests, renderApprovalNotices } from '../modules/tasks/index.js';
 import { renderOrg } from '../modules/org/index.js';
 import { renderRoles } from '../modules/roles/index.js';
 import { renderAudit } from '../modules/audit/index.js';
@@ -10,7 +15,19 @@ import { loginPage } from '../modules/auth/index.js';
 import { renderModels } from '../modules/models/index.js';
 import { renderPersonalities } from '../modules/personalities/index.js';
 
+/**
+ * 页面目录及所需能力清单。need 为空表示有登录会话即可尝试进入，非空采用 some 允许满足任一能力。
+ * 这些条目同时决定导航显示和页面级提示，不能替代模块请求或服务端鉴权。
+ */
 const pages = {
+  requests: {
+    title: '我的申请', description: '跟进本人发起的审批，查看办理时限并向当前办理人催办。',
+    glyph: 'file', category: '团队与权限', render: renderApprovalRequests, need: [],
+  },
+  notices: {
+    title: '流程提醒', description: '集中查看临期、超时与催办提醒，及时推进审批协作。',
+    glyph: 'clock', category: '团队与权限', render: renderApprovalNotices, need: [],
+  },
   personalities: {
     title: '助理性格', description: '设置助理的语气、表达习惯和默认性格，随时试聊。',
     glyph: 'users', category: '运行与记录', render: renderPersonalities, need: ['Sys.ai.personalities.manage'],
@@ -69,19 +86,29 @@ const pages = {
     need: ['Sys.ops.read'],
   },
 };
+/**
+ * 限定应用壳可识别的 hash 页面键；未知 hash 按当前实现回到待办页面。
+ */
 type PageKey = keyof typeof pages;
 
 /** 应用组合层只负责导航、会话和页面加载；各管理模块维护自己的表单和请求。 */
+/**
+ * 根据当前会话与 hash 重建侧栏、页头和内容容器，并等待目标模块完成数据加载。
+ * 没有会话时返回登录页，登录成功调用 boot 重新取身份和目录；退出成功后清空本地会话资料。
+ * 加载异常写入错误面板，finally 移除加载提示；本函数不把隐藏按钮视为服务端授权。
+ */
 export async function render(boot: () => Promise<void>) {
   const root = document.getElementById('app')!;
   if (!state.me) {
     root.replaceChildren(loginPage(boot));
     return;
   }
-  const hash = location.hash.replace(/^#\/?/, '') || 'tasks';
+  // 页面键和筛选参数分开解析；提醒页的筛选随 hash 保留，刷新与前进后退仍指向同一视图。
+  const hash = location.hash.replace(/^#\/?/, '').split('?')[0] || 'tasks';
   const key = (hash in pages ? hash : 'tasks') as PageKey;
   const page = pages[key];
-  const visible = Object.entries(pages).filter(([, item]) => !item.need.length || item.need.some(can));
+  const visible = Object.entries(pages).filter(([name, item]) =>
+    (!['requests', 'notices'].includes(name) || state.catalog?.approvalOperations) && (!item.need.length || item.need.some(can)));
   const sidebar = h(
     'aside',
     { class: 'app-sidebar' },
@@ -185,7 +212,7 @@ export async function render(boot: () => Promise<void>) {
           h('h1', {}, page.title),
           h('p', {}, page.description),
         ),
-        h('button', { class: 'refresh-button', onclick: () => navigate(key) }, icon('refresh'), '刷新数据'),
+        h('button', { class: 'refresh-button', onclick: () => navigate(location.hash.replace(/^#\/?/, '') || key) }, icon('refresh'), '刷新数据'),
       ),
       content,
       h(
@@ -226,7 +253,7 @@ export async function render(boot: () => Promise<void>) {
             error instanceof TypeError ? '请检查网络与 API 服务后重新尝试。' : (error as Error).message,
           ),
         ),
-        h('button', { onclick: () => navigate(key) }, '重新加载'),
+        h('button', { onclick: () => navigate(location.hash.replace(/^#\/?/, '') || key) }, '重新加载'),
       ),
     );
   } finally {

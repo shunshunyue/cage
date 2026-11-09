@@ -34,17 +34,17 @@ note: text().optional() // 新增字段
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/cli/src/rules.ts:226`
-- `packages/cli/src/rules.ts:238`
-- `packages/cli/src/rules.ts:245`
-- `packages/cli/src/rules.ts:255`
+- `packages/cli/src/rules.ts:275`
+- `packages/cli/src/rules.ts:293`
+- `packages/cli/src/rules.ts:300`
+- `packages/cli/src/rules.ts:310`
 
 实现片段（位置随框架版本更新）：
 
 ```ts
 
 /** CAGE-EVENT-002：事件载荷只允许向后兼容的变更（只能新增可选字段） */
-export function checkEventCompat(base: Ontology, head: Ontology): Finding[] {
-  const findings: Finding[] = [];
-  const b = new Map(base.nodes.filter((n) => n.kind === 'event').map((n) => [n.id, n]));
+/**
+ * 比较同名事件字段的删除、类型改变及新增必填项。
+ * @param base 旧本体，代表可能仍有在途事件的声明。
 ```

@@ -19,14 +19,19 @@ export * from './consumers.js';
 export * from './scheduler.js';
 export * from './health.js';
 
+/** 生命周期装配选项；注入 kernel 时 worker 不拥有其关闭权，所有带 Ms 后缀的时限均为毫秒。 */
 export interface WorkerOptions {
+  /** 未注入 kernel 时用于创建内核的领域导出；必须与 API 使用同一业务版本。 */
   domain?: object | object[];
+  /** 可选现有内核，提供时由宿主负责关闭；worker 仍拥有自己创建的监听及锁连接。 */
   kernel?: Kernel;
+  /** 数据库账号连接；未注入内核时缺省从环境读取，专用监听连接也需要 app URL。 */
   urls?: DatabaseUrls;
   /** 同时处理的事件数 */
   concurrency?: number;
   /** 没收到 NOTIFY 时的轮询间隔 */
   pollIntervalMs?: number;
+  /** 单个 outbox 事件的最大投递尝试次数，缺省使用 MAX_ATTEMPTS；失败终结后需人工诊断。 */
   maxAttempts?: number;
   /** 外部审批引擎（按流程名）；不传时使用代码内封闭路由 */
   approvalEngines?: Record<string, ApprovalEngine>;
@@ -38,19 +43,27 @@ export interface WorkerOptions {
   shutdownTimeoutMs?: number;
   /** 调度扫描间隔，默认 5 秒；错过周期跳过，不积压补跑。 */
   schedulerIntervalMs?: number;
+  /** 后台循环日志出口；省略使用默认日志器，不应在日志中输出完整连接、载荷或凭据。 */
   logger?: Logger;
 }
 
+/** stop 可重复调用并复用同一停机 Promise；snapshot 是观测证据，不可用于绕过数据库互斥。 */
 export interface WorkerHandle {
+  /** 供消费者复用的执行内核；是否由 stop 关闭取决于是否由 worker 创建。 */
   kernel: Kernel;
+  /** 当前装配的全部消费者，包含框架、扩展及宿主补充项。 */
   consumers: EventConsumer[];
+  /** 注册指纹与消费者清单，用于判断实际装载版本；不证明某事件已经消费成功。 */
   manifest: WorkerManifest;
+  /** 读取此进程最新内存状态、在途任务及心跳证据；人工驱动实例返回 manual/stopped 摘要。 */
   snapshot(): WorkerSnapshot;
-  /** 处理到 outbox 为空为止（测试和 cage dev 用） */
+  /** 手动处理当前可领取事件及扩展工作，默认最多 50 轮；返回处理数量，不代表未来重试或死信已清空。 */
   drain(maxRounds?: number): Promise<number>;
+  /** 停止新工作并等待在途任务；超时会拒绝等待，但不会提前释放仍执行中的任务锁。 */
   stop(): Promise<void>;
 }
 
+/** 合并内置、扩展和额外消费者，显式审批引擎覆盖同名代码路由；缺失引擎或名称冲突在启动前失败。 */
 export function buildConsumers(k: Kernel, opts: Pick<WorkerOptions, 'approvalEngines' | 'consumers'> = {}): EventConsumer[] {
   const engines = { ...routeEngines(k), ...(opts.approvalEngines ?? {}) };
   const consumers = [transferConsumer(k), ...reactionConsumers(k), ...approvalConsumers(k, engines), ...extensionConsumers(k), ...(opts.consumers ?? [])];
@@ -58,11 +71,16 @@ export function buildConsumers(k: Kernel, opts: Pick<WorkerOptions, 'approvalEng
   return consumers;
 }
 
+/** 构建并验证消费者后描述装载清单；这不启动轮询、建立心跳或证明 worker 正在运行。 */
 export function workerManifest(k: Kernel, opts: Pick<WorkerOptions, 'approvalEngines' | 'consumers'> = {}): WorkerManifest {
   return describeConsumers(k, buildConsumers(k, opts));
 }
 
 /** 不启动循环，只创建可手动驱动的 worker（测试用） */
+/**
+ * 手动驱动当前可领取任务，drain 默认最多 50 轮；无到期事件且扩展无进展即返回处理数量。
+ * 未来重试、死信及被前序阻塞的事件仍可能存在，因此 drain 返回并不证明完整业务链已经成功。
+ */
 export function createWorker(k: Kernel, opts: WorkerOptions = {}): Omit<WorkerHandle, 'stop'> {
   const services = runtimeServices(k);
   const consumers = buildConsumers(k, opts);
@@ -88,6 +106,12 @@ export function createWorker(k: Kernel, opts: WorkerOptions = {}): Omit<WorkerHa
   };
 }
 
+/**
+ * 装配服务和消费者后，建立独立 LISTEN/调度锁连接，写首个心跳，再启动投递、定时任务和维护循环。
+ * 所有后台 Promise 统一登记，停机先停止新工作、取消可取消 IO，再等待在途工作后释放连接与锁。
+ * 停机超时只向调用方报错，不提前关闭仍持有任务锁的连接；后台清理继续等待真实任务结束。
+ * LISTEN 失效可由轮询继续发现 outbox；调度连接异常会停止新调度，健康状态如实反映该区别。
+ */
 export async function startWorker(opts: WorkerOptions = {}): Promise<WorkerHandle> {
   const log = opts.logger ?? consoleLogger;
   const urls = opts.urls ?? (opts.kernel ? undefined : urlsFromEnv());

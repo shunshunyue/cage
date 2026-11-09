@@ -1,3 +1,8 @@
+/**
+ * 托管模型配置的真实数据库回归：独立授权、租户隔离、加密存储、版本并发、密钥轮换和动态启停。
+ * 模型 fetch 被 mock，不发送真实凭据或访问外部模型；合成密钥用于断言响应、审计及错误正文不泄露秘密。
+ * 临时加密环境变量与 mock 在生命周期结束时恢复，关闭模型运行时和隔离测试库。
+ */
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { beforeAll, afterAll, afterEach, it, expect, vi } from 'vitest';
 import * as admin from '@yss123/cage-admin/domain';
@@ -8,7 +13,13 @@ import { createTestEnv, type TestEnv, type TestUser } from '../src/index.js';
 const intelligence = ai({ models: { main: managedModel('main') }, assistant: { model: 'main' } });
 const domain = { ...admin, intelligence };
 let env: TestEnv, manager: TestUser, user: TestUser;
+/**
+ * 仅供测试的模型草稿及合成密钥，首次版本为零；不同用例修改地址/密钥/模型名以观察版本和凭据边界。
+ */
 const config = { version: 0, label: '通用模型', baseUrl: 'https://models.example.invalid/v1', model: 'model-a', apiKey: 'test-key-one', enabled: true, timeoutMs: 1000 };
+/**
+ * 最小 Chat Completions SSE 回应，确保测试走真实流解析但无需真实模型推理。
+ */
 const stream = () => new Response('data: {"choices":[{"delta":{"content":"OK"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
 beforeAll(async () => {
   vi.stubEnv('CAGE_AI_ENCRYPTION_KEY', randomBytes(32).toString('base64'));

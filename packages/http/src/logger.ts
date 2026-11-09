@@ -4,6 +4,7 @@ import type { Fields, Logger, Registry } from '@yss123/cage-kernel';
 const SECRET_NAMES = ['password', 'passwordHash', 'password_hash', 'cookie', 'authorization', 'token', 'access_token', 'refresh_token', 'client_secret', 'secret', 'x-csrf-token', 'set-cookie'];
 const METADATA = new Set(['requestId', 'capability', 'command', 'aggregate', 'aggregateId', 'outboxId', 'event', 'attempts', 'job', 'tenant', 'process', 'code', 'statusCode', 'durationMs', 'rows', 'addr', 'operation', 'kind', 'task', 'reason', 'consumer', 'connector', 'workerId', 'phase', 'retryable']);
 
+/** 汇总内置密钥名称及声明中的敏感/隐藏字段，递归覆盖 JSON 结构，同时匹配驼峰与数据库下划线命名。 */
 function sensitiveNames(reg: Registry): Set<string> {
   const names = new Set(SECRET_NAMES.map((name) => name.toLowerCase()));
   const collect = (fields: Readonly<Fields>) => {
@@ -68,6 +69,11 @@ export function sensitiveFieldPaths(reg: Registry): string[] {
   return [...names].flatMap((name) => [`*.${name}`, `req.body.${name}`]);
 }
 
+/**
+ * 构建 Fastify/Pino 配置：先只允许固定执行元数据进入日志，再递归脱敏保留下来的对象。
+ * 请求仅记录 ID、方法和路径，响应仅记录状态；请求体、查询参数、SQL 与错误堆栈均不默认输出。
+ * 业务新增日志字段不会自动获得输出许可，应先判断是否属于可公开的诊断元数据。
+ */
 export function buildLogger(reg: Registry): object {
   const sanitize = createLogSanitizer(reg);
   return {
@@ -95,7 +101,11 @@ export function buildLogger(reg: Registry): object {
   };
 }
 
-/** 无 HTTP 服务实例的 worker 也使用同一元数据白名单，不退回原始 console 序列化。 */
+/**
+ * 无 HTTP 服务实例的 worker 也使用同一元数据白名单，并按 LOG_LEVEL 输出单行 JSON。
+ * message 字符串原样进入日志，因此调用方只能传固定诊断文案，不能拼入凭据或业务载荷。
+ * 未识别的级别回落到 info 阈值；时间使用 ISO UTC，便于多进程时间线合并。
+ */
 export function createSafeLogger(reg: Registry): Logger {
   const options = buildLogger(reg) as { formatters: { log(record: Record<string, unknown>): unknown } };
   const levels = ['debug', 'info', 'warn', 'error'] as const;

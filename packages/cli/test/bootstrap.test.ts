@@ -1,3 +1,8 @@
+/**
+ * 验证组织初始化的跨数据库与凭据文件交付边界。
+ * 测试创建隔离 PostgreSQL、执行真实 CLI 和文件权限检查，覆盖只授组织能力、幂等、ACL 失败及事务回滚。
+ * 成功路径保留真实权限工具，失败路径仅注入明确故障；临时目录、连接与测试实例由套件清理。
+ */
 // 真实 CLI、ACL 和隔离 PostgreSQL：凭据交付必须先于组织初始化提交。
 // 测试库迁移完整业务模型，以证明 bootstrap 不会顺带授予业务权限。
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
@@ -17,6 +22,9 @@ import * as domain from '../../testkit/test/fixtures/domain.js';
 import { bootstrapOrganization, protectCredentialFile } from '../src/bootstrap.js';
 import { loadConfig } from '../src/config.js';
 
+/**
+ * 成功路径仍调用真实系统 ACL 工具；只在指定失败用例中阻断 icacls，避免添加生产专用测试开关。
+ */
 const aclFailure = vi.hoisted(() => ({ enabled: false }));
 vi.mock('node:child_process', async importOriginal => {
   const actual = await importOriginal<typeof import('node:child_process')>();
@@ -33,6 +41,10 @@ let instance: PgInstance;
 let successful: Awaited<ReturnType<typeof database>>;
 let rejected: Awaited<ReturnType<typeof database>>;
 
+/**
+ * 为单个用例组建立隔离数据库和三账号，迁移完整夹具模型后返回管理连接与业务连接串。
+ * 库名仅来自本文件固定调用；连接登记到 clients，由 afterAll 统一关闭，测试凭据不用于外部环境。
+ */
 async function database(name: string) {
   const manager = new pg.Client({ connectionString: instance.superUrl });
   await manager.connect();
@@ -67,18 +79,30 @@ afterAll(async () => {
   rmSync(temporary, { recursive: true, force: true });
 }, 30_000);
 
+/**
+ * 清除宿主继承的 DATABASE_URL/CAGE_*，仅注入当前测试库三账号，防止 CLI 误连接开发环境。
+ * 返回新环境对象，保持 PATH 等启动所需变量。
+ */
 function childEnv(db: typeof successful): NodeJS.ProcessEnv {
   const env = { ...process.env };
   for (const name of Object.keys(env)) if (name === 'DATABASE_URL' || name.startsWith('CAGE_')) delete env[name];
   return { ...env, CAGE_APP_DATABASE_URL: db.urls.app, CAGE_READ_DATABASE_URL: db.urls.read, CAGE_MIGRATE_DATABASE_URL: db.urls.migrate };
 }
 
+/**
+ * 启动真实 bootstrap CLI，凭据目标由用例提供，额外环境只用于身份/失败场景。
+ * 20 秒超时限制子进程，返回 stdout/stderr/退出码供断言，不在助手内吞掉错误。
+ */
 function bootstrap(db: typeof successful, file: string, overrides: NodeJS.ProcessEnv = {}) {
   return spawnSync(process.execPath, [cli, 'bootstrap', '--root', temporary, '--credentials-file', file], {
     encoding: 'utf8', env: { ...childEnv(db), ...overrides }, timeout: 20_000, windowsHide: true,
   });
 }
 
+/**
+ * 按稳定 ID 顺序读取组织、审计与 outbox 的完整状态，用于证明失败/重复执行没有额外提交。
+ * 此处使用隔离测试库管理连接，不能复制到应用的安全读侧。
+ */
 async function snapshot(db: typeof successful) {
   const state: Record<string, unknown> = {};
   for (const table of ['sys.user', 'sys.role', 'sys.dept', 'sys.audit_log', 'sys.outbox'])
@@ -86,6 +110,10 @@ async function snapshot(db: typeof successful) {
   return state;
 }
 
+/**
+ * 检查凭据文件实际权限：POSIX 要求 0600，Windows 要求仅当前进程 SID 的显式完全控制。
+ * Windows 读取 ACL 数值而非本地化文本，断言失败直接中断测试，不以环境用户名代替安全身份。
+ */
 function assertRestricted(file: string) {
   if (process.platform !== 'win32') {
     expect(statSync(file).mode & 0o777).toBe(0o600);

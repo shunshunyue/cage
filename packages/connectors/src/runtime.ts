@@ -14,6 +14,7 @@ export function stage(): string {
 
 // ---------------- 密钥 ----------------
 
+/** 运行时秘密读取接口；实现可接环境变量或密钥服务，调用者不得把返回值写入日志。 */
 export interface SecretProvider {
   get(name: string): Promise<string>;
 }
@@ -26,6 +27,7 @@ let secretProvider: SecretProvider = {
   },
 };
 
+/** 替换进程级秘密提供器；动态多租户模型应使用单次 credential 回调，避免改变全局配置串用凭据。 */
 export function setSecretProvider(p: SecretProvider): void {
   secretProvider = p;
 }
@@ -34,6 +36,10 @@ export const secrets = { get: (name: string) => secretProvider.get(name) };
 // ---------------- 限流 ----------------
 
 const buckets = new Map<string, { tokens: number; at: number }>();
+/**
+ * 按连接器名维护单进程令牌桶，等待时间算入上层超时并支持取消。
+ * perSecond 可小于 1，但桶至少容纳一次请求；此预算不协调多个 API/worker 进程。
+ */
 export async function take(c: Connector<any>, signal?: AbortSignal): Promise<void> {
   const rate = c.rateLimit?.perSecond;
   if (!rate) return;
@@ -58,6 +64,7 @@ export async function take(c: Connector<any>, signal?: AbortSignal): Promise<voi
 
 type FakeHandler = (req: any, context: { key: string; signal: AbortSignal }) => unknown | Promise<unknown>;
 const fakes = new Map<string, FakeHandler>();
+/** fake 阶段的内存调用轨迹，供测试断言；不是生产录制平台，测试需要自行管理累计记录。 */
 export const fakeCalls: { connector: string; operation: string; request: unknown; key: string }[] = [];
 
 /** 注册 fake 实现：fakeConnector(erp, { pushOrder: (req) => ({ erpNo: 'FAKE-' + req.externalId }) }) */
@@ -94,6 +101,10 @@ export function sampleFromSchema(schema: z.ZodType, seed = 'fake'): unknown {
 
 // ---------------- 调用 ----------------
 
+/**
+ * retryable 表示协议允许自动再试；outcome 区分已知拒绝和远端结果未知，二者不可互相推断。
+ * status=null 表示未取得 HTTP 状态，providerCode 仅携带已筛选稳定错误码，不存原始响应正文。
+ */
 export class ConnectorError extends Error {
   constructor(message: string, readonly status: number | null, readonly retryable: boolean, readonly outcome: 'rejected' | 'unknown' = 'rejected', readonly providerCode?: string) {
     super(message);
@@ -101,6 +112,7 @@ export class ConnectorError extends Error {
   }
 }
 
+/** 同步记录供运维查看，失败仅告警；可靠成功回执另存 connector_execution，不能依赖本日志恢复去重。 */
 async function recordCall(k: Kernel | undefined, o: Op, key: string, tenantId: string | null, status: 'ok' | 'failed', httpStatus: number | null, request: unknown, response: unknown, error?: string) {
   if (!k) return;
   await k.app
@@ -119,6 +131,7 @@ async function recordCall(k: Kernel | undefined, o: Op, key: string, tenantId: s
     .catch((e) => k.log.warn({ err: String(e) }, '同步记录写入失败'));
 }
 
+/** 将取消与实际 Promise 竞争，确保 fake 也遵守调用超时；底层工作仍应主动监听 signal 释放资源。 */
 async function abortable<T>(signal: AbortSignal, run: () => Promise<T>): Promise<T> {
   signal.throwIfAborted();
   let onAbort: () => void = () => {};
@@ -131,6 +144,11 @@ async function abortable<T>(signal: AbortSignal, run: () => Promise<T>): Promise
 }
 
 /** 调用一个连接器操作。白名单外的字段直接报错，不会被悄悄发出去。 */
+/**
+ * 先严格校验请求白名单，再按阶段走 fake 或真实主机；真实请求携带同一个幂等键和按需密钥。
+ * 总超时包含令牌等待、请求和响应读取；响应必须符合 schema 才交付，失败归一为 ConnectorError。
+ * 本函数只做一次调用，不自行重试；外部副作用能否重试由 effect 与 outbox 消费策略共同决定。
+ */
 export async function call(o: Op, payload: unknown, key: string, opts: { kernel?: Kernel; tenantId?: string; signal?: AbortSignal } = {}): Promise<any> {
   const body = (o.request as z.ZodObject<any>).strict().parse(payload);
   const timeout = AbortSignal.timeout(o.connector.timeoutMs);
@@ -177,6 +195,7 @@ export async function call(o: Op, payload: unknown, key: string, opts: { kernel?
   }
 }
 
+/** 对对象键排序、保留数组次序以生成请求摘要，拒绝同一业务幂等键被不同请求内容复用。 */
 function canonical(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
@@ -186,6 +205,12 @@ function canonical(value: unknown): string {
 type OutboundPrepared = { skipped: true } | { skipped: false; response: unknown };
 
 /** 先持久化意图，释放连接后才外呼；成功回执先提交，后续本地回写失败不再外呼。 */
+/**
+ * 短事务内声明执行意图并领取租约：摘要不符拒绝，已有成功直接复用回执，unknown 隔离禁止重发。
+ * 不可重试写的过期 calling 租约也转 unknown，因为进程中断不能证明远端未执行。
+ * 释放数据库连接后外呼，成功用租约 token 条件保存回执；后续本地回写失败可重放回执而无需重复外呼。
+ * 远端成功但回执未落库的窗口仍依赖远端幂等协议，不能宣称任意外部系统恰好一次。
+ */
 async function prepareOutbound(k: Kernel, ob: Outbound, row: OutboxRow, consumer: string, signal?: AbortSignal): Promise<OutboundPrepared> {
   const mapped = ob.map(row.payload as any);
   if (mapped === null || mapped === undefined) return { skipped: true };
@@ -243,6 +268,7 @@ async function prepareOutbound(k: Kernel, ob: Outbound, row: OutboxRow, consumer
 }
 
 /** 出站网络执行与短事务回写分离；回写命令与 processed_event 去重登记共同提交。 */
+/** prepare 完成网络/回执，handle 仅做短事务命令回写；不可重试异常明确标永久错误进入死信。 */
 export function outboundConsumer(k: Kernel, ob: Outbound): EventConsumer {
   const name = `outbound:${ob.op.connector.name}.${ob.op.name}:${ob.event.name}`;
   return {

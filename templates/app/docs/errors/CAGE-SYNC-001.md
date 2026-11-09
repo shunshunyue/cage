@@ -34,8 +34,9 @@ sync --check 发现框架规则需更新，或 begin/end 标记缺失一边、�
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/cli/src/sync.ts:119`
-- `packages/cli/src/sync.ts:132`
+- `packages/cli/src/sync.ts:149`
+- `packages/cli/src/sync.ts:156`
+- `packages/cli/src/sync.ts:167`
 
 实现片段（位置随框架版本更新）：
 

@@ -1,13 +1,30 @@
+/**
+ * 把后端输入和字段定义转换为契约中的 Zod 源码，并报告无法完整迁移到浏览器的规则。
+ * 先借助 JSON Schema 表达结构，再重建可支持的约束；递归、refine、transform 等保留明确边界。
+ * 这里只返回代码字符串和诊断，不运行生成代码；客户端校验不能替代服务端，掩码及可空读值按读侧语义处理。
+ */
 // 生成可表达的输入校验；自定义函数仍由服务端执行，生成报告必须明确列出这些边界。
 import { isRelation, type AnyField, type Fields } from '@yss123/cage-kernel';
 import { z } from 'zod';
 
+/**
+ * 把字段名或字面值编码为安全的 JavaScript 字符串语法，生成器不手写引号转义。
+ */
 const str = (s: string) => JSON.stringify(s);
 const activeJsonSchemas = new Set<object>();
 
-export interface SchemaDiagnostic { path: string; reason: string }
+/**
+ * 输入规则不能无损进入契约时的字段路径与原因，供生成器报告服务端校验边界。
+ */
+export interface SchemaDiagnostic { /** 从 $ 起始的 schema 路径，数组元素用 [] 表示。 */ path: string; /** 不能完整序列化或需要服务端校验的具体原因。 */ reason: string }
 
 /** Inspect the original schema: JSON Schema intentionally cannot retain executable refinements. */
+/**
+ * 递归检查原始 Zod 结构中的可执行转换、校验及循环。
+ * @param schema 原始输入 schema。
+ * @param path 诊断起始路径，默认 $。
+ * @returns 服务端专属规则列表；祖先集合防止递归无限展开，不运行校验函数。
+ */
 export function schemaDiagnostics(schema: z.ZodType, path = '$'): SchemaDiagnostic[] {
   const findings: SchemaDiagnostic[] = [];
   const visit = (value: any, at: string, ancestors: Set<unknown>) => {
@@ -41,6 +58,11 @@ export function schemaDiagnostics(schema: z.ZodType, path = '$'): SchemaDiagnost
   return findings;
 }
 
+/**
+ * 把 Zod 输入转成可表达的客户端代码，对转换/带 flags 正则避免生成比服务器更严格的规则。
+ * @param schema 后端输入 schema。
+ * @returns Zod 源码表达式；不可转换的结构抛 CAGE-GEN-003，服务端仍权威。
+ */
 export function zodCodeOf(schema: z.ZodType): string {
   let js: any;
   try {
@@ -64,6 +86,9 @@ export function zodCodeOf(schema: z.ZodType): string {
   return jsonToZod(js, js);
 }
 
+/**
+ * 在基础 Zod 字符串上附可表达长度、区间、倍数及数组大小检查，不解释自定义可执行函数。
+ */
 function withChecks(base: string, s: any): string {
   let out = base;
   if (s.type === 'string' || base.startsWith('z.string')) {
@@ -85,6 +110,12 @@ function withChecks(base: string, s: any): string {
   return out;
 }
 
+/**
+ * 带递归保护地转换 JSON Schema，并保留有 default 属性的默认值。
+ * @param s 当前 JSON Schema 节点。
+ * @param root 本地 $ref 的根。
+ * @returns Zod 表达式；递归继续部分放宽为 unknown 并标注，finally 清除当前活动节点。
+ */
 export function jsonToZod(s: any, root: any): string {
   if (s && activeJsonSchemas.has(s)) return 'z.unknown() /* CAGE-GEN-003: recursive validation remains server-only */';
   if (s && typeof s === 'object') activeJsonSchemas.add(s);
@@ -94,6 +125,10 @@ export function jsonToZod(s: any, root: any): string {
   } finally { if (s && typeof s === 'object') activeJsonSchemas.delete(s); }
 }
 
+/**
+ * 处理引用、枚举、组合和基础 JSON Schema 类型，未知结构仅按当前分支明确放宽或报错。
+ * 对象 required/default 决定 optional，additionalProperties 区分 strict/loose/catchall。
+ */
 function jsonToZodInner(s: any, root: any): string {
   if (s === false) return 'z.never()';
   if (!s || typeof s !== 'object' || Object.keys(s).length === 0) return 'z.unknown()';
@@ -184,6 +219,11 @@ function jsonToZodInner(s: any, root: any): string {
 }
 
 /** 读侧快照的字段 schema：敏感字段返回的是掩码值，所以只校验为字符串 */
+/**
+ * 根据聚合字段生成读侧 schema，敏感字段按掩码字符串处理。
+ * @param f 字段定义。
+ * @returns Zod 源码；可选字段同时接受 null 和 undefined，不复制服务端业务约束。
+ */
 export function fieldReadCode(f: AnyField): string {
   let base: string;
   if (f.sensitiveKind) base = 'z.string()';
@@ -227,6 +267,12 @@ export function fieldReadCode(f: AnyField): string {
   return f.isOptional ? `${base}.nullable().optional()` : base;
 }
 
+/**
+ * 生成聚合读快照 schema，附 ID、状态、版本与时间系统列。
+ * @param fields 聚合字段，隐藏字段和虚拟关系不内嵌。
+ * @param states 允许状态列表。
+ * @returns 对象 schema 源码；关联通过独立分页接口读取。
+ */
 export function snapshotCode(fields: Fields, states: readonly string[]): string {
   const lines = [
     'id: z.string().uuid()',

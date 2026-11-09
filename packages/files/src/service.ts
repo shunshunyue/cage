@@ -1,4 +1,8 @@
 // 上传会话/分片保存在 PostgreSQL；IO 在事务外执行，以 token 和租约阻止迟到结果回写。
+/** 本文件连接业务授权、上传元数据和私有存储，负责 begin → 分片 → complete → ready 的生命周期。
+ * ready 只表示字节已完成，真正绑定由业务命令在自己的事务中完成；服务不直接修改领域对象。
+ * 配额和状态在短数据库事务中决定，长时间 IO 通过续租与 token 栅栏保护，清理保留墓碑兜住迟到写入。
+ */
 import { randomUUID, createHash } from 'node:crypto';
 import type { Readable } from 'node:stream';
 import { sql, type Transaction } from 'kysely';
@@ -8,29 +12,48 @@ import { cageError, isFile, type Ctx, type Kernel, type AnyField } from '@yss123
 import { LocalFileStorage } from './local.js';
 import type { ByteRange, FileStorage, StoredPart } from './storage.js';
 
+/** 创建上传的外部输入：命令/字段定位授权边界，targetId 仅用于修改已有对象。
+ * bytes 为正安全整数字节数；filename 仅作下载展示，禁止路径和控制字符；contentType 后续还会验内容。
+ */
 export const beginUploadSchema = z.object({
   command: z.string().min(1).max(180), field: z.string().min(1).max(100), targetId: z.string().uuid().optional(),
   filename: z.string().min(1).max(255).refine(name => !/[\x00-\x1f\x7f/\\]/.test(name), '文件名不能包含路径或控制字符'),
   bytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER), contentType: z.string().max(150),
 });
+/** 通过创建校验后的输入类型；不包含服务端生成的会话 ID、租约或存储路径。 */
 export type BeginUpload = z.infer<typeof beginUploadSchema>;
+/** 已完成分片的公开证明；number 从 1 开始，摘要用于断点续传时确认内容一致。 */
 export interface UploadPart { number: number; bytes: number; sha256: string }
+/** 浏览器可见的上传进度。它不泄露存储键，也不能作为永久下载凭据。 */
 export interface UploadSession {
+  /** 会话与业务入口；targetId 在新建对象场景为 null，绑定后仍保留原上传语境。 */
   id: string; aggregate: string; field: string; command: string; targetId: string | null;
+  /** 展示文件名、精确总字节数和声明的 MIME；不代表客户端可指定物理存储位置。 */
   filename: string; bytes: number; contentType: string;
+  /** ready 可交给命令绑定；bound 只能通过业务命令解绑；deleting/deleted 不再接收上传。 */
   status: 'uploading' | 'completing' | 'ready' | 'bound' | 'deleting' | 'deleted';
+  /** 标准片大小、总片数、已确认片以及 ISO 到期时间；列表摘要的 parts 刻意为空。 */
   partBytes: number; partCount: number; parts: UploadPart[]; expiresAt: string;
 }
+/** 经过当前权限检查后返回的文件描述，不包含可绕过权限的存储 URL。 */
 export interface FileInfo { id: string; filename: string; bytes: number; contentType: string }
+/** 单服务实例的存储策略。所有数值均须为正安全整数，并在构造时校验适配器容量限制。 */
 export interface FileServiceOptions {
+  /** 可替换的私有存储；未提供时使用 LocalFileStorage。 */
   storage?: FileStorage;
   /** 默认 .cage-files；使用 storage 时由适配器决定目录。 */
   directory?: string;
+  /** 标准分片字节数，默认 16 MiB；最后一片按剩余长度收尾。 */
   partBytes?: number;
+  /** 每文件服务级字节上限，默认 2 GiB；还须满足业务字段自身限制。 */
   maxFileBytes?: number;
+  /** 单用户未绑定会话累计字节上限，默认 8 GiB。 */
   maxPendingBytesPerUser?: number;
+  /** 租户所有未删除会话累计声明字节上限，默认 100 GiB。 */
   maxStoredBytesPerTenant?: number;
+  /** 单用户未绑定会话个数上限，默认 100；与字节配额共同限制占用。 */
   maxPendingUploadsPerUser?: number;
+  /** 暂存保留时间，单位毫秒，默认一天；过期内容由后台清理回收。 */
   retentionMs?: number;
   /** 单次分片/合并 IO 总时限，默认 30 分钟。 */
   ioTimeoutMs?: number;
@@ -38,20 +61,29 @@ export interface FileServiceOptions {
 
 type Row = Record<string, any>;
 const SHA = /^[0-9a-f]{64}$/;
+/** IO 租约窗口为两分钟，活动操作每四分之一窗口续租；与完整 IO 总时限分别控制失联和超时。 */
 const LEASE_MS = 120_000;
+/** 将 Zod 的路径化问题统一转换为公开 INVALID_INPUT，避免把 Zod 异常细节直接暴露给 HTTP。 */
 const parse = <T>(schema: z.ZodType<T>, raw: unknown): T => {
   const result = schema.safeParse(raw);
   if (!result.success) throw cageError('INVALID_INPUT', result.error.issues.map(i => ({ path: i.path.join('.'), message: i.message })));
   return result.data;
 };
 
+/** 文件业务边界的协调器；实例由 API 生命周期管理，close 会取消并等待本实例在途 IO。
+ * 每次访问重新检查当前身份和策略，不把创建会话时的授权当作后续读写的永久许可。
+ */
 export class FileService {
+  /** 持久字节适配器；名称同时写入会话，防止跨存储空间误读或误清理。 */
   readonly storage: FileStorage;
+  /** 已通过适配器限制校验的分片字节数，供 HTTP 层设置请求体限制。 */
   readonly partBytes: number;
+  /** 服务级文件大小上限，单位字节。 */
   readonly maxFileBytes: number;
   private readonly options: Required<Omit<FileServiceOptions, 'storage' | 'directory'>>;
   private readonly active = new Map<AbortController, Promise<unknown>>();
   private closing = false;
+  /** 合并默认策略并做启动期配置校验；不创建上传、不访问存储、不启动定时清理。 */
   constructor(readonly kernel: Kernel, options: FileServiceOptions = {}) {
     this.storage = options.storage ?? new LocalFileStorage(options.directory);
     this.options = {
@@ -67,9 +99,13 @@ export class FileService {
     this.partBytes = this.options.partBytes; this.maxFileBytes = this.options.maxFileBytes;
   }
 
+  /** 上传/下载入口仅接受具名 user 身份；流程、任务及匿名上下文不能借此占用私有存储。 */
   private identity(ctx: Ctx) {
     if (!ctx.userId || ctx.actor?.kind !== 'user') throw cageError('UNAUTHENTICATED');
   }
+  /** 验证命令能力、文件字段及输入归属；已有对象还要通过当前 read 范围和起始状态检查。
+   * 这里只判断上传资格，最终业务命令仍会独立检查版本、硬约束、不变量和绑定合法性。
+   */
   private async policy(command: string, field: string, targetId: string | null, ctx: Ctx): Promise<AnyField> {
     this.identity(ctx);
     const registered = this.kernel.registry.command(command), definition = registered?.cmd;
@@ -87,6 +123,7 @@ export class FileService {
     }
     return f;
   }
+  /** 取得当前租户当前上传者的会话，并重新校验业务策略；不存在或存储不匹配统一隐藏为 NOT_FOUND。 */
   private async owned(id: string, ctx: Ctx): Promise<Row> {
     this.identity(ctx); parse(z.string().uuid(), id);
     const row = await this.kernel.app.selectFrom('sys.file_upload').selectAll().where('id', '=', id).where('tenant_id', '=', ctx.tenantId).where('user_id', '=', ctx.userId).executeTakeFirst();
@@ -94,22 +131,30 @@ export class FileService {
     await this.policy(row.command_name, row.field_name, row.target_id, ctx);
     return row;
   }
+  /** 在调用方事务中锁会话行，串行化修改、完成和取消；调用方应已用 owned/policy 完成授权。 */
   private async locked(tx: Transaction<any>, id: string, ctx: Ctx): Promise<Row> {
     const row = await tx.selectFrom('sys.file_upload').selectAll().where('id', '=', id).where('tenant_id', '=', ctx.tenantId).where('user_id', '=', ctx.userId).forUpdate().executeTakeFirst();
     if (!row || row.storage !== this.storage.name) throw cageError('NOT_FOUND');
     return row;
   }
+  /** 可修改性检查与授权分离；过期、已绑定或进入删除阶段的会话不允许迟到写入重新激活。 */
   private usable(row: Row) {
     if (new Date(row.expires_at) <= new Date() || ['deleting', 'deleted', 'bound'].includes(row.status)) throw cageError('CONFLICT', '上传会话已过期或不可修改');
   }
+  /** 将数据库 bigint/日期与内部状态投影成公开 DTO，只列出确实已有存储键的已确认分片。 */
   private view(row: Row, parts: Row[]): UploadSession {
     return { id: row.id, aggregate: row.aggregate_name, field: row.field_name, command: row.command_name, targetId: row.target_id,
       filename: row.filename, bytes: Number(row.bytes), contentType: row.content_type, status: row.status,
       partBytes: row.part_bytes, partCount: row.part_count, expiresAt: new Date(row.expires_at).toISOString(),
       parts: parts.filter(p => p.storage_key).map(p => ({ number: p.number, bytes: p.bytes, sha256: p.sha256 })) };
   }
+  /** 按片号返回内部元数据；仅供已完成所有权检查的调用使用，不能直接作为公开查询入口。 */
   private parts(id: string) { return this.kernel.app.selectFrom('sys.file_part').selectAll().where('upload_id', '=', id).orderBy('number').execute(); }
 
+  /** 创建或重放同一次上传申请。租户咨询锁让多实例在同一短事务内核对并占用配额。
+   * 相同用户的同一幂等键只能对应相同规范请求和存储；超配额抛 RATE_LIMITED，不产生半成品会话。
+   * 此步骤只预留元数据与额度，客户端之后使用返回的 partBytes/partCount 上传字节。
+   */
   async begin(raw: unknown, ctx: Ctx, idempotencyKey: string): Promise<UploadSession> {
     if (this.closing) throw cageError('CONFLICT', '文件服务正在停止');
     const request = parse(beginUploadSchema, raw);
@@ -141,7 +186,9 @@ export class FileService {
     return this.view(row, await this.parts(row.id));
   }
 
+  /** 断点恢复的权威进度查询；返回服务端已确认片清单，客户端不能凭本地发送进度认定上传成功。 */
   async get(id: string, ctx: Ctx): Promise<UploadSession> { return this.view(await this.owned(id, ctx), await this.parts(id)); }
+  /** 查询同一业务入口下本人未过期的可恢复会话，最多一百条；摘要不携带完整分片表。 */
   async list(command: string, field: string, targetId: string | null, ctx: Ctx): Promise<UploadSession[]> {
     await this.policy(command, field, targetId, ctx);
     let query = this.kernel.app.selectFrom('sys.file_upload').selectAll().where('tenant_id', '=', ctx.tenantId).where('user_id', '=', ctx.userId)
@@ -152,6 +199,10 @@ export class FileService {
     return rows.map(row => this.view(row, []));
   }
 
+  /** 为事务外 IO 管理续租、总时限与停机取消。
+   * 续租丢失或数据库异常即中止信号；run 必须在提交元数据前再次检查信号和 token，避免迟到完成覆盖新执行者。
+   * active 持有 Promise 直到 finally，用于 close 等待真正停止，而非仅发出取消请求。
+   */
   private lease<T>(renew: () => Promise<boolean>, run: (signal: AbortSignal) => Promise<T>): Promise<T> {
     if (this.closing) return Promise.reject(cageError('CONFLICT', '文件服务正在停止'));
     const controller = new AbortController();
@@ -167,6 +218,10 @@ export class FileService {
     return result;
   }
 
+  /** 上传一片：先锁会话认领片号，再释放事务写存储，最后凭 token 确认结果。
+   * 相同片号和摘要的已完成请求可重放；内容变化或有效租约冲突会拒绝。尾片长度从总大小计算。
+   * IO 失败会销毁输入流并释放属于本 token 的租约，已被其他执行接管的记录保持不动。
+   */
   async putPart(id: string, number: number, sha256: string, source: Readable, ctx: Ctx): Promise<UploadPart> {
     await this.owned(id, ctx);
     if (!SHA.test(sha256) || !Number.isInteger(number) || number < 1) throw cageError('INVALID_INPUT', '分片编号或 SHA-256 非法');
@@ -208,6 +263,9 @@ export class FileService {
     }
   }
 
+  /** 最多读取首片前 8192 字节检查 MIME；文本仅接受合法 UTF-8 和允许的控制字符。
+   * 这是内容类型核对，不是病毒扫描，也不会验证整个 JSON/CSV 的业务格式。
+   */
   private async verifyType(key: string, expected: string) {
     const stream = await this.storage.read(key, { start: 0, end: 8191 });
     const buffers: Buffer[] = [];
@@ -225,6 +283,10 @@ export class FileService {
     if ((detected ?? 'application/octet-stream') !== expected) throw cageError('INVALID_INPUT', '文件内容与声明类型不一致');
   }
 
+  /** 确认片号连续且全部落盘后认领合并租约，验证类型并生成最终对象，再原子进入 ready。
+   * ready/bound 的重放不重复合并；失败只回退本次 token 仍持有的 completing 状态，允许后续安全恢复。
+   * 返回 ready 后仍需由调用方执行目标业务命令绑定附件，不能把上传成功当作业务保存成功。
+   */
   async complete(id: string, ctx: Ctx): Promise<UploadSession> {
     const owned = await this.owned(id, ctx);
     // 已绑定后的重试不能重新合并或更改内容。
@@ -263,6 +325,7 @@ export class FileService {
     }
   }
 
+  /** 标记未绑定会话待删除并使执行 token 失效；实际字节回收交给 cleanup，故返回不表示磁盘已清空。 */
   async cancel(id: string, ctx: Ctx) {
     await this.owned(id, ctx);
     await this.kernel.app.transaction().execute(async tx => {
@@ -273,6 +336,9 @@ export class FileService {
     return { ok: true };
   }
 
+  /** 下载授权：已绑定文件必须仍存在于当前可读业务对象的对应字段；ready 暂存只允许上传者访问。
+   * 每次重新读取对象与范围，隐藏字段/撤权/解绑均可能使文件不可见，不依赖曾经拿到的文件 ID。
+   */
   private async accessible(id: string, ctx: Ctx): Promise<Row> {
     this.identity(ctx); parse(z.string().uuid(), id);
     const row = await this.kernel.app.selectFrom('sys.file_upload').selectAll().where('id', '=', id).where('tenant_id', '=', ctx.tenantId).executeTakeFirst();
@@ -289,10 +355,15 @@ export class FileService {
     }
     return row;
   }
+  /** 返回授权后的展示元数据；不创建内容流，下载调用仍须再次检查并可靠审计。 */
   async info(id: string, ctx: Ctx): Promise<FileInfo> {
     const row = await this.accessible(id, ctx);
     return { id: row.id, filename: row.filename, bytes: Number(row.bytes), contentType: row.content_type };
   }
+  /** 在当前权限下读取完整文件或闭区间，并在交付流之前提交下载审计。
+   * 事务内锁会话再次核对绑定/到期状态，与解绑清理排序；审计失败即拒绝交付，不降级为未审计下载。
+   * 返回的 stream 由 HTTP 层消费；存储读取失败会直接上抛，内容不在数据库事务内传输。
+   */
   async download(id: string, ctx: Ctx, range?: ByteRange) {
     const row = await this.accessible(id, ctx), bytes = Number(row.bytes);
     if (range && (!Number.isSafeInteger(range.start) || !Number.isSafeInteger(range.end) || range.start < 0 || range.end < range.start || range.end >= bytes)) throw cageError('INVALID_INPUT', '下载范围非法');
@@ -307,7 +378,10 @@ export class FileService {
     return { info: { id, filename: row.filename, bytes, contentType: row.content_type }, stream: await this.storage.read(row.storage_key, range) };
   }
 
-  /** API 后台周期调用；数据库先认领，再在事务外删除。保留墓碑以回收迟到 IO 的残留文件。 */
+  /** API 后台周期调用；数据库先认领，再在事务外删除。保留墓碑以回收迟到 IO 的残留文件。
+   * 每轮最多处理 limit 个过期会话及 limit 个已完成对象；有效合并/分片租约会推迟删除。
+   * 删除失败保留 deleting 供下轮重试；墓碑一天后重查，已完成对象则只回收其非最终分片。
+   */
   async cleanup(limit = 100): Promise<void> {
     const now = new Date();
     const candidates = await this.kernel.app.selectFrom('sys.file_upload').select('id').where('storage', '=', this.storage.name)
@@ -335,6 +409,7 @@ export class FileService {
     }
   }
 
+  /** 阻止新 IO，向所有本实例在途操作发出取消并等待收尾；单个取消异常不妨碍等待其他操作。 */
   async close() {
     this.closing = true;
     const work = [...this.active];

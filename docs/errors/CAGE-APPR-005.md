@@ -34,14 +34,14 @@ route('采购审批', nodes)
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/approval/src/route.ts:109`
+- `packages/approval/src/route.ts:176`
 
 实现片段（位置随框架版本更新）：
 
 ```ts
-export function route(process: string, nodes: RouteNode[]): Route {
+export function route(process: string, nodes: RouteNode[], options: { reminders?: ApprovalReminderPolicy } = {}): Route {
   if (!/^[a-z][a-z0-9-]*$/.test(process)) throw declError('CAGE-APPR-005', `流程名 ${process} 必须是小写短横线`);
   if (nodes.length === 0) throw declError('CAGE-APPR-006', `流程 ${process} 至少需要一个步骤`);
-  const fields = new Set<string>();
-  for (const n of nodes) {
+  const inspection = inspectRoute(nodes);
+  const fields = new Set<string>(inspection.fields);
 ```

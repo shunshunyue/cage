@@ -6,12 +6,17 @@ import { PasswordVerifier } from '../../http/src/auth.js';
 import { createServer } from '../../http/src/server.js';
 import { createTestEnv } from '../src/index.js';
 
+/** 在模块加载前截获 scrypt 回调，由测试显式释放；避免依赖机器 CPU 速度决定认证排队时序。 */
 const held = vi.hoisted(() => ({ callbacks: [] as ((error: Error | null, key: Buffer) => void)[] }));
 vi.mock('node:crypto', async (original) => ({
   ...await original<typeof import('node:crypto')>(),
   scrypt: (_password: string, _salt: string, _length: number, callback: (error: Error | null, key: Buffer) => void) => { held.callbacks.push(callback); },
 }));
 
+/**
+ * 第一请求占派生槽、第二排队、第三被拒绝，普通路由此时仍应响应；随后分别释放成功与失败回调。
+ * finally 会先解开全部受控等待并收集请求，再恢复 mock、关闭服务和测试库，避免断言失败导致悬挂。
+ */
 it('密码派生等待期间普通 HTTP 能先响应，认证队列有界且派生失败后释放名额', async () => {
   const env = await createTestEnv({ domain: org });
   const server = createServer({ domain: {}, urls: env.urls, logger: false, admin: false, csrf: false, auth: { passwordConcurrency: 1, passwordQueueLimit: 1 } });

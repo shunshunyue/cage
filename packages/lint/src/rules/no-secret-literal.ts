@@ -1,6 +1,14 @@
+/**
+ * 扫描字符串字面量中的常见凭据格式与疑似密钥赋值。
+ * 已知供应商格式先匹配，再依据变量/属性名、长度及字符形状作启发式判断。
+ * 环境变量名称允许作为引用；检查并不覆盖任意编码、拼接或运行时构造的秘密，不应把未报错当作绝对无泄漏。
+ */
 // 仓库中出现密钥字面量即构建失败：密钥只写名字，值从密钥管理服务（或环境变量）读取
 import type { Rule } from 'eslint';
 
+/**
+ * 已知凭据外形及面向开发者的分类名称；这里只存模式，不包含真实密钥样本。
+ */
 const PATTERNS: [RegExp, string][] = [
   [/AKIA[0-9A-Z]{16}/, 'AWS 访问密钥'],
   [/-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----/, '私钥'],
@@ -10,8 +18,15 @@ const PATTERNS: [RegExp, string][] = [
   [/\bxox[baprs]-[A-Za-z0-9-]{10,}/, 'Slack 令牌'],
   [/eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/, 'JWT'],
 ];
+/**
+ * 对变量或属性名的末尾做密钥语义匹配，供第二阶段启发式判断使用。
+ */
 const NAME_RE = /(password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key)$/i;
 
+/**
+ * 检查 Literal 的字符串值，并从父节点提取变量名、属性名或赋值目标名。
+ * 同一值命中已知格式后立即报告并结束该值检查，避免重复提示。
+ */
 const rule: Rule.RuleModule = {
   meta: {
     type: 'problem',

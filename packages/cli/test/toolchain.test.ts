@@ -1,3 +1,8 @@
+/**
+ * 验证 CLI 的脚手架、静态门禁、生成一致性、基线影响及退出码。
+ * 采购夹具用于抽取规则，临时项目用于创建、托管区、升级和契约变更；必要时启动真实 CLI 子进程。
+ * 测试不初始化真实业务数据库，所有生成/覆盖限于测试目录，测试字符串本身是需保留的输入证据。
+ */
 // 工具链反例：测试检查器是否能发现具体缺陷，而不是复述生成器内部实现。
 import { afterAll, describe, expect, it } from 'vitest';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -264,6 +269,10 @@ describe('托管区和升级', () => {
 });
 
 describe('静态边界与生成一致性', () => {
+  /**
+   * 创建本组独立的最小领域项目，source 原样写入公共入口以测试静态分析与生成行为。
+   * 所有文件位于套件 temporary 下，返回正常配置加载结果，不触及仓库范例。
+   */
   function project(name: string, source: string) {
     const root = join(temporary, name);
     mkdirSync(join(root, 'packages/domain/src'), { recursive: true });

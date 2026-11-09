@@ -35,16 +35,17 @@
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/http/src/auth.ts:58`
-- `packages/http/src/server.ts:86`
-- `packages/http/src/server.ts:90`
+- `packages/http/src/auth.ts:69`
+- `packages/http/src/auth.ts:72`
+- `packages/http/src/server.ts:111`
+- `packages/http/src/server.ts:115`
 
 实现片段（位置随框架版本更新）：
 
 ```ts
+
+  /** concurrency 是同时派生个数，queueLimit 是额外等待个数；非法配置在启动期抛 CAGE-ENV-002。 */
+  constructor(private readonly concurrency = 4, private readonly queueLimit = 32) {
     if (!Number.isSafeInteger(concurrency) || concurrency < 1 || !Number.isSafeInteger(queueLimit) || queueLimit < 0) {
       throw new Error('[CAGE-ENV-002] passwordConcurrency 必须为正整数，passwordQueueLimit 必须为非负整数');
-    }
-  }
-
 ```

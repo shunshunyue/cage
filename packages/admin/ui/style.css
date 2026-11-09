@@ -1,3 +1,5 @@
+/* 系统管理页面样式：基础变量、应用壳、表单表格、授权编辑与 AI 配置区按既有层叠顺序组织。
+ * 页面状态由 TS 添加类名或属性，CSS 只负责显示、布局和响应式适配，不承载授权判断或业务状态转换。 */
 /* 管理工作台采用同一套色彩与间距。仅为桌面排版，不引入远程字体或 UI 运行时。 */
 :root {
   color-scheme: light;
@@ -222,6 +224,43 @@ pre {
 }
 .muted {
   color: var(--muted);
+}
+/* 审批提醒使用真实链接保存筛选 URL；选中态和键盘焦点都沿用系统绿色，状态不只靠文字颜色区分。 */
+.approval-filter {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 4px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  color: var(--ink);
+  text-decoration: none;
+}
+.approval-filter.selected {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-dark);
+  font-weight: 600;
+}
+.approval-filter:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* 审批页支持窄侧面板：横向溢出仅留在表格内，避免整页滚动后操作按钮落到固定侧栏下。 */
+body:has(.approval-workspace) { min-width: 0; }
+.approval-workspace { min-width: 0; }
+.approval-workspace .table-wrap { max-width: 100%; overflow-x: auto; }
+.approval-workspace .table-toolbar { flex-wrap: wrap; gap: 12px; }
+.approval-workspace table { min-width: 700px; }
+@media (max-width: 700px) {
+  body:has(.approval-workspace) .app-sidebar { position: static; width: auto; padding: 16px; }
+  body:has(.approval-workspace) .app-sidebar nav { display: flex; flex-wrap: wrap; gap: 4px; }
+  body:has(.approval-workspace) .sidebar-bottom { display: none; }
+  body:has(.approval-workspace) .app-main { margin-left: 0; }
+  body:has(.approval-workspace) .app-topbar { padding: 0 16px; }
+  body:has(.approval-workspace) .page-container { padding: 22px 16px; }
+  body:has(.approval-workspace) .page-heading,
+  body:has(.approval-workspace) .page-footer { flex-wrap: wrap; }
 }
 .eyebrow {
   display: block;

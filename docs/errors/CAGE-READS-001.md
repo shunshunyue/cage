@@ -34,14 +34,17 @@ reads: {}；使用 deps.stock
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/kernel/src/pipeline/load.ts:86`
+- `packages/kernel/src/pipeline/load.ts:74`
+- `packages/kernel/src/pipeline/load.ts:99`
+- `packages/kernel/src/primitives/command.ts:54`
+- `packages/kernel/src/primitives/command.ts:183`
 
 实现片段（位置随框架版本更新）：
 
 ```ts
-      if (typeof prop === 'string' && !(prop in target) && prop !== 'then' && prop !== 'toJSON') {
-        throw new Error(`[CAGE-READS-001] handler 使用了未声明的读依赖 ${prop}（详见 docs/errors/CAGE-READS-001.md）`);
-      }
-      return (target as any)[prop];
-    },
+ * 仓储绑定当前事务与身份，handler 的读操作因此看到同一事务状态且不能写入。
+ * Proxy 将未声明别名转成明确 CAGE-READS-001；then/toJSON 保留为普通对象协议属性。
+ */
+export function bindReads<R extends Reads>(tx: Db, reads: R, ctx: Ctx): Record<string, ReadRepo<any>> {
+  const deps: Record<string, ReadRepo<any>> = {};
 ```

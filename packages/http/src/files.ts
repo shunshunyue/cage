@@ -6,6 +6,7 @@ import type { FastifyInstance } from 'fastify';
 import type { RouteInfo } from './routes.js';
 import { transferKey } from './transfers.js';
 
+/** 上传会话与私有下载的协议清单；具体授权依赖会话和目标对象，无法用单个固定 capability 表达。 */
 export const fileRoutes: RouteInfo[] = [
   { method: 'POST', url: '/api/sys/uploads', kind: 'upload-begin', input: beginUploadSchema },
   { method: 'GET', url: '/api/sys/uploads', kind: 'upload-list' },
@@ -17,6 +18,12 @@ export const fileRoutes: RouteInfo[] = [
   { method: 'GET', url: '/api/sys/files/:id/download', kind: 'file-download' },
 ];
 
+/**
+ * 将 HTTP 字节流交给 FileService，统一复用当前请求的登录上下文和全局 CSRF 保护。
+ * 分片要求 Content-Length 与 SHA-256，长度上限使用服务配置；准确字节数和摘要由存储层校验。
+ * 下载仅支持一个闭区间 bytes 范围，非法范围返回 416；有效范围返回 206 和准确 Content-Length。
+ * 元数据读取及实际下载分别复核访问条件，FileService 在交付前记录审计；响应禁止共享缓存并强制附件下载。
+ */
 export async function registerFiles(app: FastifyInstance, files: FileService) {
   app.post('/api/sys/uploads', req => files.begin(req.body, req.cageCtx, transferKey(req)));
   app.get('/api/sys/uploads', req => {

@@ -1,3 +1,8 @@
+/**
+ * 维护者显式更新全部可发布框架包的版本号。
+ * 先校验命令行版本形状，再仅重写各包清单 version；不执行安装、构建、提交、打标签或 npm 发布。
+ * CLI 和模板后续从包清单读取版本，锁文件与分发资源需按输出提示另行同步。
+ */
 // 所有框架包保持同一版本；CLI 和模板随后从包清单读取版本，不再各自保存常量。
 import { writeFileSync } from 'node:fs';
 import { packages, version } from './release-utils.ts';

@@ -23,10 +23,15 @@ export interface ApprovalEngine {
   cancel(input: { process: string; businessKey: string; tenantId: string; tx: Transaction<any> }): Promise<void>;
 }
 
+/** 事件可来自真人或代表真人的系统身份，后续反应继续携带同一委托用于审计和职责分离。 */
 function actorUser(row: OutboxRow): string | null {
   return row.actor?.userId ?? row.actor?.onBehalfOf ?? null;
 }
 
+/**
+ * 只装配 tx:outbox 的反应，same 反应已由主命令事务执行。消费名称稳定，供持久去重使用。
+ * 每个反应只获得目标命令能力；集合按声明顺序串行执行，失败带原始条目坐标并回滚消费事务。
+ */
 export function reactionConsumers(k: Kernel): EventConsumer[] {
   const events = new Set(k.registry.reactions.map(({ r }) => r.event.name));
   return [...events].flatMap((event) => k.registry.reactionsFor(event).filter(({ r }) => r.tx === 'outbox'))
@@ -52,6 +57,7 @@ export function reactionConsumers(k: Kernel): EventConsumer[] {
 }
 
 /** 审批启动：只把 routable 字段作为流程变量传给引擎 */
+/** 启动时要求每个流程存在引擎，避免事件已标 done 却没有产生待办；启动/取消随消费事务提交。 */
 export function approvalConsumers(k: Kernel, engines: Record<string, ApprovalEngine>): EventConsumer[] {
   const out: EventConsumer[] = [];
   for (const { a, name } of k.registry.approvals) {
@@ -80,6 +86,7 @@ export function approvalConsumers(k: Kernel, engines: Record<string, ApprovalEng
   return out;
 }
 
+/** 只提取 routable 白名单，优先当前对象快照、再事件载荷；不把整个聚合或任意输入传给流程。 */
 async function routableVars(k: Kernel, a: Approval, row: OutboxRow, tx: Transaction<any>) {
   const ctx = systemCtx({ kind: 'process', name: a.process, tenantId: row.tenant_id, capabilities: [] });
   const snap = await loadScoped(tx, a.agg, row.aggregate_id, ctx, false);

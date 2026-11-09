@@ -1,4 +1,11 @@
+/**
+ * AI 会话、运行、事件、动作、互动与偏好的初始系统迁移。
+ * 唯一约束保护请求键、审批步骤和工具调用关联；权限与租户边界由运行服务落实，导入本文件不执行建表。
+ */
 // AI 元数据不进入业务工具目录；只能由检查租户、会话归属与授权的服务读写。
+/**
+ * 由 ai() 注册的基础元数据迁移，运行与回执必须经服务读写，不能作为绕过业务命令的入口。
+ */
 export const AI_MIGRATION = { name: 'cage:ai_001', sql: `
 CREATE TABLE sys.ai_session (
  id uuid PRIMARY KEY, tenant_id uuid NOT NULL, user_id uuid NOT NULL, title text NOT NULL,

@@ -1,20 +1,56 @@
+/**
+ * 受控附件选择与可恢复上传界面，连接客户端分片任务、上传会话查询和父表单的附件 ID。
+ * 上传 ready 仅说明字节准备完成，正式绑定到业务记录仍需调用方提交领域命令。
+ * 本地校验用于及时反馈，文件策略、归属与下载权限始终由服务端重新检查。
+ */
 // 文件上传与业务保存分开：这里只产出已完成的 ID，最终关联仍由调用方的领域命令提交。
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { client, useFileUpload, type FileUploadTask, type UploadSession } from '@app/contracts';
 import './attachment-upload.css';
 
+/**
+ * 上传组件契约：父组件持有附件草稿，上传任务状态在本组件内维护。
+ */
 interface Props {
+  /**
+   * 最终绑定附件的完整命令名，供服务端验证上传用途及调用能力。
+   */
   command: string;
+  /**
+   * 该命令目标聚合上的文件字段名，必须匹配生成的字段策略。
+   */
   field: string;
+  /**
+   * 编辑已有记录时的目标 UUID；创建命令尚无记录时省略。
+   */
   targetId?: string;
+  /**
+   * 由生成契约提供的策略：maxBytes 为字节上限，maxCount 缺省按单附件，accept 为允许的 MIME 列表。
+   */
   policy: { maxBytes: number; maxCount?: number; accept: readonly string[] };
+  /**
+   * 父表单当前选择的已准备附件 ID；不是服务端已经保存的关联证明。
+   */
   value: string[];
+  /**
+   * 附件新增或移除时回传完整 ID 列表，父表单决定何时提交。
+   */
   onChange: (ids: string[]) => void;
+  /**
+   * 当任一任务处于上传流程时通知父表单，以便阻止不完整附件的保存。
+   */
   onBusyChange: (busy: boolean) => void;
 }
+/**
+ * 以 1024 为单位换算文件大小供展示；输入为字节，不参与服务端大小限制判断。
+ */
 const size = (bytes: number) => bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(1)} GB` : bytes >= 1024 ** 2 ? `${(bytes / 1024 ** 2).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`;
 
+/**
+ * 按 id 查询可访问的文件元信息，成功后提供受服务端鉴权的下载地址。
+ * 加载与不可访问分别提示；不通过存储内部路径绕过下载权限。
+ */
 export function FileLink({ id }: { id: string }) {
   const query = useQuery({ queryKey: ['file-info', id], queryFn: async () => {
     const result = await client.fileInfo(id);
@@ -26,6 +62,11 @@ export function FileLink({ id }: { id: string }) {
   return <a href={client.fileDownloadUrl(id)}>{query.data.filename} <small className="muted">{size(query.data.bytes)}</small></a>;
 }
 
+/**
+ * 先读取匹配 command/field/targetId 的可恢复会话，再创建或继续本地文件任务。
+ * 通过 refs 读取最新父表单值及任务列表，卸载时 dispose 已创建任务；取消/删除业务关联不是卸载的隐含效果。
+ * 父组件负责保存 value；移除选中项只改变草稿，不直接删除服务端已绑定文件。
+ */
 export function AttachmentUpload(props: Props) {
   const { command, field, targetId, policy, value, onChange, onBusyChange } = props;
   const current = useRef(props); current.current = props;
@@ -41,6 +82,10 @@ export function AttachmentUpload(props: Props) {
   useEffect(() => { onBusyChange(Object.values(active).some(Boolean)); }, [active, onBusyChange]);
   useEffect(() => () => { for (const entry of tasksRef.current) entry.task.dispose(); }, []);
 
+  /**
+   * 校验选中文件数量、字节大小和 MIME 后构造上传任务；session 可指定待续传的会话。
+   * 数量同时计入已选附件与未结束任务，续传时实际文件内容匹配由 SDK/服务端验证。
+   */
   function add(files: FileList | null, session?: UploadSession) {
     if (!files?.length) return;
     setError('');
@@ -57,6 +102,10 @@ export function AttachmentUpload(props: Props) {
       setTasks(previous => [...previous, { key, file, task }]);
     }
   }
+  /**
+   * 把已准备的上传 ID 纳入当前父表单草稿；读取最新 props，拒绝重复项及超过数量上限。
+   * 名字表示采用完成结果，此函数是事件处理器，不是 React hook。
+   */
   function useCompleted(id: string) {
     const { value, onChange, policy } = current.current;
     if (value.includes(id)) return;
@@ -88,6 +137,11 @@ export function AttachmentUpload(props: Props) {
   </div>;
 }
 
+/**
+ * 订阅单个 FileUploadTask，挂载后启动，向父组件报告 busy 与完成 ID。
+ * 进度使用 confirmedBytes；暂停/继续/取消交给 SDK，失败从订阅快照显示。
+ * start/cancel 的 Promise 失败在这里不另行抛到页面，错误可见性依赖任务状态；资源释放由外层统一处理。
+ */
 function UploadRow({ file, task, onDone, onBusy }: { file: File; task: FileUploadTask; onDone: (id: string) => void; onBusy: (busy: boolean) => void }) {
   const state = useFileUpload(task);
   const callbacks = useRef({ onDone, onBusy }); callbacks.current = { onDone, onBusy };

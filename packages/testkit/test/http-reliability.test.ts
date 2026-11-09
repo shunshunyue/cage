@@ -9,6 +9,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { createTestEnv, type TestEnv } from '../src/index.js';
 
 let env: TestEnv;
+/** 记录每个场景创建的服务，整组结束统一关闭；每例恢复环境变量和 spy，防止故障注入串扰。 */
 const servers: CageServer[] = [];
 beforeAll(async () => { env = await createTestEnv({ domain: adminDomain }); });
 afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
@@ -16,6 +17,7 @@ afterAll(async () => {
   for (const server of servers) await server.close();
   await env?.close();
 });
+/** 在隔离库上创建未初始化组织的 API；允许场景覆盖信任代理/限流等部署选项，统一登记生命周期。 */
 const server = async (options: Partial<Parameters<typeof createServer>[0]> = {}) => {
   const instance = createServer({ domain: {}, urls: env.urls, logger: false, admin: false, csrf: false, ...options });
   servers.push(instance);
@@ -23,6 +25,7 @@ const server = async (options: Partial<Parameters<typeof createServer>[0]> = {})
   return instance;
 };
 
+/** 从默认值、生产环境拒绝、依赖故障和认证审计四方面检查启动/运行边界，不在测试中接触生产凭据。 */
 describe('HTTP 运行边界', () => {
   it('默认不初始化组织、不信任来源头；可信代理需显式配置', async () => {
     const direct = await server({ rateLimitPerMinute: 1 });
@@ -70,6 +73,7 @@ describe('HTTP 运行边界', () => {
   });
 });
 
+/** 使用唯一合成标记搜索最终序列化结果，同时确认脱敏不改原对象；覆盖无 HTTP 的 worker 日志。 */
 it('任意深度的对象和数组脱敏；默认日志不接收原始载荷或错误文本', () => {
   const LogShape = aggregate('LogShape', { fields: { entries: list({ privatePhone: text().sensitive('phone') }) } });
   const registry = buildRegistry({ ...adminDomain, LogShape });
@@ -91,6 +95,7 @@ it('任意深度的对象和数组脱敏；默认日志不接收原始载荷或�
   expect(JSON.parse(serialized)).toMatchObject({ outboxId: 7, err: { type: 'Error' } });
 });
 
+/** 一执行一排队时第三个请求必须有界拒绝，成功、未知账号与错误路径都应归还执行名额。 */
 it('密码派生异步执行并限制执行数与排队数，错误与未知账号释放名额', async () => {
   const verifier = new PasswordVerifier(1, 1);
   const password = 'synthetic-test-password';
@@ -108,6 +113,7 @@ it('密码派生异步执行并限制执行数与排队数，错误与未知账�
   expect(await verifyPassword(password, await hashPassword(password))).toBe(true);
 });
 
+/** 并发 bootstrap 使用真实库验证唯一初始化及失败回滚，最后校验保存的是可验证密码摘要。 */
 it('显式组织初始化失败整体回滚；并发初始化只有一次创建并可安全重试', async () => {
   const departmentsBefore = (await env.query('select count(*)::int as n from sys.dept'))[0].n;
   await expect(bootstrapOrg(env.kernel, { adminPassword: 'short' })).rejects.toMatchObject({ code: 'INVALID_INPUT' });
@@ -122,6 +128,7 @@ it('显式组织初始化失败整体回滚；并发初始化只有一次创建�
   expect(await verifyPassword(password, user.password_hash)).toBe(true);
 });
 
+/** 只终止本测试缓存的 LISTEN PID；控制在途解析完成时机，验证 generation 栅栏阻止旧授权重新入缓存。 */
 it('授权断线期间实时复核，恢复后不复用旧缓存，在途解析不能重新填回旧值', async () => {
   let current = { marker: 'before' } as unknown as Ctx;
   const resolve = vi.fn(async () => current);

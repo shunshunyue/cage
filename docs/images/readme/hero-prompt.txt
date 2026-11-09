@@ -1,0 +1,10 @@
+Use case: stylized-concept
+Asset type: wide GitHub README hero for Cage, a TypeScript business framework primarily used by AI coding agents to build intelligent applications.
+Primary request: a refined, minimalist editorial 3D illustration expressing an AI agent working through a structured business model to create intelligent business applications.
+Scene/backdrop: seamless warm ivory background #F6F4EA, soft studio daylight, delicate ambient shadows, calm and precise architectural mood.
+Composition: very wide 2048x768 canvas. Keep the entire left 43 percent completely empty and uniformly ivory for typography to be added later. Arrange the illustration in the right 57 percent, comfortably inside the canvas with generous margins. Within the illustration, arrange three connected groups: one small sculptural lime agent token on the left, a larger central open framework of organized ivory object cards and interconnected nodes, and three layered ivory application panels on the right. Thin graphite paths connect the three groups. The business model is the visual center.
+Style/medium: sophisticated physical paper-and-ceramic maquette, restrained isometric perspective, crisp edges, precise proportions, matte surfaces, tactile fine texture, balanced negative space. Use large understandable shapes with very few small details.
+Color palette: overwhelmingly warm ivory and pale stone, graphite accents, very small soft lime #D5ED86 highlights occupying at most 8 percent of the scene. No large dark color fields.
+Subject details: business object tiles may carry only simple geometric dots and lines; the application panels use subtle geometric interface motifs, with a small lime intelligence node linked to the common model. The connections visibly follow orderly paths.
+Text: none. No letters, numbers, fake code, labels, captions, or watermarks.
+Avoid: robots, brains, faces, cage bars, padlocks, neon glow, purple or blue gradients, dark green masses, forests, tiny factories, futuristic cities, gears, visual clutter, real product UI, illegible text, glossy plastic, heavy glass, excessive decoration.

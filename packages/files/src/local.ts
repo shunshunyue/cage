@@ -10,20 +10,30 @@ import type { ByteRange, FileStorage, StoredPart } from './storage.js';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
+/** 本地磁盘适配器：每个上传 UUID 一个私有目录，分片和最终文件再按执行 token 分离。
+ * 服务层只在短事务中登记结果，本类负责事务外写字节；临时文件校验并 fsync 后才 rename 发布。
+ * 存储目录必须跨服务重启保留，且不能作为静态资源目录；下载必须经过 FileService 授权。
+ */
 export class LocalFileStorage implements FileStorage {
+  /** 由规范目录计算的稳定标识；避免修改存储位置后误处理旧会话。 */
   readonly name: string;
+  /** 单片允许 64 KiB～64 MiB，最多一万片；尾片的实际大小由服务层计算。 */
   readonly limits = { minPartBytes: 64 * 1024, maxPartBytes: 64 * 1024 * 1024, maxParts: 10_000 };
+  /** 规范化绝对路径，仅服务端内部使用。 */
   readonly directory: string;
+  /** 只解析配置并建立身份，不创建目录；目录在首次写入时以私有权限创建。 */
   constructor(directory = process.env.CAGE_FILES_DIR ?? '.cage-files') {
     this.directory = resolve(directory);
     // 配置指向另一目录时不能把旧文件误判成已删除；不向元数据暴露真实路径。
     this.name = `local:v1:${createHash('sha256').update(process.platform === 'win32' ? this.directory.toLowerCase() : this.directory).digest('hex').slice(0, 16)}`;
   }
 
+  /** 验证服务端上传 ID 后定位目录，禁止调用方把任意路径拼接进存储根。 */
   private dir(upload: string) {
     if (!uuid.test(upload)) throw cageError('INVALID_INPUT', '非法上传 ID');
     return join(this.directory, upload);
   }
+  /** 只接受本适配器生成的键格式，并再做绝对路径包含检查；非法键统一按输入错误拒绝。 */
   private path(key: string) {
     if (!/^[0-9a-f-]{36}\/(part|object)-[0-9a-f-]{36}$/.test(key)) throw cageError('INVALID_INPUT', '非法存储键');
     const [id, name] = key.split('/');
@@ -32,6 +42,10 @@ export class LocalFileStorage implements FileStorage {
     return path;
   }
 
+  /** 流式保存一片：边消费边计算长度/摘要，完整校验后持久化并原子改名。
+   * 同 token 的重试可替换其结果，不同 token 使用不同目标；任何失败都会清理本次临时文件。
+   * 返回存储键只代表字节完成，服务层仍须核对租约后才能把该片记录为已确认。
+   */
   async writePart(upload: string, token: string, source: Readable, o: { bytes: number; sha256: string; signal: AbortSignal }) {
     const key = `${upload}/part-${token}`, destination = this.path(key);
     await mkdir(this.dir(upload), { recursive: true, mode: 0o700 });
@@ -55,6 +69,9 @@ export class LocalFileStorage implements FileStorage {
     } finally { await rm(temporary, { force: true }); }
   }
 
+  /** 顺序合并已确认分片，再次验证每片长度、摘要与总长度，防止磁盘内容在确认后发生变化。
+   * 异步生成器和 pipeline 保留背压，内存不随文件总大小增长；取消或校验失败不会发布最终键。
+   */
   async complete(upload: string, token: string, parts: readonly StoredPart[], o: { bytes: number; signal: AbortSignal }) {
     const key = `${upload}/object-${token}`, destination = this.path(key);
     const temporary = `${destination}.${randomUUID()}.tmp`;
@@ -84,16 +101,19 @@ export class LocalFileStorage implements FileStorage {
     } finally { await rm(temporary, { force: true }); }
   }
 
+  /** 打开私有内容流，可按闭区间读取。文件不存在等 IO 错误直接上抛，不伪装为空文件。 */
   async read(key: string, range?: ByteRange): Promise<Readable> {
     const file = await open(this.path(key), 'r');
     return file.createReadStream(range ? { start: range.start, end: range.end } : {});
   }
+  /** 幂等删除整个上传目录；只能用于服务层已认领的过期或解绑会话，不能代替业务解绑命令。 */
   async remove(upload: string) {
     const directory = this.dir(upload);
     // dir() 校验 UUID，绝对路径必须仍在配置目录内，禁止删除根目录。
     if (!directory.startsWith(this.directory + sep)) throw cageError('INVALID_INPUT');
     await rm(directory, { recursive: true, force: true, maxRetries: 3 });
   }
+  /** 保留唯一已提交的最终对象，回收分片和旧 token 产物；目录已消失视为清理完成。 */
   async prune(upload: string, keepKey: string) {
     const directory = this.dir(upload);
     if (this.path(keepKey) !== join(directory, keepKey.split('/')[1])) throw cageError('INVALID_INPUT');

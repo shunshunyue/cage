@@ -34,15 +34,15 @@ approve 被 poApproval.onApproved 引用，或 acquireLock 被 lockOnApprove 引
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/cli/src/rules.ts:141`
-- `packages/cli/src/rules.ts:150`
+- `packages/cli/src/rules.ts:175`
+- `packages/cli/src/rules.ts:189`
 
 实现片段（位置随框架版本更新）：
 
 ```ts
 
 /** CAGE-APPR-010：invokedBy 为 process 的命令必须有审批绑定或反应调用它，否则没有人能调用 */
-export function checkProcessCommands(g: Ontology): Finding[] {
-  const { into } = index(g);
-  const findings: Finding[] = [];
+/**
+ * 检查仅流程/外部可调用的命令是否有声明调用入口。
+ * @param g 当前图。
 ```

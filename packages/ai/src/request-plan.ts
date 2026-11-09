@@ -1,3 +1,7 @@
+/**
+ * 将运行快照、模型配置、授权工具和上下文预算组装为单次模型请求计划。
+ * 由运行时在发起外部请求前调用，发现工具也复用同一容量规则；这里只规划，不发网络请求、不修改运行记录，持久化由租约事务完成。
+ */
 import { cageError } from '@yss123/cage-kernel';
 import { modelBudget, checkModelBudget, type ModelBudget } from './budget.js';
 import { SYSTEM_PROMPT, ONTOLOGY_PROMPT, DISCOVERY_PROMPT } from './context.js';
@@ -8,18 +12,53 @@ import { authorizedToolKeys, candidateToolKeys } from './tool-catalog.js';
 import { toolsFor, type Tool } from './tools.js';
 import type { AiContextOptions, Execution, ModelMessage, ModelProvider } from './types.js';
 
+/**
+ * 可被运行时原子记录的单次模型请求计划。
+ * 所有字段来自同一 provider 和预算快照，避免请求参数、预留用量及后续工具加载使用不同配置。
+ */
 export interface ModelPlan {
+  /**
+   * 最终模型消息，可能包含明确的上下文展开引用。
+   */
   messages: ModelMessage[];
+  /**
+   * 本轮完整可执行工具对象；发送协议时只提取公开 schema。
+   */
   tools: Tool[];
+  /**
+   * 实际装载的业务命令/查询本体 key，不包括基础工具。
+   */
   keys: string[];
+  /**
+   * 本轮全量/发现模式及可复用的工具预算。
+   */
   selection: ToolPlan;
+  /**
+   * 已核对配置键和历史游标的远端状态；null 表示本地重建。
+   */
   remote: RemoteHistory | null;
+  /**
+   * 本轮输入加已知远端历史的 Token 估算值。
+   */
   estimatedInput: number;
+  /**
+   * 不超过模型输出配置及本轮剩余累计预算的输出 Token 上限。
+   */
   outputLimit: number;
+  /**
+   * 本次请求是否省略或缩小资料，需要向模型明示。
+   */
   reduced: boolean;
+  /**
+   * 本次请求共用的窗口、累计消耗及工具容量快照。
+   */
   budget: ModelBudget;
 }
 
+/**
+ * 按运行模式组合系统指令。
+ * 审批仅加入节点策略与审核工具约束，不使用助理性格；助理加入本体发现、业务指令与表达资料，工具是否已全量加载决定发现提示。
+ */
 function instructions(execution: Execution, discovery: boolean): string {
   const { run } = execution;
   if (run.mode === 'approval')
@@ -36,6 +75,10 @@ function instructions(execution: Execution, discovery: boolean): string {
   ].join('\n');
 }
 
+/**
+ * 按候选先后顺序去重并装入完整工具定义，分别约束数量与 Token。
+ * 基础工具本身放不下立即失败；单个候选过大则跳过继续尝试后续候选，不裁剪工具参数 schema。返回真正装载的 key 和工具列表。
+ */
 function fitCandidates(
   base: Tool[],
   business: Map<string, Tool>,
@@ -58,6 +101,11 @@ function fitCandidates(
 }
 
 /** 只装配请求，不执行模型或更改状态。一次规划共享模型配置和预算快照。 */
+/**
+ * 核验轮数、尝试次数及累计 Token 预算，再选择全量工具或助理发现模式。
+ * 有效远端接续先扣除已知历史成本，不能因为启用压缩就假定窗口变小；接续装不下时从本地历史重新规划。
+ * 审批不能降级为工具发现；当容量不足实际来自累计预算而非模型窗口时，映射为 AI_BUDGET_EXCEEDED，便于区分配置与本次运行耗尽。
+ */
 export function planModelRequest(
   execution: Execution,
   provider: ModelProvider,
@@ -71,6 +119,7 @@ export function planModelRequest(
   const allKeys = run.mode === 'assistant' ? authorizedToolKeys(execution) : [];
   const full = toolsFor(execution, { keys: allKeys, discovery: false });
 
+  // 单次装配可尝试远端接续或本地历史；两条路径共用已解析 provider 和预算，失败才切换，避免参数快照漂移。
   function assemble(state: RemoteHistory | null): ModelPlan {
     // 没有实际压缩结果的用量不能凭开关假定缩小。接续超预算时使用本地完整交互重新装配。
     const chainTokens = state?.contextTokens ?? 0;
@@ -154,6 +203,10 @@ export function planModelRequest(
 }
 
 /** 搜索加载与显式加载共用同一容量规则；返回值与 tool_keys 在动作回执事务中一起保存。 */
+/**
+ * 依据上轮已持久化的 tool_plan 装载搜索或显式请求的工具。
+ * 显式加载要求所有完整定义都装下，否则拒绝并提示减少数量；搜索加载允许预算内部分命中。返回的 keys 由调用方与动作回执同事务保存，不在此更改运行状态。
+ */
 export function discoveredToolKeys(execution: Execution, requested: string[], explicit: boolean): string[] {
   const selection = execution.run.tool_plan;
   if (!selection) throw cageError('CONFLICT', '工具预算尚未装配，请重新发起任务');

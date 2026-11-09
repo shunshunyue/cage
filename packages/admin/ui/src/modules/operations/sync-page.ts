@@ -1,3 +1,7 @@
+/**
+ * 第三方同步记录查询页面，以连接器和状态筛选展示实际外呼记录。
+ * 响应受服务器数量上限限制，结果记录与业务最终完成是不同事实，页面没有绕过未知结果隔离的重发入口。
+ */
 import { api, run, state } from '../../shared/api.js';
 import { badge, field, formatTime, h, panel, table } from '../../shared/dom.js';
 
@@ -12,6 +16,10 @@ interface SyncRecord {
   updated_at: string;
 }
 
+/**
+ * 构建连接器/状态筛选与同步表格，初始 load 完成后返回。
+ * 读取需运维权限，错误和 HTTP 状态用于定位外部调用，不把 fake 或单次回执当真实系统验收。
+ */
 export async function renderSync(main: HTMLElement) {
   const connector = h('input', { placeholder: '连接器标识，留空查看全部' });
   const status = h(
@@ -43,6 +51,10 @@ export async function renderSync(main: HTMLElement) {
       out,
     ),
   );
+  /**
+   * 根据当前连接器及状态筛选发起只读请求，再替换同步记录列表。
+   * 查询失败通过页面反馈，不修改失败计数、回执或任务状态。
+   */
   async function load() {
     const params = new URLSearchParams();
     if (connector.value) params.set('connector', connector.value);

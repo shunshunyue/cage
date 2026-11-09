@@ -1,3 +1,8 @@
+/**
+ * 为真实 PostgreSQL 回归准备独立临时数据库、组织根节点、内核与手动驱动 worker。
+ * 默认按当前声明建表，也可传入迁移文件；测试用户与角色通过领域命令创建，insert 是仅供夹具的直接写入捷径。
+ * 该环境需要独立测试集群权限，会创建角色和数据库，close 会关闭连接并尝试删除本次临时库，不能连接生产集群。
+ */
 // 集成测试环境：每个测试文件一个临时库，执行初始化脚本、建表、重建安全层，返回内核和一组测试工具。
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
@@ -12,10 +17,18 @@ import { sampleRecord } from './fakes.js';
 import { startEmbeddedPostgres, withDb, type PgInstance } from './pg.js';
 import { setSessionVarsSql } from './session.js';
 
+/**
+ * 测试命令执行结果：ok=true 时包含快照，ok=false 时保留标准 code 与可选 domainCode/detail。
+ * 未识别的 INTERNAL 异常仍会抛出，以免测试把实现故障当成预期业务拒绝。
+ */
 export type CallResult =
   | { ok: true; data: Record<string, any>; code?: undefined }
   | { ok: false; code: string; domainCode?: string; detail?: unknown; data?: undefined };
 
+/**
+ * 通过组织命令创建的测试身份，保存用户/角色 ID 及 username。
+ * ctx 每次重新读取授权上下文，便于测试授权变化，不固定缓存创建时的能力集合。
+ */
 export interface TestUser {
   id: string;
   username: string;
@@ -23,6 +36,11 @@ export interface TestUser {
   ctx(): Promise<Ctx>;
 }
 
+/**
+ * 单个临时业务数据库的测试操作集合。kernel 用于真实流水线，system 是测试系统身份。
+ * urls 含测试连接信息，仅供测试装配，不应输出到报告；query/audit 为受信任测试诊断捷径。
+ * insert/seedFor 绕过业务命令准备夹具，业务成功路径仍须通过 callAs 验证。
+ */
 export interface TestEnv {
   kernel: Kernel;
   tenantId: string;
@@ -50,7 +68,7 @@ export interface TestEnv {
   seedFor(capability: string, values?: Record<string, unknown> & { ownerId?: string }): Promise<Record<string, any>>;
   /** 以某人身份拿读侧连接（会话变量已设置），可以直接写裸 SQL */
   readConnectionAs(ctx: Ctx): Promise<Kysely<any> & { release(): Promise<void> }>;
-  /** 处理 outbox 直到为空 */
+  /** 处理当前可领取 outbox；返回处理数量，未来重试/死信或轮数上限不表示业务全部完成。 */
   drain(): Promise<number>;
   /** 审计记录（超级用户读取） */
   audit(where?: { aggregateId?: string; command?: string; kind?: string }): Promise<any[]>;
@@ -59,6 +77,10 @@ export interface TestEnv {
 }
 
 let ownPg: PgInstance | null = null;
+/**
+ * 优先复用 globalSetup 提供的测试管理员连接，再读取显式测试连接，否则启动内嵌 PostgreSQL。
+ * 返回的管理员连接仅用于建测试库和准备角色；缓存实例避免同进程反复启动。
+ */
 async function superUrl(): Promise<string> {
   if (process.env.CAGE_TEST_SUPER_URL) return process.env.CAGE_TEST_SUPER_URL;
   if (process.env.CAGE_TEST_DATABASE_URL) return process.env.CAGE_TEST_DATABASE_URL;
@@ -67,6 +89,12 @@ async function superUrl(): Promise<string> {
   return ownPg.superUrl;
 }
 
+/**
+ * 创建随机命名的测试库并返回可执行测试的环境，调用方必须在 teardown 中 close。
+ * 先在共同管理库取得角色初始化锁，避免不同测试库并发修改同一集群角色；随后按迁移或声明建结构。
+ * domain 必须包含组织模型，否则无法准备用户与部门并报错；logger 默认静默，可注入用于诊断回归。
+ * 默认新库测试不等于带旧数据的升级验收，未传 migrations 时也不验证应用迁移文件。
+ */
 export async function createTestEnv(opts: {
   domain: object | object[];
   /** 不传时直接按声明建表（不经过迁移文件） */
@@ -134,10 +162,19 @@ export async function createTestEnv(opts: {
     urls,
     system: sys,
     callAs,
+    /**
+     * 通过 Dept.create 建立测试部门，省略父级时挂到本环境根部门。
+     * 返回真实持久化 ID；命令失败直接传播，不伪造可用部门。
+     */
     async dept(name, parentId) {
       const d = await kernel.execute('Dept.create', { name, parentId: parentId ?? root.id }, sys());
       return d.id;
     },
+    /**
+     * 先创建独立角色，再逐个授能力与范围，最后创建用户并分配该角色。
+     * caps=all 取当前内核目录；params 给特定能力提供额度等参数，scopes 保留组合子语义。
+     * 返回的 ctx 会重新解析身份，账号没有自动设置登录密码，HTTP 测试需单独设置。
+     */
     async user(o) {
       const s = sys();
       const role = await kernel.execute('Role.create', { code: `r_${randomBytes(4).toString('hex')}`, name: 'test role' }, s);
@@ -157,10 +194,17 @@ export async function createTestEnv(opts: {
         ctx: async () => (await kernel.contextFor(u.id, tenantId, { requestId: randomUUID() }))!,
       };
     },
+    /**
+     * 创建拥有其他全部能力且范围为 all 的身份，用于把拒绝原因定位到缺少目标能力。
+     */
     async actorWithout(capability) {
       const u = await env.user({ caps: kernel.catalogCaps().filter((c) => c !== capability), scopes: { '*': 'all' } });
       return u.ctx();
     },
+    /**
+     * 直接构造测试记录并补必要引用，主表与集合关联在同一事务写入。
+     * values 覆盖样例字段，可指定状态/归属；这条捷径跳过 handler、业务硬约束和命令审计，不能当业务写入范例。
+     */
     async insert(aggRef, values = {}) {
       const agg = typeof aggRef === 'string' ? kernel.registry.aggregate(aggRef)! : aggRef;
       const { status, ownerId, id: givenId, ...fields } = values as Record<string, any>;
@@ -187,12 +231,20 @@ export async function createTestEnv(opts: {
       });
       return { ...rec, id: row.id, status: row.status, version: 1 };
     },
+    /**
+     * 按已有记录命令的第一个合法起始状态建立夹具，调用者可覆盖字段。
+     * 新建命令不需要种子，传入会报错；只保证选用声明状态，不保证满足任意业务不变量。
+     */
     async seedFor(capability, values = {}) {
       const rc = kernel.registry.command(capability);
       if (!rc) throw new Error(`没有命令 ${capability}`);
       if (rc.cmd.from === 'new') throw new Error(`${capability} 是新建命令，不需要种子数据`);
       return env.insert(rc.cmd.agg, { status: (rc.cmd.from as string[])[0], ...values });
     },
+    /**
+     * 创建单连接的只读池，设置会话级范围与掩码变量后返回 Kysely 连接。
+     * 用于验证直接读取安全视图也受限制；调用者应 release，环境 close 另作最终清理。
+     */
     async readConnectionAs(ctx) {
       const pool = new pg.Pool({ connectionString: urls.read, max: 1, idleTimeoutMillis: 0 });
       readers.push(pool);
@@ -206,6 +258,10 @@ export async function createTestEnv(opts: {
       return db;
     },
     drain: () => worker.drain(),
+    /**
+     * 以测试管理员查询审计记录，可按对象 ID、命令与类别过滤，按 ID 返回。
+     * 这是断言审计行为的测试通道，不代表业务角色能绕过安全视图读取审计。
+     */
     async audit(where = {}) {
       const cond: string[] = [];
       const params: unknown[] = [];
@@ -215,9 +271,17 @@ export async function createTestEnv(opts: {
       const r = await superPool.query(`select * from sys.audit_log ${cond.length ? 'where ' + cond.join(' and ') : ''} order by id`, params);
       return r.rows;
     },
+    /**
+     * 使用本测试库管理员执行参数化 SQL 并返回行，用于夹具检查与故障注入。
+     * 只能在测试中使用，调用者负责 SQL 意图与参数，不经过领域命令和业务范围。
+     */
     async query(text, params = []) {
       return (await superPool.query(text, params)).rows;
     },
+    /**
+     * 关闭内核、读池与管理员池，再尝试强制删除本次随机命名的临时数据库。
+     * 不停止调用方提供的集群；个别清理失败按当前实现被忽略，连接异常仍可能传播。
+     */
     async close() {
       await kernel.close();
       for (const p of readers) await p.end().catch(() => {});

@@ -34,9 +34,9 @@ fields: { stage: POStatus }，或 states 与 fields.status 同时提供
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/kernel/src/primitives/aggregate.ts:78`
-- `packages/kernel/src/primitives/aggregate.ts:79`
-- `packages/kernel/src/primitives/states.ts:33`
+- `packages/kernel/src/primitives/aggregate.ts:169`
+- `packages/kernel/src/primitives/aggregate.ts:170`
+- `packages/kernel/src/primitives/states.ts:62`
 
 实现片段（位置随框架版本更新）：
 

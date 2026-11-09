@@ -1,0 +1,18 @@
+/**
+ * 审批收件箱局部布局，沿用工作台配色与按钮；将意见、详情及提交分行，避免窄屏压缩链接。
+ * 只作用于审批模块，桌面保留事项/操作两栏，空间不足自动换行；等待阶段由组件省略操作控件。
+ */
+.approval-inbox .task { flex-wrap: wrap; gap: 20px; }
+.approval-task-summary { flex: 1 1 240px; }
+.approval-task-controls { display: grid; gap: 12px; flex: 0 1 420px; }
+.approval-task-controls .actions { align-items: center; flex-wrap: wrap; }
+.approval-task-controls .route-link { white-space: nowrap; }
+.approval-task-controls input { min-width: 180px; flex: 1; }
+.approval-operation-dialog { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow-y: auto; }
+.approval-operation-dialog form { padding: 24px; }
+.approval-operation-dialog textarea { width: 100%; }
+.approval-inbox .section-head { gap: 16px; flex-wrap: wrap; }
+@media (max-width: 660px) {
+  .approval-task-controls { flex-basis: 100%; }
+  .approval-inbox .task { padding: 20px; }
+}

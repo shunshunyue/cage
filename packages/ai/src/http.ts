@@ -1,3 +1,7 @@
+/**
+ * 挂载 AI 会话、运行、事件流及模型/性格管理固定 HTTP 接口，并生成对应 OpenAPI 路径。
+ * 由 AI 运行时接入宿主 Fastify，复用会话 Cookie、CSRF 与限流；每次读写重新获取当前授权，长连接持续复核，HTTP 不直接执行领域写入。
+ */
 import { setTimeout as delay } from 'node:timers/promises';
 import { cageError, isCageError, type Ctx } from '@yss123/cage-kernel';
 import { z } from 'zod';
@@ -10,6 +14,10 @@ import { messageInputSchema, interactionResponseSchema, modelConfigSchema, perso
 import { MODEL_CAPABILITY } from './models.js';
 import { PERSONALITY_CAPABILITY } from './personalities.js';
 
+/**
+ * 从固定接口清单生成 OpenAPI path、请求 schema、幂等头和能力元数据。
+ * 事件及性格试聊同时描述 JSON/SSE 响应；x-capability 供文档发现，实际认证、归属和权限仍由挂载接口及服务执行。
+ */
 export function aiOpenApi(): Record<string, Record<string, unknown>> {
   const definitions: [string, string, string, number, z.ZodType?][] = [
     ['get', '/api/ai/sessions', '本人会话列表', 200], ['post', '/api/ai/sessions', '新建会话', 201, sessionInputSchema],
@@ -41,9 +49,16 @@ export function aiOpenApi(): Record<string, Record<string, unknown>> {
 }
 
 /** 固定框架接口复用宿主的 cookie/CSRF/限流。运行、互动和事件均按登录租户及用户隔离。 */
+/**
+ * 注册助理与管理接口，并跟踪所有 SSE 连接以便应用关闭时取消。
+ * identity 验证会话仍存在且未过期后重建 ctx；管理接口使用独立能力，不把普通助理能力当作管理权限。
+ * 运行事件按 sequence 续传、每页最多 200 条，慢消费者等待 drain；连接约 55 秒轮换并持续核验身份，撤销、断线或终态结束连接。
+ * 性格试聊支持 JSON 与 SSE，连接中断取消请求，只向流返回稳定错误码；详细状态和持久事务由 runtime/store 负责。
+ */
 export function mountHttp(app: FastifyInstance, runtime: AiRuntime): void {
   const streams = new Set<AbortController>();
   app.addHook('preClose', async () => { for (const stream of streams) stream.abort(); });
+  // Cookie 的解析结果仍需核验数据库会话有效期，再重建最新 ctx；管理接口跳过助理能力检查，但各自管理服务另查独立能力。
   const identity = async (req: any, assistant = true): Promise<Ctx> => {
     const session = req.cageSession;
     if (!session) throw cageError('UNAUTHENTICATED');

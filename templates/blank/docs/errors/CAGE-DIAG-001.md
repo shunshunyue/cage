@@ -35,12 +35,12 @@ cage doctor --runtime-url http://127.0.0.1:3000 --cookie-file .cage/diagnostic-c
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/cli/src/main.ts:139`
-- `packages/cli/src/runtime-diagnostics.ts:7`
-- `packages/cli/src/runtime-diagnostics.ts:10`
-- `packages/cli/src/runtime-diagnostics.ts:11`
-- `packages/cli/src/runtime-diagnostics.ts:13`
-- `packages/cli/src/runtime-diagnostics.ts:16`
+- `packages/cli/src/main.ts:150`
+- `packages/cli/src/runtime-diagnostics.ts:23`
+- `packages/cli/src/runtime-diagnostics.ts:26`
+- `packages/cli/src/runtime-diagnostics.ts:27`
+- `packages/cli/src/runtime-diagnostics.ts:29`
+- `packages/cli/src/runtime-diagnostics.ts:32`
 
 实现片段（位置随框架版本更新）：
 

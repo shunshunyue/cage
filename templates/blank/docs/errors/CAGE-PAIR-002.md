@@ -36,15 +36,16 @@ reaction(OrderCancelled, { command: releaseLock, releases: 'inventory.lock', map
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/cli/src/rules.ts:44`
-- `packages/cli/src/rules.ts:57`
+- `packages/cli/src/rules.ts:63`
+- `packages/cli/src/rules.ts:67`
+- `packages/cli/src/rules.ts:81`
 
 实现片段（位置随框架版本更新）：
 
 ```ts
 
 /** CAGE-PAIR-002：进入某状态时获得了资源，从该状态出发的每一条迁移都必须释放它，或进入一个同样持有它的状态 */
-export function checkPairing(g: Ontology): Finding[] {
-  const { get } = index(g);
-  const findings: Finding[] = [];
+/**
+ * 检查离开持有状态的迁移是否声明释放，或进入同样持有资源的状态。
+ * @param g 当前图。
 ```

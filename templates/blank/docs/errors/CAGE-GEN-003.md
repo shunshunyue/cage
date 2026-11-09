@@ -35,11 +35,12 @@ strict、multipleOf、default 使用标准 Zod 声明；自定义规则按字段
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/cli/src/gen/index.ts:120`
-- `packages/cli/src/gen/zod-code.ts:62`
-- `packages/cli/src/gen/zod-code.ts:89`
-- `packages/cli/src/gen/zod-code.ts:105`
-- `packages/cli/src/gen/zod-code.ts:182`
+- `packages/cli/src/gen/index.ts:159`
+- `packages/cli/src/gen/zod-code.ts:64`
+- `packages/cli/src/gen/zod-code.ts:84`
+- `packages/cli/src/gen/zod-code.ts:120`
+- `packages/cli/src/gen/zod-code.ts:140`
+- `packages/cli/src/gen/zod-code.ts:217`
 
 实现片段（位置随框架版本更新）：
 

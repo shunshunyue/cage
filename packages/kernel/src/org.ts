@@ -4,6 +4,7 @@ import type { Kysely } from 'kysely';
 import type { CapabilityParams, Combinator, Ctx, ScopeGrant } from './types.js';
 import { COMBINATORS } from './types.js';
 
+/** 从有效角色读取的授权数据；同一用户可有多个角色，合并不修改原始角色配置。 */
 export interface RoleGrantRow {
   capabilities: { capability: string; params?: CapabilityParams }[];
   scopes: { aggregate: string; combinator: Combinator; deptIds?: string[] }[];
@@ -51,6 +52,7 @@ export function unmaskFrom(caps: Map<string, CapabilityParams>): string[] {
   return out;
 }
 
+/** 授权快照保留用户启用状态；只有 userCtx 转换后才能作为普通用户执行上下文。 */
 export interface UserGrants {
   userId: string;
   tenantId: string;
@@ -63,6 +65,10 @@ export interface UserGrants {
 }
 
 /** 从系统表读取一个用户的授权（内核账号） */
+/**
+ * 按租户查用户并只合并 active 角色；用户不存在返回 null，用户禁用则返回 active:false。
+ * 本函数不做缓存，HTTP 授权缓存和审批实时加载可选择不同刷新策略，但都使用同一合并语义。
+ */
 export async function loadUserGrants(db: Kysely<any>, userId: string, tenantId: string): Promise<UserGrants | null> {
   const user = await db
     .selectFrom('sys.user as u')
@@ -111,6 +117,7 @@ export function userCtx(g: UserGrants, extra: Partial<Ctx> = {}): Ctx {
   };
 }
 
+/** 未登录主体默认没有能力、范围或明文权限；extra 仅供可信服务端附加请求来源信息。 */
 export function anonymousCtx(tenantId: string, extra: Partial<Ctx> = {}): Ctx {
   return {
     actor: { kind: 'anonymous', id: 'anonymous' },

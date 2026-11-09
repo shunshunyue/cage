@@ -1,8 +1,6 @@
 # @yss123/cage-cli
 
-cage 命令行：init、gen、check、graph、context、impact、test、verify、budget、sync、upgrade、dev、migrate
-
-Cage 是通过 TypeScript 声明业务、由框架统一执行权限和数据规则的中后台框架。此包是框架的一部分。
+Cage 的开发命令行：创建项目，抽取领域声明，生成契约与迁移草稿，检查图规则与目录边界，浏览业务图谱，查询能力和运行诊断，并管理开发进程及显式迁移。CLI 是开发与部署工具，不能代替业务命令或自动授予生产权限。
 
 ## 使用
 
@@ -11,6 +9,50 @@ pnpm add -D @yss123/cage-cli
 ```
 
 首次使用建议通过脚手架创建完整项目，所需依赖由模板统一配置。需要 Node.js 24 或更新版本。
+
+## 从零开始
+
+```powershell
+pnpm exec cage create my-app --template blank
+cd my-app
+pnpm install
+```
+
+在新项目中复制 `.env.example` 为 `.env`，只在本地填写已有 PostgreSQL 数据库的 `CAGE_ADMIN_DATABASE_URL`。然后执行：
+
+```powershell
+pnpm exec cage init
+pnpm build:app
+pnpm gen
+```
+
+审查 `db/migrations` 的变更后，再执行：
+
+```powershell
+pnpm migrate
+pnpm exec cage bootstrap --credentials-file .cage/admin-credentials.json
+pnpm dev
+```
+
+`init` 准备账号、schema 权限和本地连接配置，不创建数据库、不安装 PostgreSQL 或启动 Docker。`gen` 只生成文件，`migrate` 才变更数据库；bootstrap 显式交付初始凭据，不把它们输出到日志或提交源码。
+
+## 日常开发命令
+
+以下命令在应用根目录运行；`cage.config.json` 定位 domain、contracts、迁移和模块结构。
+
+| 命令 | 解决的问题 |
+| --- | --- |
+| `pnpm exec cage check` | 声明、目录、依赖与本体图规则检查 |
+| `pnpm exec cage gen` | 生成前端 contracts、SQL、状态图和迁移草稿，不手改生成物 |
+| `pnpm exec cage capabilities "文件" --format json` | 查当前已安装框架的公开 API 与签名 |
+| `pnpm exec cage context "需求关键词"` | 查本应用相关节点、源码和候选证据 |
+| `pnpm exec cage graph` | 打开可交互业务图谱 |
+| `pnpm exec cage doctor` | 区分注册、生成、迁移、授权和实际进程状态；unknown 不是通过 |
+| `pnpm exec cage verify` | 汇总项目门禁与测试；数据库测试需要独立测试配置 |
+| `pnpm exec cage sync` | 更新 AGENTS 框架托管区，保留标记外业务约定 |
+| `pnpm exec cage upgrade` | 框架升级辅助与检查，使用前阅读当前版本升级说明 |
+
+此外提供 `analyze/impact/test/budget` 等维护入口。可用 `pnpm exec cage --help` 查询参数；包根导出分析、生成、诊断等可组合函数，普通项目优先使用命令行，避免依赖内部文件路径。
 
 `pnpm exec cage create my-app` 交互选择空白业务项目或采购示例项目；也可显式指定 `--template blank` 或 `--template purchase`。省略目录时可交互输入，非交互终端必须同时提供目录与模板。`--framework-path F:/cage` 可链接已构建的本地框架。
 

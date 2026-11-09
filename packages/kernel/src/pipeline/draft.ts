@@ -5,6 +5,10 @@ import type { AnyCommand } from '../primitives/command.js';
 import type { Fields } from '../primitives/fields.js';
 import type { Ctx } from '../types.js';
 
+/**
+ * 从传输层输入剥离 expectedVersion，避免它被业务 Zod schema 丢弃或当成字段写入。
+ * 缺省/null 表示不做显式版本比较；提供的值必须能转为整数，业务输入其余部分原样交给 schema。
+ */
 export function splitRaw(raw: unknown): { expectedVersion?: number; rest: unknown } {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { rest: raw ?? {} };
   const { expectedVersion, ...rest } = raw as Record<string, unknown>;
@@ -14,6 +18,11 @@ export function splitRaw(raw: unknown): { expectedVersion?: number; rest: unknow
   return { expectedVersion: version, rest };
 }
 
+/**
+ * 为新建准备尚未持久化的 version=0 快照，系统时间在本次命令内固定。
+ * 集合写字段默认空数组，反向 hasMany 不进入草稿；部门缺省取操作者部门。
+ * 这里只准备 handler 输入，最终字段校验、创建人、范围、版本和不变量由写流水线继续落实。
+ */
 export function newDraft(command: AnyCommand, input: Record<string, unknown>, ctx: Ctx, now: Date): Record<string, any> {
   const aggregate = command.agg;
   const draft: Record<string, unknown> = {

@@ -1,3 +1,8 @@
+/**
+ * AI 持久运行的故障恢复回归，覆盖上游历史失效、超时分类、预算预留结算、历史重建及并发补位。
+ * 模型适配器由 generate 脚本控制，真实数据库记录运行和上下文；通过重建 runtime 验证跨实例恢复。
+ * 工具回执与有效步骤/额外尝试分开核对，避免崩溃重试重复动作或绕过预算。结束时关闭运行时及测试库。
+ */
 import { randomUUID } from 'node:crypto';
 import { beforeAll, afterAll, afterEach, it, expect, vi } from 'vitest';
 import * as admin from '@yss123/cage-admin/domain';
@@ -8,6 +13,9 @@ import { ConnectorError } from '@yss123/cage-connectors';
 import { createTestEnv, type TestEnv, type TestUser } from '../src/index.js';
 
 let generate: (request: ModelRequest) => ModelResult | Promise<ModelResult>;
+/**
+ * 启用可接续模型并将运行并发设为二，用于测试慢任务占位时其他运行能及时补位。
+ */
 const intelligence = ai({
   models: {
     main: {
@@ -31,19 +39,31 @@ afterAll(async () => {
   await runtime?.close();
   await env?.close();
 });
+/**
+ * 模型工具回包夹具，携带可选 responseId 与固定用量，便于核对接续和预算结算。
+ */
 const call = (name: string, args: Record<string, unknown>, responseId?: string): ModelResult => ({
   text: '',
   calls: [{ id: randomUUID(), name, arguments: args }],
   responseId,
   usage: { inputTokens: 500, outputTokens: 50 },
 });
+/**
+ * 模型最终文字回包，calls 为空代表无需继续工具循环；用量固定使恢复前后可比较。
+ */
 const result = (text: string, responseId?: string): ModelResult => ({
   text,
   calls: [],
   usage: { inputTokens: 500, outputTokens: 50 },
   responseId,
 });
+/**
+ * 只在测试中读取持久运行行，核对状态/预算/接续标记，不通过该 helper 修改运行。
+ */
 const saved = async (id: string) => (await env.query('select * from sys.ai_run where id=$1', [id]))[0];
+/**
+ * 使用测试用户权限提交一轮，可复用 sessionId 构造跨轮恢复；未提供则新建会话。
+ */
 const start = async (message: string, sessionId?: string) => {
   const ctx = await user.ctx(),
     session = sessionId ?? (await runtime.createSession(ctx)).id;

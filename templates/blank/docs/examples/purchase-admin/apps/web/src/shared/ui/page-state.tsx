@@ -1,9 +1,18 @@
+/**
+ * 供列表、详情和路由守卫复用的页面级状态组件。
+ * 将服务端可确认的错误与可恢复操作对应，保留返回链接；不泄露范围外记录是否真实存在。
+ */
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { CageQueryError } from '@app/contracts';
 import './page-state.css';
 
 /** 页面级状态保留导航入口，详情直达失败时也能回到列表，而不是出现空白页。 */
+/**
+ * 渲染标题、说明、返回链接和可选附加操作。
+ * props.title/description 为调用方提供的当前状态；to 是业务返回地址，label 缺省为返回列表。
+ * children 可放重试按钮；组件只呈现内容，不自行读取数据或推断错误。
+ */
 export function PageState({
   title,
   description,
@@ -33,6 +42,11 @@ export function PageState({
 }
 
 /** 按服务端错误区分权限、范围/不存在和服务故障；不从 URL 推断记录是否存在。 */
+/**
+ * 将查询异常映射为页面状态。CageQueryError 的 FORBIDDEN 与 NOT_FOUND 不展示重试按钮，其他错误允许调用 retry。
+ * props.error 为实际查询异常；to/label 决定退出路径，retry 由页面绑定 refetch。
+ * NOT_FOUND 同时涵盖记录不存在与不在可访问范围，不能据此向用户确认数据库中有无此记录。
+ */
 export function QueryFailure({
   error,
   to,

@@ -1,8 +1,17 @@
+/**
+ * 管理当前租户已声明的托管模型连接，页面通过 AI 协议类型消费服务端数据。
+ * 每个模型有独立保存版本与连接测试；密钥不回显，输入留空表示保留原密钥，成功后清空输入框。
+ */
 import type { AiModelConfig, AiModelProbe } from '@yss123/cage-ai-protocol';
 import { api, run } from '../../shared/api.js';
 import { badge, emptyState, field, formatTime, h, panel } from '../../shared/dom.js';
 
 /** Admin 只管理框架模型配置；审批规则、业务工具与聊天界面仍由各自声明和应用负责。 */
+/**
+ * 读取托管模型列表并在 main 中构建配置表单，无模型时显示启用提示。
+ * 表单以秒显示超时，提交转换为毫秒；保存携带已读取的 version 防止覆盖其他编辑。
+ * 测试仅使用已保存配置，连接成功不证明全部协议特性或业务工具验收通过；错误由共享操作层反馈。
+ */
 export async function renderModels(main: HTMLElement) {
   const models = await api<AiModelConfig[]>('GET', '/api/ai/admin/models');
   if (!models.length) {

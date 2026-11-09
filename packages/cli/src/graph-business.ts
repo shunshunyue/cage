@@ -1,17 +1,41 @@
+/**
+ * 把语义图整理为业务板块、显式流程、对象生命周期和操作触发树。
+ * 供图谱浏览器使用，优先采用 businessProcess 声明，旧项目按模块或聚合归属组织。
+ * 所有投影只辅助阅读，不调度操作；状态迁移、读取依赖、声明调用能力与真实自动触发分别处理。
+ */
 import { nodeLabel, type GraphModel, type ViewNode } from './graph-model.js';
 
+/**
+ * 浏览器业务板块，包含对象、可阅读操作与显式流程；分组不新增执行关系。
+ */
 export interface BusinessBlock {
+  /** 稳定板块身份，来源于显式流程板块、模块路径或回退分组。 */
   id: string;
+  /** 板块中文标题，可由展示配置覆盖。 */
   title: string;
+  /** 归入板块的聚合展示节点。 */
   objects: ViewNode[];
+  /** 板块内可探索的操作/查询等入口节点。 */
   flows: ViewNode[];
+  /** 板块显式声明的业务流程节点，区别于自动触发链。 */
   processes: ViewNode[];
+  /** 显式板块说明，缺省时不虚构业务目的。 */
   description?: string;
+  /** 是否属于系统组织板块，决定默认过滤。 */
   system: boolean;
 }
 
+/**
+ * 识别 User、Role、Dept 及其成员的系统组织前缀，供默认隐藏开关使用；不表示权限检查。
+ */
 export const isSystemObject = (node: ViewNode) => /^(User|Role|Dept)(\.|$)/.test(node.id);
 
+/**
+ * 只对有明确标识归属的节点寻找聚合，取最长匹配前缀。
+ * @param model 语义图。
+ * @param node 待定位节点。
+ * @returns 聚合或 undefined；事件/查询等任意名称不会按前缀误归属。
+ */
 export function businessOwner(model: GraphModel, node: ViewNode): ViewNode | undefined {
   if (node.kind === 'aggregate') return node;
   // 查询、事件等可任意命名，不能凭同名前缀把它们归入某个对象。
@@ -23,6 +47,13 @@ export function businessOwner(model: GraphModel, node: ViewNode): ViewNode | und
 
 /** 板块只组织展示，不新增本体关系。模块目录提供归属，旧的平铺项目按对象分组；
  * 查询与任务允许出现在多个相关板块，但不会沿读取关系扩散出一整张业务图。 */
+/**
+ * 按显式业务区、模块路径或聚合整理板块，并附声明相关查询与任务。
+ * @param model 语义图，不被修改。
+ * @param labels 显示覆盖。
+ * @param showSystem 是否保留系统组织对象。
+ * @returns 稳定排序的板块；同一操作可出现在多个相关板块，不表示重复执行。
+ */
 export function businessBlocks(
   model: GraphModel,
   labels: Record<string, string> = {},
@@ -151,28 +182,48 @@ export function businessBlocks(
   );
 }
 
+/**
+ * 业务阅读树节点，保留实现依据、连线语义、重复引用和截断边界；不是运行中任务状态。
+ */
 export interface BusinessStep {
   /** 路径身份区分相同命令在不同分支中的映射来源。 */
   id: string;
+  /** 当前阶段或执行主体的展示节点。 */
   node: ViewNode;
+  /** 从父步骤到本步骤的中间事件/反应等证据。 */
   via: ViewNode[];
+  /** 父子连线的阅读说明，保留事务或条件语义。 */
   label: string;
+  /** 步骤补充边界，例如 map 可返回 null 或仅声明可调用。 */
   note: string;
+  /** 已展开的后续步骤，不代表运行时一定都会执行。 */
   children: BusinessStep[];
+  /** 当前路径重复命中已有节点，布局应回连而非无限展开。 */
   repeated: boolean;
+  /** 深度限制等导致停止展开，不能当作业务终点。 */
   boundary: boolean;
+  /** 人工、自动、等待、关联或状态图的展示语义；缺省沿传统触发链解释。 */
   mode?: 'manual' | 'automatic' | 'wait' | 'association' | 'lifecycle';
   /** 来自业务流程声明的次要分支，只影响阅读与布线，不推断取消等业务含义。 */
   branch?: boolean;
 }
 
 /** 业务页面缺少文案时明确提示补充，不用程序标识替代业务名称。完整本体仍保留标识。 */
+/**
+ * 优先使用中文覆盖与声明文案，缺失时明确显示待命名。
+ * @param node 展示节点。
+ * @param labels 中文标签映射。
+ * @returns 阅读标题，不改实际标识。
+ */
 export function businessLabel(node: ViewNode, labels: Record<string, string> = {}): string {
   if (node.kind === 'entry') return '新建业务';
   if (labels[node.key] || node.attrs.title || node.attrs.description) return nodeLabel(node, labels);
   return `待命名${({ aggregate: '业务对象', command: '操作', state: '状态', process: '流程', stage: '阶段', event: '业务结果', reaction: '自动处理', approval: '审批', inbound: '外部通知', outbound: '外部同步', query: '查询', job: '定时处理' } as Record<string, string>)[node.kind] ?? '声明'}`;
 }
 
+/**
+ * 优先返回板块显式流程并保持源码顺序；没有流程规格时返回有状态迁移的对象供生命周期阅读。
+ */
 export const businessJourneys = (block: BusinessBlock, model: GraphModel) =>
   block.processes.length
     ? [...block.processes].sort(
@@ -186,6 +237,13 @@ export const businessJourneys = (block: BusinessBlock, model: GraphModel) =>
       );
 
 /** 显式流程的阶段是唯一身份。汇合与循环回连已有阶段，避免复制成多份业务。 */
+/**
+ * 把显式流程阶段组织成阅读树，汇合/循环只保留回连标记。
+ * @param model 语义图。
+ * @param process 已声明业务流程。
+ * @param options branches 控制次要分支，related 控制对象关联。
+ * @returns 流程入口树；关联不充当下一步，遍历不执行命令。
+ */
 export function traceBusinessProcess(
   model: GraphModel,
   process: ViewNode,
@@ -242,6 +300,13 @@ export function traceBusinessProcess(
 }
 
 /** 旧项目按实际状态迁移阅读；只表达允许的操作，绝不推断成自动调用链。 */
+/**
+ * 对没有业务流程规格的对象沿允许状态迁移生成阅读树。
+ * @param model 语义图。
+ * @param object 目标聚合。
+ * @param labels 中文文案。
+ * @returns 从新建入口或初始状态开始的树；只表示允许操作，不推断自动触发。
+ */
 export function traceBusinessLifecycle(
   model: GraphModel,
   object: ViewNode,
@@ -282,6 +347,13 @@ export function traceBusinessLifecycle(
 
 /** 只沿会驱动后续操作的声明追踪。状态可达性和 reads 均不当作调用顺序。
  * 事件与反应收进步骤的实现依据，但保留事务、条件映射、取消及审批结论语义。 */
+/**
+ * 沿事件、反应、审批结论及外部回写构建有界操作树。
+ * @param model 语义图。
+ * @param root 完整节点 key。
+ * @param maxDepth 默认 6，另以累计步骤计数限制膨胀。
+ * @returns 入口树或 undefined；取消审批停止展开，循环/上限通过 repeated/boundary 显示。
+ */
 export function traceBusinessFlow(model: GraphModel, root: string, maxDepth = 6): BusinessStep | undefined {
   const nodes = new Map(model.nodes.map((n) => [n.key, n]));
   const outgoing = (key: string) => model.edges.filter((e) => e.from === key && !e.derived);
@@ -359,10 +431,21 @@ export function traceBusinessFlow(model: GraphModel, root: string, maxDepth = 6)
   return node && walk({ node, via: [], label: '业务入口', note: '' }, [], new Set(), 0);
 }
 
+/**
+ * 按先序把已经有界的阅读树展开成列表。
+ * @param root 由追踪函数生成的根。
+ * @returns 包含重复引用占位节点的数组，不去重、不执行关系。
+ */
 export function flattenBusinessSteps(root: BusinessStep): BusinessStep[] {
   return [root, ...root.children.flatMap(flattenBusinessSteps)];
 }
 
+/**
+ * 把命令 from/to 转成中文状态摘要。
+ * @param node 非命令返回空字符串。
+ * @param labels 状态名称覆盖。
+ * @returns 允许起始状态与目标，to=null 描述保持当前状态。
+ */
 export function businessStateSummary(node: ViewNode, labels: Record<string, string>): string {
   if (node.kind !== 'command') return '';
   const owner = node.id.slice(0, node.id.lastIndexOf('.'));
@@ -371,6 +454,13 @@ export function businessStateSummary(node: ViewNode, labels: Record<string, stri
   return `${from.filter(Boolean).map(name).join(' / ')} → ${node.attrs.to == null ? '保持当前状态' : name(String(node.attrs.to))}`;
 }
 
+/**
+ * 把已知约束名翻译为业务提示，并解析额度与职责分离字段。
+ * @param name 内核约束标识。
+ * @param owner 所属聚合 ID。
+ * @param labels 字段中文标签。
+ * @returns 展示文案，未知约束保留原名，不求值或授予能力。
+ */
 export function businessConstraintLabel(name: string, owner: string, labels: Record<string, string>): string {
   const field = (id: string) => labels[`field:${owner}.${id}`] ?? id;
   const ceiling = /^ceiling\((.+)\)$/.exec(name);

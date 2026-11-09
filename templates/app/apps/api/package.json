@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@app/domain": "workspace:*",
-    "@yss123/cage-http": "0.2.0",
-    "@yss123/cage-connectors": "0.2.0"
+    "@yss123/cage-http": "0.3.0",
+    "@yss123/cage-connectors": "0.3.0"
   }
 }

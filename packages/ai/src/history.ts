@@ -1,3 +1,7 @@
+/**
+ * 按当前授权和 Token 预算恢复同一助理会话的近期历史。
+ * 运行时准备新轮上下文时调用；持久记录完整保留，窗口裁剪只影响本次模型输入，失败或取消的工具调用不会被伪装成成功历史。
+ */
 import { sql } from 'kysely';
 import type { Ctx, Kernel } from '@yss123/cage-kernel';
 import { authFingerprint } from './security.js';
@@ -5,9 +9,16 @@ import { messageTokens, packPrompt } from './prompt.js';
 import type { ModelMessage } from './types.js';
 import type { RemoteHistory, StoredRun } from './state.js';
 
+/**
+ * 恢复一轮消息所需的持久字段子集；history_start 把本轮消息与当时借用的前轮窗口分开，避免递归重复历史。
+ */
 type HistoryRun = Pick<StoredRun, 'id' | 'input' | 'answer' | 'history' | 'history_start' | 'status'>;
 
 /** 只恢复该运行自身的消息，避免把每轮保存的近期窗口递归复制进下一轮。 */
+/**
+ * 提取运行自身的消息并清理不完整工具调用组及孤立回执。
+ * 没有消息时用原始任务和最终状态构造最小交互；非成功运行追加需核对回执的提示，不能把未完成调用重放成已成功动作。返回新数组，不修改持久历史。
+ */
 export function turnHistory(run: HistoryRun): ModelMessage[] {
   const own = run.history.slice(run.history_start);
   if (!own.length)
@@ -45,14 +56,35 @@ export function turnHistory(run: HistoryRun): ModelMessage[] {
   return messages;
 }
 
+/**
+ * 已恢复的可发送消息和远端接续信息。
+ * omitted 只表示本次上下文预算省略了旧资料，完整历史仍保留；state 是否真正可用由请求规划再次核对配置键。
+ */
 export interface ConversationHistory {
+  /**
+   * 按对话顺序排列的已恢复统一消息，可能包含已压缩证据引用。
+   */
   messages: ModelMessage[];
+  /**
+   * 是否因本次预算省略较早资料；不能据此断言历史不存在。
+   */
   omitted: boolean;
+  /**
+   * 最近可承接的远端响应状态；null 表示从本地消息重建。
+   */
   state: RemoteHistory | null;
+  /**
+   * 此前证实不支持接续的 provider 配置键；配置变化后可重新判断。
+   */
   disabledKey: string | null;
 }
 
 /** 逐页恢复近期完整交互，按 Token 预算停止；完整记录始终可经 context_read 读取。 */
+/**
+ * 只为 assistant 按 created_at/id 游标逐页恢复此前已结束运行，每页 10 条。
+ * 限定同会话、租户、用户、当前权限指纹和注册表指纹；只从最近一轮同模型且成功的记录承接远端状态。
+ * 优先保留完整近期轮次，最近一轮本身超预算时尝试压缩为引用，不能容纳则标记 omitted；不会删除数据库历史或放宽授权。
+ */
 export async function loadConversation(
   kernel: Kernel,
   ctx: Ctx,
@@ -133,6 +165,10 @@ export async function loadConversation(
   return withCursor(result);
 }
 
+/**
+ * 把远端状态的 historyLength 对齐到实际恢复的消息数。
+ * 该游标使接续请求只发送新增消息，修改的是当前恢复结果，不回写历史运行。
+ */
 function withCursor(history: ConversationHistory): ConversationHistory {
   if (history.state) history.state = { ...history.state, historyLength: history.messages.length };
   return history;

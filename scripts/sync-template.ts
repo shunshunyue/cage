@@ -1,3 +1,9 @@
+/**
+ * 从标准采购范例重建分发快照，并向两套模板复制共享配置、教材和错误码册。
+ * 采购模板的源码目录由此脚本拥有；空白模板只覆盖显式共享项，其领域和页面独立维护。
+ * 空白模板中的采购代码放到 docs/examples 作为离线参考，不参与 workspace 注册。
+ * 脚本会重写模板资源和说明文件，但不处理业务数据库；运行前先同步范例 AGENTS 托管区。
+ */
 // 采购模板同步标准范例；空白模板只共享基础配置，其领域和页面单独维护。
 // 不通过复制采购业务再删除文件构造空白项目，避免新增范例功能意外混入空白项目。
 // 框架包始终通过依赖引用。模板同时携带本地 AI 教材，创建后无需访问框架源码。
@@ -153,6 +159,10 @@ const readme = readFileSync(join(root, 'examples/purchase-admin/README.md'), 'ut
   .replaceAll('(../../docs/', '(docs/');
 writeFileSync(join(target, 'README.md'), readme);
 // 脚手架首次创建会再次按所选版本统一替换；模板本身也不残留 workspace:* 框架版本。
+/**
+ * 递归规范模板清单中的框架依赖版本，取当前 CLI 版本替换 workspace 或旧版本。
+ * 跳过依赖、构建及运行目录；仅处理 dependencies/devDependencies，不执行安装或修改领域代码。
+ */
 function manifests(dir: string): void {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const file = join(dir, entry.name);

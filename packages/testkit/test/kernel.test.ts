@@ -13,8 +13,10 @@ let wangwu: TestUser; // 采购员：仅本人
 let manager: TestUser; // 部门经理：本部门及下级，额度 50000
 let finance: TestUser; // 财务：全部 + 明文手机号
 
+/** 两个采购员故意共享能力但身份不同，用来证明范围来自主体而不是按钮或角色名称。 */
 const PURCHASER = ['PurchaseOrder.create', 'PurchaseOrder.submit', 'PurchaseOrder.read', 'PurchaseOrder.cancel'];
 
+/** 建立独立真实数据库、部门树和不同额度/明文权限的用户；所有用例共享基础组织，各自新建业务单据。 */
 beforeAll(async () => {
   env = await createTestEnv({ domain });
   purchaseDept = await env.dept('采购部');
@@ -36,10 +38,12 @@ beforeAll(async () => {
   await env.kernel.execute('Inventory.create', { sku: 'B-02', available: 1 }, sys);
 });
 
+/** 测试环境拥有数据库及连接池，整组结束后统一释放，不能留下带会话范围的连接供其他文件复用。 */
 afterAll(async () => {
   await env?.close();
 });
 
+/** 经真实创建命令准备 1200 元、两件库存充足 SKU 的基线；覆盖值只改变当前场景需要的条件。 */
 async function newOrder(u: TestUser, overrides: Record<string, unknown> = {}) {
   const r = await env.callAs(await u.ctx(), 'PurchaseOrder.create', {
     amount: '1200.00', items: [{ sku: 'A-01', qty: 2 }], supplierPhone: '13812345678', ...overrides,
@@ -48,9 +52,11 @@ async function newOrder(u: TestUser, overrides: Record<string, unknown> = {}) {
   return r.data;
 }
 
+/** 流程身份携带真实代理用户，借此验证 process 来源不会消除职责分离、范围或额度。 */
 const processCtx = (onBehalfOf: string) =>
   env.kernel.processCtx({ process: 'po-approval', tenantId: env.tenantId, onBehalfOf, capabilities: ['PurchaseOrder.approve', 'PurchaseOrder.reject'] });
 
+/** 从创建、拒绝、状态、输入到并发逐关验证；幂等场景同时发请求，并以版本及唯一审计证明只执行一次。 */
 describe('写入流水线', () => {
   it('新建：内核设置创建人、部门、版本号，并在同一事务写审计', async () => {
     const po = await newOrder(lisi);
@@ -123,6 +129,10 @@ describe('写入流水线', () => {
   });
 });
 
+/**
+ * 同事务建锁必须与批准一起提交，故意预置冲突锁验证整体回滚；异步释放必须 drain 后才观察结果。
+ * 夹具 ERP 回写只接受 approved，因此先完成批准事件，再取消，避免前序死信阻塞掩盖释放行为。
+ */
 describe('审批、约束与反应', () => {
   it('用户不能直接调用流程专用命令', async () => {
     const po = await newOrder(lisi);
@@ -195,6 +205,7 @@ describe('审批、约束与反应', () => {
   });
 });
 
+/** 同时从公开读 API 和受限数据库账号发起查询，证明范围/掩码并非只在 JavaScript 响应上过滤。 */
 describe('读侧：安全视图与行级安全', () => {
   it('采购员只看到自己的单；经理看到本部门及下级；手机号掩码', async () => {
     const mine = await newOrder(lisi);
@@ -256,6 +267,7 @@ describe('读侧：安全视图与行级安全', () => {
   });
 });
 
+/** 管理命令能力只允许管理动作，不能授出自身没有的能力，也不能通过分配高权角色间接提权。 */
 describe('授权：防提权', () => {
   it('不能授出自己没有的能力点', async () => {
     const roleAdmin = await env.user({ caps: ['Role.create', 'Role.grantCapability', 'Role.read'], scopes: { Role: 'all' } });
@@ -275,6 +287,7 @@ describe('授权：防提权', () => {
   });
 });
 
+/** atomic 批次把合法行与不变量失败行放在一起，以数据库行数检查全部业务写入撤销。 */
 describe('批量', () => {
   it('整批原子：一行失败全部回滚', async () => {
     const ctx = await lisi.ctx();

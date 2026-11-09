@@ -1,9 +1,17 @@
+/**
+ * 浏览器图谱的颜色、节点尺寸与确定性布局适配，语义与检索复用 src 共享模块。
+ * 小聚焦图按入边/出边排布，大图按类型平衡分列后迭代邻接排序，连线根据实际坐标生成。
+ * 不使用随机力导向或远程图形服务；位置只是页面展示，不能据几何距离推断业务关系。
+ */
 // 页面只保留颜色、布局和筛选；语义投影由 Web 与 CLI 共用。
 import type { NodeKind } from '../src/ontology.js';
 import { kindLabels, type ViewNode, type ViewEdge } from '../src/graph-model.js';
 export { nodeLabel, projectGraph, neighborhood, edgeLabels } from '../src/graph-model.js';
 export type { ViewNode, ViewEdge, GraphModel } from '../src/graph-model.js';
 export { matchesNode } from '../src/graph-search.js';
+/**
+ * 节点类型对应的中文标签、颜色、短字和布局列优先级；只影响图谱呈现。
+ */
 export const kinds: Record<
   NodeKind | 'entry',
   { label: string; color: string; short: string; column: number }
@@ -27,16 +35,37 @@ export const kinds: Record<
   stage: { label: kindLabels.stage, color: '#648c5b', short: '段', column: 1 },
 };
 
+/**
+ * 按组织聚合前缀识别默认隐藏对象，不是能力或租户授权判断。
+ */
 export const isSystem = (node: ViewNode) => /^(User|Role|Dept)(\.|$)/.test(node.id);
+/**
+ * 缩放前的二维画布坐标，单位为 SVG 用户单位，屏幕显示再经相机变换。
+ */
 export interface Position {
+  /** 缩放前节点左上角的水平画布坐标。 */
   x: number;
+  /** 缩放前节点左上角的垂直画布坐标。 */
   y: number;
 }
+/**
+ * 完整本体普通节点的固定宽度，单位为画布单位，与 edgePath 端点计算保持一致。
+ */
 export const NODE_WIDTH = 190;
+/**
+ * 完整本体普通节点高度，单位为画布单位；对象字段卡片使用独立动态高度。
+ */
 export const NODE_HEIGHT = 56;
 
 /** 按类型分组的平衡列 + 邻接排序。相同声明每次打开位置相同，没有持续运动的力导向
  * 动画；读长名称、比较刷新前后的关系时不会被随机布局打断。 */
+/**
+ * 按语义列与邻接平均纵坐标计算确定性位置，避免随机布局干扰阅读。
+ * @param nodes 可见节点，不修改原数组。
+ * @param edges 可见关系。
+ * @param focusKey 小于等于 12 节点时以该节点作为中间列。
+ * @returns 节点 key 到坐标映射；没有持续动画或 DOM 副作用。
+ */
 export function layoutGraph(
   nodes: ViewNode[],
   edges: ViewEdge[],
@@ -93,6 +122,13 @@ export function layoutGraph(
   return positions;
 }
 
+/**
+ * 根据两个普通节点位置绘制曲线，同列及自环从侧面绕行。
+ * @param from 起点左上角。
+ * @param to 终点左上角。
+ * @param self 是否自环。
+ * @returns SVG d 属性，不绘制或修改节点。
+ */
 export function edgePath(from: Position, to: Position, self: boolean): string {
   if (self)
     return `M${from.x + NODE_WIDTH - 25},${from.y} C${from.x + NODE_WIDTH + 50},${from.y - 65} ${from.x + NODE_WIDTH + 50},${from.y + 100} ${from.x + NODE_WIDTH - 25},${from.y + NODE_HEIGHT}`;

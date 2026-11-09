@@ -1,3 +1,8 @@
+/**
+ * 验证原生 AI 的工具发现、授权过滤与上下文预算。
+ * 构造大目录、中文检索和长会话，比较模型请求视图与原始 schema/历史，确保压缩不扩大能力或悄悄截断当前问题。
+ * 这些用例只运行内存规划和本体目录，不调用模型服务或数据库。
+ */
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 import { aggregate, buildRegistry, command, ref, states, text } from '@yss123/cage-kernel';
@@ -8,11 +13,17 @@ import { packPrompt, toolTokens, messageTokens } from '../../ai/src/prompt.js';
 import { planModelRequest } from '../../ai/src/request-plan.js';
 import { DEFAULT_LIMITS, type Execution, type ModelMessage } from '../../ai/src/types.js';
 
+/**
+ * 内存模型规格提供固定上下文容量，用于比较工具直传和发现模式；generate 不参与这些规划测试。
+ */
 const provider = {
   spec: { kind: 'test' },
   contextWindowTokens: 32768,
   generate: async () => ({ text: '', calls: [] }),
 };
+/**
+ * 构造从空历史预算开始的运行状态基底，各例按场景覆盖；null 表示尚未保存模型接续或工具发现计划。
+ */
 const runDefaults = {
   limits: DEFAULT_LIMITS,
   tokens: 0,

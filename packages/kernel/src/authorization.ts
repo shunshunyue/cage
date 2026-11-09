@@ -1,3 +1,7 @@
+/**
+ * 权限解释器只收集观测证据，不执行 handler、写审计或抢锁。
+ * 它复用真实输入、调用身份、范围及约束检查；输出不能当作后续执行的授权凭证。
+ */
 import { cageError, toCageError } from './errors.js';
 import type { Kernel } from './kernel.js';
 import { loadUserGrants } from './org.js';
@@ -7,8 +11,10 @@ import type { ConstraintMeta } from './primitives/constraints.js';
 import type { Ctx } from './types.js';
 import { newDraft, splitRaw } from './pipeline/draft.js';
 
+/** not-inspected 表示证据不足，与 fail、pass 分开，避免把未检查结果误当成功。 */
 export interface AuthorizationCheck { stage: string; status: 'pass' | 'fail' | 'not-inspected'; code?: string; reason?: unknown }
 
+/** 固定公开文案代替任意自定义约束消息，防止消息中拼接的业务明文穿过诊断边界。 */
 function constraintReason(name: string): string {
   if (name.startsWith('ceiling(')) return '额度未配置或不足；请检查该能力的有效参数';
   if (name.startsWith('sod.notSameAs(')) return '职责分离条件未满足';
@@ -17,6 +23,11 @@ function constraintReason(name: string): string {
 }
 
 /** 无 handler、无锁、无写入；可解释的判断复用实际身份、范围和约束实现。结果仅代表观测时刻。 */
+/**
+ * 先检查输入和主体，再在只读事务中检查对象可见性、状态、版本及硬约束。
+ * 新建最终范围依赖 handler，约束依赖异常也不可判定：二者均返回 allowed:null 所需的未知证据。
+ * 已确认拒绝优先返回 false；返回的 observedAt 标记时效，实际执行仍会重新鉴权和加锁。
+ */
 export async function explainAuthorization(k: Kernel, capability: string, raw: Record<string, unknown>, ctx: Ctx) {
   const rc = k.registry.command(capability);
   if (!rc) throw cageError('NOT_FOUND');

@@ -1,3 +1,7 @@
+/**
+ * 库存示例页，读取库存安全列表并通过生成命令创建库存记录。
+ * 这只是采购范例中的库存展示与输入入口，资源占用和释放仍通过领域流程落实。
+ */
 // 库存模块只管理台账页面，登记物料通过生成的 Inventory.create 命令。
 import { can, inventory, useInventoryList } from '@app/contracts';
 import { useCommand } from '../../../shared/hooks/use-command';
@@ -6,6 +10,10 @@ import { PageHeading } from '../../../shared/ui/page-heading';
 import { QueryFailure } from '../../../shared/ui/page-state';
 import { AssistantPage } from '../../../shared/ui/assistant-scope';
 
+/**
+ * 读取最多前一百条库存并展示查询失败、加载和空结果；列表不代表系统全部库存。
+ * 创建成功后重置表单并刷新查询，失败保留输入。助理上下文只列当前可见记录 ID，服务端仍核验读取范围。
+ */
 export function InventoryPage() {
   const stock = useInventoryList({ pageSize: 100 });
   const { run, busy, message, clearMessage } = useCommand();
