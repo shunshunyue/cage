@@ -74,8 +74,8 @@ handler 的读取写入 `reads`，任务的读取和命令调用写入 `reads/ca
 
 ## 继续阅读
 
-- [架构与执行模型](https://github.com/shunshunyue/cage/blob/main/docs/ai/architecture.md)
-- [原语、命令与查询](https://github.com/shunshunyue/cage/blob/main/docs/ai/primitives.md)
-- [对象关系](https://github.com/shunshunyue/cage/blob/main/docs/ai/relations.md)
+- [架构与执行模型](https://github.com/shunshunyue/cage/blob/main/docs/development/getting-started/architecture.md)
+- [原语、命令与查询](https://github.com/shunshunyue/cage/blob/main/docs/development/reference/primitives.md)
+- [对象关系](https://github.com/shunshunyue/cage/blob/main/docs/development/guides/relations.md)
 
-脚手架项目自带 `docs/ai` 与 `docs/errors`，可离线学习。源码与反馈：[GitHub](https://github.com/shunshunyue/cage)。许可证：[MIT](https://github.com/shunshunyue/cage/blob/main/LICENSE)。
+脚手架项目自带 `docs/development` 与 `docs/errors`，可离线学习。源码与反馈：[GitHub](https://github.com/shunshunyue/cage)。许可证：[MIT](https://github.com/shunshunyue/cage/blob/main/LICENSE)。

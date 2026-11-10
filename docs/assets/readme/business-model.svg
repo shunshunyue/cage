@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  README 业务模型示意图：由仓库首页引用，说明同一份 TypeScript 业务声明如何支撑运行、生成和 AI 上下文。
+  图中箭头表示声明的消费关系，不表示一次请求的执行顺序，也不声称生成产物会自动迁移数据库。
+  三组输出依据 docs/ai/getting-started/architecture.md 绘制；本体图提供关系和源码定位，不代表运行时执行证据。
+  使用独立 SVG 元素与系统字体，便于 GitHub 图片渲染；不执行脚本、不读取外部资源、不包含产品截图。
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="570" viewBox="0 0 1400 570" role="img" aria-labelledby="title description">
+  <title id="title">同一份业务声明，贯通开发与运行</title>
+  <desc id="description">TypeScript 业务声明包含字段、状态、命令与关系。声明分别支撑应用运行中的注册表、HTTP、命令和安全读侧，生成前端契约、SQL 与迁移草稿，并提供本体图、关系和源码定位，供 AI 查询上下文。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 1 1 L 8 5 L 1 9" fill="none" stroke="#7C8372" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+  <rect width="1400" height="570" rx="24" fill="#F6F4EA"/>
+  <g font-family="'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', sans-serif" fill="#252820">
+    <text x="48" y="70" font-size="36" font-weight="700">同一份业务声明，贯通开发与运行</text>
+    <text x="48" y="109" font-size="21" fill="#6C7163">业务规则写在一处，各个能力围绕它构建。</text>
+
+    <!-- 中心卡片仅概括声明内容；不绘制虚构 API，也不把 handler 业务实现误称为完全自动生成。 -->
+    <rect x="450" y="151" width="500" height="112" rx="18" fill="#D5ED86" stroke="#B9CF72"/>
+    <text x="700" y="198" text-anchor="middle" font-size="30" font-weight="700">TypeScript 业务声明</text>
+    <text x="700" y="236" text-anchor="middle" font-size="22">字段 · 状态 · 命令 · 关系</text>
+
+    <!-- 一条分支线连接三个平级消费方向，避免读者把生成器或图谱误认为运行请求的必经阶段。 -->
+    <g fill="none" stroke="#7C8372" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M 700 263 V 303"/>
+      <path d="M 250 303 H 1150"/>
+      <path d="M 250 303 V 343" marker-end="url(#arrow)"/>
+      <path d="M 700 303 V 343" marker-end="url(#arrow)"/>
+      <path d="M 1150 303 V 343" marker-end="url(#arrow)"/>
+    </g>
+    <circle cx="700" cy="303" r="5" fill="#7C8372"/>
+
+    <rect x="48" y="351" width="404" height="174" rx="18" fill="#FFFEF8" stroke="#D9DDCE" stroke-width="1.5"/>
+    <rect x="498" y="351" width="404" height="174" rx="18" fill="#FFFEF8" stroke="#D9DDCE" stroke-width="1.5"/>
+    <rect x="948" y="351" width="404" height="174" rx="18" fill="#FFFEF8" stroke="#D9DDCE" stroke-width="1.5"/>
+    <g fill="#D5ED86">
+      <rect x="76" y="383" width="8" height="28" rx="4"/>
+      <rect x="526" y="383" width="8" height="28" rx="4"/>
+      <rect x="976" y="383" width="8" height="28" rx="4"/>
+    </g>
+    <g font-size="29" font-weight="700">
+      <text x="100" y="408">应用运行</text>
+      <text x="550" y="408">生成产物</text>
+      <text x="1000" y="408">AI 上下文</text>
+    </g>
+    <g font-size="22" fill="#555C4C">
+      <text x="76" y="453">注册表 · HTTP</text>
+      <text x="76" y="490">命令执行 · 安全读侧</text>
+      <text x="526" y="453">前端契约</text>
+      <text x="526" y="490">SQL · 迁移草稿</text>
+      <text x="976" y="453">本体图</text>
+      <text x="976" y="490">关系解释 · 源码定位</text>
+    </g>
+  </g>
+</svg>

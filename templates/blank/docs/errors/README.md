@@ -3,7 +3,7 @@
 这是本业务项目自带的离线诊断手册。先使用错误码、声明位置、reason/fix 定位；不需要克隆框架仓库。
 
 - [HTTP 运行时错误与业务码](runtime.md)：401/403/404、状态冲突、约束拒绝、DOMAIN_ERROR 等。
-- [业务排错顺序](../ai/troubleshooting.md)：启动、权限、审批人、worker、死信与导入导出。
+- [业务排错顺序](../development/tools/troubleshooting.md)：启动、权限、审批人、worker、死信与导入导出。
 - CAGE-* 是声明、工具链或内部运行诊断；HTTP code 与业务 domainCode 是另一层，不要混为一谈。
 
 每页包含触发阶段、具体原因、修复步骤、正反例、验证方法与当前版实现位置。例子为局部说明，不能替代完整业务输入。

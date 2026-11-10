@@ -55,8 +55,8 @@ export function discover(registry: Registry, ctx: Ctx, query: string) {
 
 ## 文档
 
-- [运行本体与 AI 工具发现](https://github.com/shunshunyue/cage/blob/main/docs/ai/intelligence.md)
-- [开发时的本体查询与源码定位](https://github.com/shunshunyue/cage/blob/main/docs/ai/ontology-context.md)
-- [能力发现与诊断](https://github.com/shunshunyue/cage/blob/main/docs/ai/diagnostics.md)
+- [运行本体与 AI 工具发现](https://github.com/shunshunyue/cage/blob/main/docs/development/guides/intelligence.md)
+- [开发时的本体查询与源码定位](https://github.com/shunshunyue/cage/blob/main/docs/development/tools/ontology-context.md)
+- [能力发现与诊断](https://github.com/shunshunyue/cage/blob/main/docs/development/tools/diagnostics.md)
 
 源码与反馈：[GitHub](https://github.com/shunshunyue/cage)。许可证：[MIT](https://github.com/shunshunyue/cage/blob/main/LICENSE)。

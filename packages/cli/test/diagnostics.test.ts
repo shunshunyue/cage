@@ -196,7 +196,7 @@ it('并行审批需求定位真实parallel与branch签名并说明结构化AND�
   const report = publicCapabilities(cfg, '并行');
   for (const name of ['parallel', 'branch']) {
     const item = report.capabilities.find(capability => capability.key === `@yss123/cage-approval#${name}`);
-    expect(item).toMatchObject({ public: true, guide: 'docs/ai/approvals.md' });
+    expect(item).toMatchObject({ public: true, guide: 'docs/development/guides/approvals.md' });
     expect(item?.signatures.length).toBeGreaterThan(0);
   }
   expect(report.capabilities.find(item => item.key === '@yss123/cage-approval#parallel')?.limitations)
@@ -218,7 +218,7 @@ it.each([
   const report = publicCapabilities(cfg, query);
   for (const name of names) {
     const capability = report.capabilities.find(item => item.name === name);
-    expect(capability, `${query}: ${name}`).toMatchObject({ public: true, guide: 'docs/ai/intelligence.md' });
+    expect(capability, `${query}: ${name}`).toMatchObject({ public: true, guide: 'docs/development/guides/intelligence.md' });
     expect(capability!.signatures.length).toBeGreaterThan(0);
     expect(capability!.source.file).toMatch(/\.d\.ts$/);
   }

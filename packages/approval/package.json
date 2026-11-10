@@ -1,6 +1,6 @@
 {
   "name": "@yss123/cage-approval",
-  "version": "0.3.0",
+  "version": "0.3.2",
   "description": "审批适配接口、桥接与代码内封闭路由（可选）",
   "type": "module",
   "main": "dist/index.js",

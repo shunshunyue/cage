@@ -62,9 +62,9 @@ AI hooks 提供状态层，聊天布局与 Markdown 渲染由应用编写；需�
 
 ## 文档
 
-- [业务前端与路由](https://github.com/shunshunyue/cage/blob/main/docs/ai/routing.md)
-- [AI 会话、页面上下文与流式 SDK](https://github.com/shunshunyue/cage/blob/main/docs/ai/intelligence.md)
-- [文件上传](https://github.com/shunshunyue/cage/blob/main/docs/ai/files.md)
-- [导入导出](https://github.com/shunshunyue/cage/blob/main/docs/ai/transfers.md)
+- [业务前端与路由](https://github.com/shunshunyue/cage/blob/main/docs/development/guides/routing.md)
+- [AI 会话、页面上下文与流式 SDK](https://github.com/shunshunyue/cage/blob/main/docs/development/guides/intelligence.md)
+- [文件上传](https://github.com/shunshunyue/cage/blob/main/docs/development/guides/files.md)
+- [导入导出](https://github.com/shunshunyue/cage/blob/main/docs/development/guides/transfers.md)
 
 源码与反馈：[GitHub](https://github.com/shunshunyue/cage)。许可证：[MIT](https://github.com/shunshunyue/cage/blob/main/LICENSE)。

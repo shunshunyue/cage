@@ -1,6 +1,6 @@
 # CAGE-REACT-003：集合或步骤顺序声明无效
 
-[返回错误码册](README.md) · [业务排错](../ai/troubleshooting.md)
+[返回错误码册](README.md) · [业务排错](../development/tools/troubleshooting.md)
 
 > 本页由框架生成。正反例为局部声明或操作说明，完整写法见业务开发指南及本项目 domain。
 

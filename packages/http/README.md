@@ -61,9 +61,9 @@ process.once('SIGTERM', () => void worker.stop());
 
 ## 文档
 
-- [架构、数据库与权限](https://github.com/shunshunyue/cage/blob/main/docs/ai/architecture.md)
-- [路由与 SPA 部署](https://github.com/shunshunyue/cage/blob/main/docs/ai/routing.md)
-- [私有文件](https://github.com/shunshunyue/cage/blob/main/docs/ai/files.md)
-- [原生 AI 接入](https://github.com/shunshunyue/cage/blob/main/docs/ai/intelligence.md)
+- [架构、数据库与权限](https://github.com/shunshunyue/cage/blob/main/docs/development/getting-started/architecture.md)
+- [路由与 SPA 部署](https://github.com/shunshunyue/cage/blob/main/docs/development/guides/routing.md)
+- [私有文件](https://github.com/shunshunyue/cage/blob/main/docs/development/guides/files.md)
+- [原生 AI 接入](https://github.com/shunshunyue/cage/blob/main/docs/development/guides/intelligence.md)
 
 源码与反馈：[GitHub](https://github.com/shunshunyue/cage)。许可证：[MIT](https://github.com/shunshunyue/cage/blob/main/LICENSE)。

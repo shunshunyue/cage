@@ -1,6 +1,6 @@
 # HTTP 运行时错误与业务码
 
-[返回错误码册](README.md) · [排错方法](../ai/troubleshooting.md)
+[返回错误码册](README.md) · [排错方法](../development/tools/troubleshooting.md)
 
 框架诊断分三层：`CAGE-APPR-007` 等内部/工具码、HTTP 响应的通用 `code`、业务拒绝的 `domainCode`。同一次失败可以同时涉及几层；例如审批人配置问题出现在 worker 死信，前端提交此前可能已成功。
 

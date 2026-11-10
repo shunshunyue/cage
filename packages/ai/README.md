@@ -71,8 +71,8 @@ AI 审批使用 `@yss123/cage-approval` 的 `step(..., { kind: 'ai', ... })`，�
 
 ## 文档
 
-- [完整接入、模型管理、审批三态与流式 SDK](https://github.com/shunshunyue/cage/blob/main/docs/ai/intelligence.md)
-- [能力发现与运行诊断](https://github.com/shunshunyue/cage/blob/main/docs/ai/diagnostics.md)
+- [完整接入、模型管理、审批三态与流式 SDK](https://github.com/shunshunyue/cage/blob/main/docs/development/guides/intelligence.md)
+- [能力发现与运行诊断](https://github.com/shunshunyue/cage/blob/main/docs/development/tools/diagnostics.md)
 - [采购范例的 AI 声明](https://github.com/shunshunyue/cage/blob/main/examples/purchase-admin/packages/domain/src/integrations/intelligence.ts)
 
 源码与反馈：[GitHub](https://github.com/shunshunyue/cage)。许可证：[MIT](https://github.com/shunshunyue/cage/blob/main/LICENSE)。

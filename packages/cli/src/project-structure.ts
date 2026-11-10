@@ -74,7 +74,7 @@ export function checkProjectStructure(cfg: CageConfig): Finding[] {
           code: 'CAGE-STRUCT-001',
           at,
           reason: `${kind} 源码没有放入约定模块：${from.path}`,
-          fix: `src 根目录只保留${kind === 'domain' ? '领域 index.ts' : '浏览器 main.tsx'}；业务按归属放入 ${layers.join(' / ')}，见 docs/ai/project-structure.md`,
+          fix: `src 根目录只保留${kind === 'domain' ? '领域 index.ts' : '浏览器 main.tsx'}；业务按归属放入 ${layers.join(' / ')}，见 docs/development/reference/project-structure.md`,
         });
       }
       const source = readFileSync(file, 'utf8');
@@ -124,7 +124,7 @@ export function checkProjectStructure(cfg: CageConfig): Finding[] {
             code: 'CAGE-STRUCT-002',
             at: `${at}:${source.slice(0, spec.pos).split('\n').length}`,
             reason: `${reason}（${spec.fileName}）`,
-            fix: '调整依赖归属；共用纯逻辑下沉到 shared，页面协作由 app 传参，领域交互通过模块公开声明。见 docs/ai/project-structure.md',
+            fix: '调整依赖归属；共用纯逻辑下沉到 shared，页面协作由 app 传参，领域交互通过模块公开声明。见 docs/development/reference/project-structure.md',
           });
       }
     }

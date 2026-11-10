@@ -118,7 +118,7 @@ const families: Record<string, { title: string; stage: string; verify: string }>
   CREATE: {
     title: '创建应用',
     stage: 'create-cage-app / cage create',
-    verify: '向一个新目录创建，检查 AGENTS.md、业务源码、docs/ai 和 docs/errors，然后按 README 安装/构建。',
+    verify: '向一个新目录创建，检查 AGENTS.md、业务源码、docs/development 和 docs/errors，然后按 README 安装/构建。',
   },
   DECL: {
     title: '可抽取声明',
@@ -134,7 +134,7 @@ const families: Record<string, { title: string; stage: string; verify: string }>
     title: '工程目录与模块依赖',
     stage: 'check / analyze / verify（structure: modular）',
     verify:
-      '按 docs/ai/project-structure.md 整理归属和导入后重跑 cage check 与 verify；不关闭目录规则，也不改业务表或能力标识。',
+      '按 docs/development/reference/project-structure.md 整理归属和导入后重跑 cage check 与 verify；不关闭目录规则，也不改业务表或能力标识。',
   },
   DLQ: {
     title: '死信操作',
@@ -312,7 +312,7 @@ for (const [code, sources] of [...codes].sort()) {
     `${code}.md`,
     `# ${code}：${guide.title}
 
-[返回错误码册](README.md) · [业务排错](../ai/troubleshooting.md)
+[返回错误码册](README.md) · [业务排错](../development/tools/troubleshooting.md)
 
 > 本页由框架生成。正反例为局部声明或操作说明，完整写法见业务开发指南及本项目 domain。
 
@@ -363,7 +363,7 @@ const index = [
   '这是本业务项目自带的离线诊断手册。先使用错误码、声明位置、reason/fix 定位；不需要克隆框架仓库。',
   '',
   '- [HTTP 运行时错误与业务码](runtime.md)：401/403/404、状态冲突、约束拒绝、DOMAIN_ERROR 等。',
-  '- [业务排错顺序](../ai/troubleshooting.md)：启动、权限、审批人、worker、死信与导入导出。',
+  '- [业务排错顺序](../development/tools/troubleshooting.md)：启动、权限、审批人、worker、死信与导入导出。',
   '- CAGE-* 是声明、工具链或内部运行诊断；HTTP code 与业务 domainCode 是另一层，不要混为一谈。',
   '',
   '每页包含触发阶段、具体原因、修复步骤、正反例、验证方法与当前版实现位置。例子为局部说明，不能替代完整业务输入。',

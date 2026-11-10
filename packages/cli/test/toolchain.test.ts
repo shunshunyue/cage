@@ -50,25 +50,32 @@ it('新项目保留已有数据库配置入口，不分发数据库生命周期�
 it.each(['blank', 'purchase'] as const)('%s 模板交付完整本地教材，且只注册所选业务', (template) => {
   const root = createApp(join(temporary, 'ai-business-guide-' + template), undefined, template);
   const agents = readFileSync(join(root, 'AGENTS.md'), 'utf8');
-  expect(agents).toContain('docs/ai/README.md');
-  expect(agents).toContain('docs/ai/intelligence.md');
+  expect(agents).toContain('docs/development/README.md');
+  expect(agents).toContain('docs/development/guides/intelligence.md');
   expect(agents).toContain('项目自己的业务约定');
   expect(agents).toContain(managedBlock);
   expect(agents).not.toContain('../../docs/');
   // 检查实际创建结果，不只检查规范文档，能抓到模板复制或打包遗漏。
   for (const file of [
-    'docs/ai/README.md',
-    'docs/ai/architecture.md',
-    'docs/ai/project-structure.md',
-    'docs/ai/primitives.md',
-    'docs/ai/workflow.md',
-    'docs/ai/ontology-context.md',
-    'docs/ai/intelligence.md',
-    'docs/ai/diagnostics.md',
-    'docs/ai/recipes.md',
-    'docs/ai/purchase-example.md',
-    'docs/ai/troubleshooting.md',
-    'docs/ai/transfers.md',
+    'docs/development/README.md',
+    '.agents/skills/cage-development/SKILL.md',
+    'CLAUDE.md',
+    'docs/development/skills/cage-development/SKILL.md',
+    'docs/development/getting-started/first-feature.md',
+    'docs/development/examples/note/note.ts',
+    'docs/development/examples/note/notes-page.tsx',
+    'docs/development/examples/note/note-detail-page.tsx',
+    'docs/development/getting-started/architecture.md',
+    'docs/development/reference/project-structure.md',
+    'docs/development/reference/primitives.md',
+    'docs/development/getting-started/workflow.md',
+    'docs/development/tools/ontology-context.md',
+    'docs/development/guides/intelligence.md',
+    'docs/development/tools/diagnostics.md',
+    'docs/development/guides/recipes.md',
+    'docs/development/examples/purchase-example.md',
+    'docs/development/tools/troubleshooting.md',
+    'docs/development/guides/transfers.md',
     'docs/errors/README.md',
     'docs/errors/runtime.md',
     'docs/errors/CAGE-APPR-007.md',
@@ -109,9 +116,9 @@ it.each(['blank', 'purchase'] as const)('%s 模板交付完整本地教材，且
     expect(existsSync(join(root, path)), path).toBe(true);
   expect(existsSync(join(root, 'packages/contracts/src/user.ts'))).toBe(false);
   expect(readFileSync(join(root, 'apps/web/src/main.tsx'), 'utf8')).not.toContain('function Workspace');
-  expect(readFileSync(join(root, 'README.md'), 'utf8')).toContain('(docs/ai/README.md)');
+  expect(readFileSync(join(root, 'README.md'), 'utf8')).toContain('(docs/development/README.md)');
   expect(readFileSync(join(root, 'docs/errors/CAGE-APPR-007.md'), 'utf8')).toContain('重放');
-  expect(readFileSync(join(root, 'docs/ai/primitives.md'), 'utf8')).toContain(
+  expect(readFileSync(join(root, 'docs/development/examples/note/note.ts'), 'utf8')).toContain(
     'export const Note = aggregate',
   );
 });

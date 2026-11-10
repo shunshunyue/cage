@@ -117,7 +117,7 @@ draft.children = ['id'];
   );
   const root = fileURLToPath(new URL('../../../', import.meta.url));
   // 教材中的完整业务文件也参与编译，避免分发给 AI 的示例只在文字上成立。
-  const guide = readFileSync(join(root, 'docs/ai/relations.md'), 'utf8');
+  const guide = readFileSync(join(root, 'docs/development/guides/relations.md'), 'utf8');
   writeFileSync(join(temporary, 'guide-domain.ts'), guide.match(/```ts\n([\s\S]*?)\n```/)![1]);
   const program = ts.createProgram(
     [

@@ -2,7 +2,7 @@
 
 这是可直接开发业务的 TypeScript + React 项目，框架由 `@yss123/cage-*` npm 包提供。当前仅注册用户、部门、角色基础模型，保留登录、权限、系统管理、审计和异步任务；没有采购、库存、审批演示声明或演示业务表。
 
-先读 [AGENTS.md](AGENTS.md) 和 [业务开发指南](docs/ai/README.md)。给 Codex 等工具描述自己的业务需求，按 [任务配方](docs/ai/recipes.md) 开发即可。[采购范例导读](docs/ai/purchase-example.md) 对应 `docs/examples/purchase-admin` 中的参考源码；这些文件不参与编译、领域注册或迁移。
+先读 [AGENTS.md](AGENTS.md) 和 [业务开发指南](docs/development/README.md)。给 Codex 等工具描述自己的业务需求，按 [任务配方](docs/development/guides/recipes.md) 开发即可。[采购范例导读](docs/development/examples/purchase-example.md) 对应 `docs/examples/purchase-admin` 中的参考源码；这些文件不参与编译、领域注册或迁移。
 
 ## 首次启动
 
@@ -17,11 +17,11 @@
 
 登录后可从“系统管理”配置用户、部门、角色与权限，再按业务需求添加模块。页面不会显示虚构业务数据。`.env` 中三个账号连接同一个数据库；日常运行不需要管理员账号。首次迁移应在为本项目准备的库中执行，接管历史业务表需要额外映射和迁移审查。
 
-前端已配置 React Router：`/login` 登录、`/workspace` 工作台、`/directory/users` 成员列表、`/directory/users/:id` 成员详情，以及应用 404。成员页面只读取已有组织模型，需要 User.read，未增加演示业务或数据。详情可直达、刷新，登录后返回原地址。新增业务与生产 SPA 回退按[路由和浏览器验收指南](docs/ai/routing.md)执行；反向代理示例见 [deploy/nginx.conf](deploy/nginx.conf)。
+前端已配置 React Router：`/login` 登录、`/workspace` 工作台、`/directory/users` 成员列表、`/directory/users/:id` 成员详情，以及应用 404。成员页面只读取已有组织模型，需要 User.read，未增加演示业务或数据。详情可直达、刷新，登录后返回原地址。新增业务与生产 SPA 回退按[路由和浏览器验收指南](docs/development/guides/routing.md)执行；反向代理示例见 [deploy/nginx.conf](deploy/nginx.conf)。
 
 ## 添加第一个业务模块
 
-先读[工程目录与代码组织](docs/ai/project-structure.md)。在 `packages/domain/src/modules/<业务>` 新建声明，通过模块 index.ts 从领域总入口导出；运行 `pnpm exec cage check`、`pnpm gen`，审查生成契约和迁移。在 `apps/web/src/modules/<业务>` 使用 `@app/contracts` 实现页面和表单，通过模块公开入口接入 `app` 导航；共享 UI/工具放 `shared`。最后按需迁移，并由管理员分配新增能力。完整的 Note 对象示例见 [原语与最小业务](docs/ai/primitives.md)。
+先读[工程目录与代码组织](docs/development/reference/project-structure.md)。在 `packages/domain/src/modules/<业务>` 新建声明，通过模块 index.ts 从领域总入口导出；运行 `pnpm exec cage check`、`pnpm gen`，审查生成契约和迁移。在 `apps/web/src/modules/<业务>` 使用 `@app/contracts` 实现页面和表单，通过模块公开入口接入 `app` 导航；共享 UI/工具放 `shared`。最后按需迁移，并由管理员分配新增能力。完整的 Note 对象示例见 [原语与最小业务](docs/development/reference/primitives.md)。
 
 `src/main.tsx` 只挂载 React 和全局 Provider，业务不平铺到 src 根目录。`cage.config.json` 已启用 `structure: modular`，check/verify 会检查目录和依赖边界；不要关闭检查或将所有业务移入 shared 来消除提示。
 

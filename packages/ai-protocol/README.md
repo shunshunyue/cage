@@ -71,7 +71,7 @@ schema 通过仅说明形状与长度合法，不证明对象存在、审批结�
 
 ## 文档
 
-- [AI 协议、页面上下文与 SDK](https://github.com/shunshunyue/cage/blob/main/docs/ai/intelligence.md)
+- [AI 协议、页面上下文与 SDK](https://github.com/shunshunyue/cage/blob/main/docs/development/guides/intelligence.md)
 - [公开协议源码](https://github.com/shunshunyue/cage/blob/main/packages/ai-protocol/src/index.ts)
 
 源码与反馈：[GitHub](https://github.com/shunshunyue/cage)。许可证：[MIT](https://github.com/shunshunyue/cage/blob/main/LICENSE)。

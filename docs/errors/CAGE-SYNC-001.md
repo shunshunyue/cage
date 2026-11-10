@@ -1,6 +1,6 @@
 # CAGE-SYNC-001：AGENTS 托管区过期或标记损坏
 
-[返回错误码册](README.md) · [业务排错](../ai/troubleshooting.md)
+[返回错误码册](README.md) · [业务排错](../development/tools/troubleshooting.md)
 
 > 本页由框架生成。正反例为局部声明或操作说明，完整写法见业务开发指南及本项目 domain。
 
@@ -34,9 +34,9 @@ sync --check 发现框架规则需更新，或 begin/end 标记缺失一边、�
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/cli/src/sync.ts:149`
-- `packages/cli/src/sync.ts:156`
-- `packages/cli/src/sync.ts:167`
+- `packages/cli/src/sync.ts:66`
+- `packages/cli/src/sync.ts:73`
+- `packages/cli/src/sync.ts:84`
 
 实现片段（位置随框架版本更新）：
 

@@ -11,9 +11,9 @@
     "build:app": "pnpm --filter @app/domain build && pnpm --filter @app/api build && pnpm --filter @app/web build"
   },
   "devDependencies": {
-    "@yss123/cage-cli": "0.3.0",
-    "@yss123/cage-testkit": "0.3.0",
-    "@yss123/cage-lint": "0.3.0",
+    "@yss123/cage-cli": "0.3.2",
+    "@yss123/cage-testkit": "0.3.2",
+    "@yss123/cage-lint": "0.3.2",
     "@types/node": "^24.3.0",
     "typescript": "~5.9.3",
     "vitest": "^4.1.12",

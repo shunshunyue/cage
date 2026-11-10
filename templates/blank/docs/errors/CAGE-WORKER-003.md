@@ -1,6 +1,6 @@
 # CAGE-WORKER-003：后台任务未在停机时限内结束
 
-[返回错误码册](README.md) · [业务排错](../ai/troubleshooting.md)
+[返回错误码册](README.md) · [业务排错](../development/tools/troubleshooting.md)
 
 > 本页由框架生成。正反例为局部声明或操作说明，完整写法见业务开发指南及本项目 domain。
 

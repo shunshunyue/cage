@@ -1,6 +1,6 @@
 # CAGE-APPR-001：审批字段声明无效
 
-[返回错误码册](README.md) · [业务排错](../ai/troubleshooting.md)
+[返回错误码册](README.md) · [业务排错](../development/tools/troubleshooting.md)
 
 > 本页由框架生成。正反例为局部声明或操作说明，完整写法见业务开发指南及本项目 domain。
 
@@ -13,7 +13,7 @@ approval.routable 引用了不存在字段，或 approver.field 指向未声明�
 ## 修复步骤
 
 1. 先在聚合声明实际字段，再将需要给审批路由的非隐藏字段放入 routable；不要把任意输入直接交给流程。
-2. 字段选人值应为 UUID 或非空 UUID 数组，见 docs/ai/approvals.md；字段公开并不自动授予审批能力。
+2. 字段选人值应为 UUID 或非空 UUID 数组，见 docs/development/guides/approvals.md；字段公开并不自动授予审批能力。
 
 ## 正例
 

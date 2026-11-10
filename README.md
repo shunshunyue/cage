@@ -4,9 +4,9 @@
 
 Cage 是一个主要面向 **AI 编程智能体**使用的 TypeScript 业务框架。它把业务对象、操作、规则与流程组织成结构化声明，为 AI 提供可检索的上下文、明确的开发入口和可验证的反馈，并让应用中的智能助理与智能审批沿用同一套业务模型。
 
-![Cage：AI 通过结构化业务模型构建智能应用，米白色框架与少量青柠色智能节点相互连接](docs/images/readme/hero.webp)
+![Cage：AI 通过结构化业务模型构建智能应用，米白色框架与少量青柠色智能节点相互连接](docs/assets/readme/hero.webp)
 
-[开始使用](#开始使用) · [AI 开发指南](docs/ai/README.md) · [架构与执行模型](docs/ai/architecture.md) · [原生智能能力](docs/ai/intelligence.md) · [采购范例](examples/purchase-admin)
+[开始使用](#开始使用) · [文档目录](docs/README.md) · [框架开发 Skill](docs/development/skills/cage-development/SKILL.md) · [框架开发指南](docs/development/README.md) · [架构与执行模型](docs/development/getting-started/architecture.md) · [原生智能能力](docs/development/guides/intelligence.md) · [采购范例](examples/purchase-admin)
 
 ## 为什么要为 AI 设计一个业务框架
 
@@ -29,7 +29,7 @@ Cage 的中心是一份可执行的业务规格。用 TypeScript 声明业务对
 
 同一份声明构建注册表、能力目录与 HTTP 路由，生成前端契约、安全 SQL 和迁移草稿，同时为本体图谱和 AI 上下文提供结构依据。
 
-![同一份 TypeScript 业务声明分别支撑应用运行、生成产物和 AI 上下文](docs/images/readme/business-model.svg)
+![同一份 TypeScript 业务声明分别支撑应用运行、生成产物和 AI 上下文](docs/assets/readme/business-model.svg)
 
 业务对象在 Cage 中称为**聚合**：它把需要共同遵守规则的数据、状态和操作放在一起。例如采购单既包含金额、明细和部门，也定义何时能提交、批准或取消。
 
@@ -55,13 +55,15 @@ export const cancel = command(PurchaseOrder, {
 
 从这段声明可以读出允许的状态、目标状态和业务事件；关联的审批、反应与释放命令则定义后续行为。AI 可以沿关系定位这些实现，开发者也能在图谱中查看它们。新增操作仍需从 domain 入口导出，并由管理员显式授权。
 
-前端通过生成契约和客户端调用业务能力。页面、交互和具体业务计算由应用实现，数据库结构变化以审查后的迁移落地。完整模式见[原语与最小业务](docs/ai/primitives.md)和[对象关系](docs/ai/relations.md)。
+前端通过生成契约和客户端调用业务能力。页面、交互和具体业务计算由应用实现，数据库结构变化以审查后的迁移落地。完整模式见[原语与最小业务](docs/development/reference/primitives.md)和[对象关系](docs/development/guides/relations.md)。
 
 ## AI 如何使用 Cage 开发业务
 
+先加载[框架开发 Skill](docs/development/skills/cage-development/SKILL.md)，理解运行方式和能力选择；初次接触可沿[第一条完整业务链](docs/development/getting-started/first-feature.md)学习声明、生成、授权和页面接入。Skill 与教材随项目分发，多种 agent 共用同一正文，通过本地文件搜索、能力目录和本体查询定位资料，无需额外知识服务或模型。
+
 以“调整采购单取消规则，并核对取消后的库存释放”为例，AI 先定位已有声明和关联流程，再修改实现、生成产物并验证结果。
 
-![AI 从需求出发，检索上下文、修改业务、生成并审查，最后根据检查和实际验证结果继续迭代](docs/images/readme/ai-development.svg)
+![AI 从需求出发，检索上下文、修改业务、生成并审查，最后根据检查和实际验证结果继续迭代](docs/assets/readme/ai-development.svg)
 
 在应用根目录，开发工具可以直接使用这些入口：
 
@@ -87,9 +89,9 @@ pnpm exec cage doctor
 
 每个脚手架项目都携带本地学习资料。可以把这样的任务交给 AI 编程工具：
 
-> 先读根目录 AGENTS.md 和 docs/ai/README.md，检索相关能力与业务上下文。为当前应用实现设备借用：申请、审批、领用和归还。先核对业务规则，再修改领域声明与页面，生成并审查契约和迁移，完成权限、状态与业务流程验证，分别报告通过、跳过和未执行的项目。
+> 先读根目录 AGENTS.md 和 docs/development/README.md，检索相关能力与业务上下文。为当前应用实现设备借用：申请、审批、领用和归还。先核对业务规则，再修改领域声明与页面，生成并审查契约和迁移，完成权限、状态与业务流程验证，分别报告通过、跳过和未执行的项目。
 
-日常业务开发使用已安装的框架包和项目内资料即可。进一步了解[本体与 AI 上下文](docs/ai/ontology-context.md)、[能力发现与诊断](docs/ai/diagnostics.md)和[业务任务配方](docs/ai/recipes.md)。
+日常业务开发使用已安装的框架包和项目内资料即可。进一步了解[本体与 AI 上下文](docs/development/tools/ontology-context.md)、[能力发现与诊断](docs/development/tools/diagnostics.md)和[业务任务配方](docs/development/guides/recipes.md)。
 
 ## 让每个应用拥有原生智能的基础
 
@@ -108,11 +110,11 @@ pnpm exec cage doctor
 
 例如，用户可以让助理查看采购单及审批记录，核对材料，或在确认后提交获授权的操作。AI 审批可先检查申请材料，再交给人工处理；模型故障时按节点配置转人工或记录失败。实际效果需要结合应用规则、真实模型和角色进行验收。
 
-![采购范例中的随页业务助理，以及同一单据先退回修改、重新提交后通过 AI 与人工审批的真实界面](docs/images/readme/intelligent-application.webp)
+![采购范例中的随页业务助理，以及同一单据先退回修改、重新提交后通过 AI 与人工审批的真实界面](docs/assets/readme/intelligent-application.webp)
 
 *采购范例实机截图：左侧为随页业务助理，右侧为 AI 与人工审批记录。界面由应用实现，运行与执行能力由框架提供。*
 
-接入方式与验证步骤见[原生智能助理与 AI 审批](docs/ai/intelligence.md)。
+接入方式与验证步骤见[原生智能助理与 AI 审批](docs/development/guides/intelligence.md)。
 
 ## 智能行动遵守业务规则
 
@@ -123,14 +125,14 @@ Cage 将页面、流程和 AI 发起的业务操作接入统一执行体系。�
 - **协作通过事件和流程。** 反应可以选择同事务执行或 outbox 异步处理；审批结论回到领域命令，外部 IO 由连接器承接。
 - **AI 写入有确认与回执。** 助理写操作默认需要用户确认，并继续接受服务端授权与版本校验；持久执行记录用于交互、恢复与结果核对。
 
-图谱和静态检查提供声明关系与结构证据，业务测试验证具体行为。外部系统的幂等与恢复取决于实际协议，模型判断质量需要应用评测。详见[架构与执行模型](docs/ai/architecture.md)。
+图谱和静态检查提供声明关系与结构证据，业务测试验证具体行为。外部系统的幂等与恢复取决于实际协议，模型判断质量需要应用评测。详见[架构与执行模型](docs/development/getting-started/architecture.md)。
 
 ## 开始使用
 
 需要 **Node.js 24+、pnpm 10 和一个已存在、可连接的 PostgreSQL 数据库**。框架提供数据库连接与事务管理，初始化负责准备账号和配置。
 
 ```powershell
-pnpm create @yss123/cage-app@0.3.0 my-app
+pnpm create @yss123/cage-app@0.3.2 my-app
 cd my-app
 pnpm install
 ```
@@ -158,26 +160,26 @@ pnpm dev
 
 打开终端打印的 Web 地址。初始登录凭据由 `bootstrap` 写入指定的受限文件，交付后移除；日常启动使用 `pnpm dev`，结构变更经审查后显式迁移。
 
-启用智能能力时，继续完成模型配置、权限和界面接入。详细启动与部署步骤见[中文使用说明](docs/使用说明.md)，数据库配置见[接入说明](docs/local-postgres.md)。
+启用智能能力时，继续完成模型配置、权限和界面接入。详细启动与部署步骤见[中文使用说明](docs/manual/使用说明.md)，数据库配置见[接入说明](docs/maintainers/local-postgres.md)。
 
 ## 继续了解
 
 | 你想了解什么 | 阅读入口 |
 | --- | --- |
-| AI 从哪里开始开发 | [学习入口](docs/ai/README.md) · [开发步骤](docs/ai/workflow.md) · [业务任务配方](docs/ai/recipes.md) |
-| 业务如何表达与执行 | [架构](docs/ai/architecture.md) · [原语](docs/ai/primitives.md) · [对象关系](docs/ai/relations.md) |
-| AI 如何查业务和排错 | [本体上下文](docs/ai/ontology-context.md) · [诊断工具](docs/ai/diagnostics.md) · [错误码册](docs/errors/README.md) |
-| 如何构建智能应用 | [助理与 AI 审批](docs/ai/intelligence.md) · [审批流程](docs/ai/approvals.md) |
-| 如何组织页面和业务模块 | [工程目录](docs/ai/project-structure.md) · [路由与浏览器验收](docs/ai/routing.md) |
-| 如何实现完整业务 | [采购范例导读](docs/ai/purchase-example.md) · [范例源码](examples/purchase-admin) |
-| 文件与数据交换 | [私有文件](docs/ai/files.md) · [导入导出](docs/ai/transfers.md) |
+| 使用 Cage 从哪里开始 | [学习入口](docs/development/README.md) · [开发步骤](docs/development/getting-started/workflow.md) · [业务任务配方](docs/development/guides/recipes.md) |
+| 业务如何表达与执行 | [架构](docs/development/getting-started/architecture.md) · [原语](docs/development/reference/primitives.md) · [对象关系](docs/development/guides/relations.md) |
+| 如何查业务和排错 | [本体上下文](docs/development/tools/ontology-context.md) · [诊断工具](docs/development/tools/diagnostics.md) · [错误码册](docs/errors/README.md) |
+| 如何构建智能应用 | [助理与 AI 审批](docs/development/guides/intelligence.md) · [审批流程](docs/development/guides/approvals.md) |
+| 如何组织页面和业务模块 | [工程目录](docs/development/reference/project-structure.md) · [路由与浏览器验收](docs/development/guides/routing.md) |
+| 如何实现完整业务 | [采购范例导读](docs/development/examples/purchase-example.md) · [范例源码](examples/purchase-admin) |
+| 文件与数据交换 | [私有文件](docs/development/guides/files.md) · [导入导出](docs/development/guides/transfers.md) |
 
 在应用根目录运行 `pnpm exec cage graph` 可打开本体图谱工作台，查看业务对象、流程、关系解释与源码；`pnpm exec cage --help` 查看工具命令。
 
 ## 版本与参与开发
 
-上面的创建命令固定使用 **0.3.0**；包列表、发布内容与该版本验收范围见[发布记录](docs/release-0.3.0.md)。本页设计说明及深层指南面向当前源码，后续能力是否已进入安装版本，应以该版本公开签名与发布记录为准。
+上面的创建命令固定使用 **0.3.2**；包列表、发布内容与该版本验收范围见[发布记录](docs/releases/release-0.3.2.md)。本页设计说明及深层指南面向当前源码，后续能力是否已进入安装版本，应以该版本公开签名与发布记录为准。
 
 维护框架请先读 [AGENTS.md](AGENTS.md)。仓库使用 TypeScript、pnpm workspace、Node.js 24 和 PostgreSQL，按职责拆分内核、HTTP、审批、连接器、客户端、AI、本体与工具链。源码开发运行 `pnpm install`、`pnpm build`，再按改动范围执行检查；完整范例运行方式见[范例 README](examples/purchase-admin/README.md)。
 
-[GitHub](https://github.com/shunshunyue/cage) · [问题反馈](https://github.com/shunshunyue/cage/issues) · [发布说明](docs/npm发布说明.md) · [MIT 许可证](LICENSE)
+[GitHub](https://github.com/shunshunyue/cage) · [问题反馈](https://github.com/shunshunyue/cage/issues) · [发布说明](docs/maintainers/npm发布说明.md) · [MIT 许可证](LICENSE)

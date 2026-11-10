@@ -1,6 +1,6 @@
 # CAGE-STRUCT-002：源码依赖越过模块边界
 
-[返回错误码册](README.md) · [业务排错](../ai/troubleshooting.md)
+[返回错误码册](README.md) · [业务排错](../development/tools/troubleshooting.md)
 
 > 本页由框架生成。正反例为局部声明或操作说明，完整写法见业务开发指南及本项目 domain。
 
@@ -32,7 +32,7 @@ import { ExpensePage } from '../../modules/expense/pages/expense-page';
 
 ## 修复后验证
 
-按 docs/ai/project-structure.md 整理归属和导入后重跑 cage check 与 verify；不关闭目录规则，也不改业务表或能力标识。
+按 docs/development/reference/project-structure.md 整理归属和导入后重跑 cage check 与 verify；不关闭目录规则，也不改业务表或能力标识。
 
 ## 框架内的检查位置
 
@@ -47,5 +47,5 @@ import { ExpensePage } from '../../modules/expense/pages/expense-page';
             code: 'CAGE-STRUCT-002',
             at: `${at}:${source.slice(0, spec.pos).split('\n').length}`,
             reason: `${reason}（${spec.fileName}）`,
-            fix: '调整依赖归属；共用纯逻辑下沉到 shared，页面协作由 app 传参，领域交互通过模块公开声明。见 docs/ai/project-structure.md',
+            fix: '调整依赖归属；共用纯逻辑下沉到 shared，页面协作由 app 传参，领域交互通过模块公开声明。见 docs/development/reference/project-structure.md',
 ```

@@ -79,9 +79,9 @@ AI 审批使用同一个 `step` 的 `kind: 'ai'` 选项，配置模型、材料�
 框架负责持久提醒、去重、当前接收人授权、冷却和已读；Admin 提供“我的申请”和“流程提醒”，业务应用无需自行实现通知表或定时器。
 节点时限采用自然分钟，加签、转办和领取不重置；尚无工作日历、自动升级、外部通知、并行网关或流程设计器。
 
-- [人工审批任务流转、SDK 与边界](https://github.com/shunshunyue/cage/blob/main/docs/ai/approvals.md)
-- [标准采购审批链路](https://github.com/shunshunyue/cage/blob/main/docs/ai/purchase-example.md)
-- [AI 审批三态、转人工和授权](https://github.com/shunshunyue/cage/blob/main/docs/ai/intelligence.md)
+- [人工审批任务流转、SDK 与边界](https://github.com/shunshunyue/cage/blob/main/docs/development/guides/approvals.md)
+- [标准采购审批链路](https://github.com/shunshunyue/cage/blob/main/docs/development/examples/purchase-example.md)
+- [AI 审批三态、转人工和授权](https://github.com/shunshunyue/cage/blob/main/docs/development/guides/intelligence.md)
 - [采购审批完整源码](https://github.com/shunshunyue/cage/blob/main/examples/purchase-admin/packages/domain/src/modules/purchase/approvals.ts)
 
 源码与反馈：[GitHub](https://github.com/shunshunyue/cage)。许可证：[MIT](https://github.com/shunshunyue/cage/blob/main/LICENSE)。

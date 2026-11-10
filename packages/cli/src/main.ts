@@ -106,7 +106,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     if (!selected) return 130;
     const created = createApp(selected.target, o['framework-path'], selected.template);
     console.log(
-      `已创建${appTemplates[selected.template].label}：${created}\n进入项目后：\n  1. pnpm install\n  2. 复制 .env.example 为 .env，只填写 CAGE_ADMIN_DATABASE_URL，连接已有 PostgreSQL\n  3. pnpm exec cage init（自动创建账号、生成密码并填写 .env）\n  4. pnpm build:app && pnpm gen\n  5. 审查迁移后 pnpm migrate，再 pnpm dev\nAI 协作：先读本项目 AGENTS.md 和 docs/ai/README.md，按 docs/ai/recipes.md 开发业务；错误码见 docs/errors。\n框架不创建数据库、不管理 Docker。cage 是项目内命令，单独调用使用 pnpm exec cage。`,
+      `已创建${appTemplates[selected.template].label}：${created}\n进入项目后：\n  1. pnpm install\n  2. 复制 .env.example 为 .env，只填写 CAGE_ADMIN_DATABASE_URL，连接已有 PostgreSQL\n  3. pnpm exec cage init（自动创建账号、生成密码并填写 .env）\n  4. pnpm build:app && pnpm gen\n  5. 审查迁移后 pnpm migrate，再 pnpm dev\nAI 协作：先读本项目 AGENTS.md 和 docs/development/README.md，按 docs/development/guides/recipes.md 开发业务；错误码见 docs/errors。\n框架不创建数据库、不管理 Docker。cage 是项目内命令，单独调用使用 pnpm exec cage。`,
     );
     return 0;
   }

@@ -1,6 +1,6 @@
 {
   "name": "@yss123/cage-http",
-  "version": "0.3.0",
+  "version": "0.3.2",
   "description": "笼子 HTTP 层：Fastify 插件、路由生成、认证、安全基线",
   "type": "module",
   "main": "dist/index.js",

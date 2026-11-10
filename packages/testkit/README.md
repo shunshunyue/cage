@@ -80,8 +80,8 @@ test('没有创建便笺能力时拒绝创建', async () => {
 
 ## 文档
 
-- [业务开发与验证流程](https://github.com/shunshunyue/cage/blob/main/docs/ai/workflow.md)
+- [业务开发与验证流程](https://github.com/shunshunyue/cage/blob/main/docs/development/getting-started/workflow.md)
 - [采购业务测试示例](https://github.com/shunshunyue/cage/blob/main/examples/purchase-admin/packages/domain/src/modules/purchase/purchase-order.test.ts)
-- [架构与权限模型](https://github.com/shunshunyue/cage/blob/main/docs/ai/architecture.md)
+- [架构与权限模型](https://github.com/shunshunyue/cage/blob/main/docs/development/getting-started/architecture.md)
 
 源码与反馈：[GitHub](https://github.com/shunshunyue/cage)。许可证：[MIT](https://github.com/shunshunyue/cage/blob/main/LICENSE)。

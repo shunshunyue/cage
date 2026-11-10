@@ -67,8 +67,8 @@ pnpm exec depcruise packages apps --config .dependency-cruiser.cjs
 
 ## 文档
 
-- [工程目录与模块组织](https://github.com/shunshunyue/cage/blob/main/docs/ai/project-structure.md)
-- [开发流程](https://github.com/shunshunyue/cage/blob/main/docs/ai/workflow.md)
+- [工程目录与模块组织](https://github.com/shunshunyue/cage/blob/main/docs/development/reference/project-structure.md)
+- [开发流程](https://github.com/shunshunyue/cage/blob/main/docs/development/getting-started/workflow.md)
 - [错误码册](https://github.com/shunshunyue/cage/blob/main/docs/errors/README.md)
 
 源码与反馈：[GitHub](https://github.com/shunshunyue/cage)。许可证：[MIT](https://github.com/shunshunyue/cage/blob/main/LICENSE)。

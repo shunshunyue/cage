@@ -69,7 +69,7 @@ for (const entry of packages) {
     }
   }
   if (entry.directory === 'cli') {
-    // 检查最终 tarball，而非只检查源码，防止 AI 教材在 npm 打包时遗漏。
+    // 检查最终 tarball，而非只检查源码，防止 框架教材在 npm 打包时遗漏。
     for (const path of [
       'graph-ui/index.html',
       'graph-ui/graph-model.js',
@@ -83,14 +83,23 @@ for (const entry of packages) {
           '_gitignore',
           'db/migrations/0001_init.sql',
           'AGENTS.md',
-          'docs/ai/README.md',
-          'docs/ai/project-structure.md',
-          'docs/ai/routing.md',
-          'docs/ai/ontology-context.md',
-          'docs/ai/primitives.md',
-          'docs/ai/recipes.md',
-          'docs/ai/transfers.md',
-          'docs/ai/purchase-example.md',
+          'CLAUDE.md',
+          'docs/README.md',
+          '.agents/skills/cage-development/SKILL.md',
+          'docs/development/README.md',
+          'docs/development/skills/cage-development/SKILL.md',
+          'docs/development/getting-started/first-feature.md',
+          'docs/development/examples/note/note.ts',
+          'docs/development/examples/note/notes-page.tsx',
+          'docs/development/examples/note/note-detail-page.tsx',
+          'docs/development/reference/project-structure.md',
+          'docs/development/guides/routing.md',
+          'docs/development/tools/ontology-context.md',
+          'docs/development/reference/primitives.md',
+          'docs/development/guides/recipes.md',
+          'docs/development/guides/business-collaboration.md',
+          'docs/development/guides/transfers.md',
+          'docs/development/examples/purchase-example.md',
           'docs/errors/README.md',
           'docs/errors/runtime.md',
           'docs/errors/CAGE-APPR-007.md',

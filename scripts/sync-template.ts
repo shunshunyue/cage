@@ -6,11 +6,12 @@
  */
 // 采购模板同步标准范例；空白模板只共享基础配置，其领域和页面单独维护。
 // 不通过复制采购业务再删除文件构造空白项目，避免新增范例功能意外混入空白项目。
-// 框架包始终通过依赖引用。模板同时携带本地 AI 教材，创建后无需访问框架源码。
+// 框架包始终通过依赖引用。模板同时携带本地 框架教材，创建后无需访问框架源码。
 import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { PackageManifest } from './release-utils.ts';
+import { syncAgentSkill } from './sync-agent-skill.ts';
 const root = fileURLToPath(new URL('../', import.meta.url));
 // 发布版本取自 CLI 包清单；模板不能继续依赖某个写死的历史版本。
 const version = JSON.parse(readFileSync(join(root, 'packages/cli/package.json'), 'utf8')).version;
@@ -93,9 +94,18 @@ for (const path of [
 // 指南与错误码册各保留一个人工维护来源，在这里形成模板快照。
 // 所有链接均以业务项目为上下文，不能依赖框架仓库中的 packages/kernel 等目录。
 for (const application of [target, blank]) {
-  cpSync(join(root, 'docs/ai'), join(application, 'docs/ai'), { recursive: true });
+  // 这些教材目录完全由框架拥有；先清理再复制，使已删除的指南和课程代码不会留在分发快照。
+  for (const directory of ['docs/development', 'docs/errors']) resetManagedSource(application, directory);
+  cpSync(join(root, 'docs/development'), join(application, 'docs/development'), { recursive: true });
   cpSync(join(root, 'docs/errors'), join(application, 'docs/errors'), { recursive: true });
+  // 独立项目只带开发教材和错误码，文档目录入口不引用框架维护者的设计/发布/验收资料。
+  writeFileSync(
+    join(application, 'docs/README.md'),
+    '# 本地框架文档\n\n从 [框架学习入口](development/README.md) 或 [Cage 开发 Skill](development/skills/cage-development/SKILL.md) 开始。\n\n- `development/getting-started`：运行模型、完整入门课和开发步骤。\n- `development/guides`：[业务澄清与共同设计](development/guides/business-collaboration.md)、能力选择与各专题接入。\n- `development/reference`：原语与工程规范。\n- `development/tools`：诊断、本体查询和排错。\n- `development/examples`：教学源码与采购导读。\n- `development/skills`：框架开发方法。\n- [错误码册](errors/README.md)：按实际错误定位原因。\n',
+  );
+  syncAgentSkill(application);
 }
+syncAgentSkill(root);
 
 // 空白项目仍要能离线学习完整范例；参考源码放在工作区和 domain 之外，
 // 没有 package.json，不会被 pnpm 当作应用包，也不会被 CLI 注册或生成业务表。
@@ -107,7 +117,7 @@ for (const path of [...sourceDirectories, 'cage.config.json']) {
 }
 writeFileSync(
   join(reference, 'README.md'),
-  `# 采购范例参考源码\n\n本目录只供阅读，不参与应用编译、注册、运行或迁移。当前应用的真实领域入口是项目根目录 packages/domain/src/index.ts。\n\n按 [采购范例导读](../../ai/purchase-example.md) 阅读；导读中的范例路径在本目录下查找。需要可运行的完整采购项目时，重新使用 create-cage-app --template purchase 创建新目录，不要直接把整套业务导入空白项目。\n`,
+  `# 采购范例参考源码\n\n本目录只供阅读，不参与应用编译、注册、运行或迁移。当前应用的真实领域入口是项目根目录 packages/domain/src/index.ts。\n\n按 [采购范例导读](../../development/examples/purchase-example.md) 阅读；导读中的范例路径在本目录下查找。需要可运行的完整采购项目时，重新使用 create-cage-app --template purchase 创建新目录，不要直接把整套业务导入空白项目。\n`,
 );
 
 // 范例在仓库里使用根文档；用户得到的项目使用本地文档，因此项目说明单独生成。
@@ -121,7 +131,7 @@ writeFileSync(
 
 这是 create-cage-app 生成的业务项目，当前包含采购演示，可逐步替换成客户业务。业务源码在本项目，框架通过 @yss123/cage-* 依赖提供。
 
-先读 [业务开发指南](docs/ai/README.md)，按需求查 [任务配方](docs/ai/recipes.md)、[完整采购范例](docs/ai/purchase-example.md) 和 [错误码册](docs/errors/README.md)。这些资料就在项目内，无需克隆框架仓库。
+先读 [业务开发指南](docs/development/README.md)，按需求查 [任务配方](docs/development/guides/recipes.md)、[完整采购范例](docs/development/examples/purchase-example.md) 和 [错误码册](docs/errors/README.md)。这些资料就在项目内，无需克隆框架仓库。
 
 ## 项目自己的业务约定
 
@@ -138,7 +148,7 @@ writeFileSync(
 
 这是 create-cage-app 的空白业务项目。真实运行的 domain 仅包含用户、部门和角色组织模型；从 packages/domain/src 新建客户自己的业务，再从 index.ts 导出。框架通过 @yss123/cage-* 依赖提供。
 
-先读 [业务开发指南](docs/ai/README.md)、[任务配方](docs/ai/recipes.md) 和 [错误码册](docs/errors/README.md)。[采购范例参考源码](docs/examples/purchase-admin/README.md) 只用于学习，未注册到应用；导读中的采购路径在 docs/examples/purchase-admin 下查找。普通业务路径仍相对项目根目录。
+先读 [业务开发指南](docs/development/README.md)、[任务配方](docs/development/guides/recipes.md) 和 [错误码册](docs/errors/README.md)。[采购范例参考源码](docs/examples/purchase-admin/README.md) 只用于学习，未注册到应用；导读中的采购路径在 docs/examples/purchase-admin 下查找。普通业务路径仍相对项目根目录。
 
 ## 项目自己的业务约定
 

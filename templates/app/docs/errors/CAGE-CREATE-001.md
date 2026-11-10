@@ -1,6 +1,6 @@
 # CAGE-CREATE-001：项目创建参数或模板资源有误
 
-[返回错误码册](README.md) · [业务排错](../ai/troubleshooting.md)
+[返回错误码册](README.md) · [业务排错](../development/tools/troubleshooting.md)
 
 > 本页由框架生成。正反例为局部声明或操作说明，完整写法见业务开发指南及本项目 domain。
 
@@ -29,7 +29,7 @@ cage create . 覆盖当前已有业务项目
 
 ## 修复后验证
 
-向一个新目录创建，检查 AGENTS.md、业务源码、docs/ai 和 docs/errors，然后按 README 安装/构建。
+向一个新目录创建，检查 AGENTS.md、业务源码、docs/development 和 docs/errors，然后按 README 安装/构建。
 
 ## 框架内的检查位置
 

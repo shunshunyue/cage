@@ -4,9 +4,9 @@
 
 ## 让 AI 在本项目开发业务
 
-把本目录交给 Codex 等编程工具时，先让它读 [AGENTS.md](AGENTS.md)，再按[业务开发指南](../../docs/ai/README.md)和[任务配方](../../docs/ai/recipes.md)实现需求。普通业务不需要修改框架源码。
+把本目录交给 Codex 等编程工具时，先让它读 [AGENTS.md](AGENTS.md)，再按[业务开发指南](../../docs/development/README.md)和[任务配方](../../docs/development/guides/recipes.md)实现需求。普通业务不需要修改框架源码。
 
-[采购全链路导读](../../docs/ai/purchase-example.md)说明每个文件和异步步骤；[原语与最小业务](../../docs/ai/primitives.md)提供可添加的普通管理对象；[错误码册](../../docs/errors/README.md)用于按码修复。脚手架会将这些资料放入生成项目本地的 `docs/ai` 与 `docs/errors`，无需再次克隆框架。
+[采购全链路导读](../../docs/development/examples/purchase-example.md)说明每个文件和异步步骤；[原语与最小业务](../../docs/development/reference/primitives.md)提供可添加的普通管理对象；[错误码册](../../docs/errors/README.md)用于按码修复。脚手架会将这些资料放入生成项目本地的 `docs/development` 与 `docs/errors`，无需再次克隆框架。
 
 ## 启动
 
@@ -54,7 +54,7 @@ pnpm dev
 
 ## 体验完整采购流程
 
-前端使用 React Router：工作台 `/workspace`，采购列表 `/procurement/orders`，单据详情 `/procurement/orders/:id`，审批 `/approvals`，库存 `/inventory`，登录 `/login`。单号和审批待办可直接打开详情；刷新、前进后退和登录回跳保留页面地址。新增页面与部署按[路由和浏览器验收指南](../../docs/ai/routing.md)执行；Nginx 示例见 [deploy/nginx.conf](deploy/nginx.conf)。
+前端使用 React Router：工作台 `/workspace`，采购列表 `/procurement/orders`，单据详情 `/procurement/orders/:id`，审批 `/approvals`，库存 `/inventory`，登录 `/login`。单号和审批待办可直接打开详情；刷新、前进后退和登录回跳保留页面地址。新增页面与部署按[路由和浏览器验收指南](../../docs/development/guides/routing.md)执行；Nginx 示例见 [deploy/nginx.conf](deploy/nginx.conf)。
 
 1. 管理员在“库存台账”登记 `A-01` 等物料。
 2. 进入 `/admin/` 创建采购员、经理，分别分配采购命令和审批能力；经理的 `PurchaseOrder.approve` 参数配置 `ceiling`。
@@ -87,6 +87,6 @@ pnpm dev
 - `apps/api/src`：API 和 worker 的薄启动入口。
 - `apps/web/src/app`、`modules`、`shared`：应用组合、业务页面、共享基础组件；`main.tsx` 只挂载。
 
-新增业务先读[工程目录与代码组织](../../docs/ai/project-structure.md)，不要继续在 src 根目录平铺文件。模板已启用模块目录门禁，`cage check` 和 `verify` 会指出目录与依赖越界。
+新增业务先读[工程目录与代码组织](../../docs/development/reference/project-structure.md)，不要继续在 src 根目录平铺文件。模板已启用模块目录门禁，`cage check` 和 `verify` 会指出目录与依赖越界。
 
 先运行 `pnpm cage gen` 再提交契约和迁移草稿；`pnpm cage verify` 检查完整工具链。派生测试遇到无法推断的业务输入会显示跳过，`purchase-order.test.ts` 另外准备真实业务数据覆盖成功审批和约束反例。

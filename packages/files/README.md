@@ -97,4 +97,4 @@ API 启动后及每分钟执行有界清理；独立持有 `FileService` 时须�
 
 目前只内置本地存储；`FileStorage` 不代表已提供 S3/OSS SDK 或签名直传。内容头校验也不等于病毒扫描或完整格式验证。
 
-完整说明：[私有文件字段与断点续传](https://github.com/shunshunyue/cage/blob/main/docs/ai/files.md)。源码与反馈：[GitHub](https://github.com/shunshunyue/cage)。许可证：[MIT](https://github.com/shunshunyue/cage/blob/main/LICENSE)。
+完整说明：[私有文件字段与断点续传](https://github.com/shunshunyue/cage/blob/main/docs/development/guides/files.md)。源码与反馈：[GitHub](https://github.com/shunshunyue/cage)。许可证：[MIT](https://github.com/shunshunyue/cage/blob/main/LICENSE)。

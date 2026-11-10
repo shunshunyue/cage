@@ -171,7 +171,7 @@ export const errorGuides: Record<string, ErrorGuide> = {
     fix: [
       '前端使用 app / modules / shared，src 根目录只保留 main.tsx；领域使用 modules / workflows / integrations / shared，根目录只保留 index.ts。',
       '把页面、表单、hooks 和业务辅助代码放在同一业务模块，需要时再拆文件；不要创建空目录凑层级。测试就近放置，类型声明 .d.ts 不受入口约束。',
-      '目录调整后修正导入并运行 cage check、gen、verify；完整规范见 docs/ai/project-structure.md。',
+      '目录调整后修正导入并运行 cage check、gen、verify；完整规范见 docs/development/reference/project-structure.md。',
     ],
     positive:
       'apps/web/src/modules/expense/pages/expense-list-page.tsx\npackages/domain/src/modules/expense/expense.ts',
@@ -206,7 +206,7 @@ export const errorGuides: Record<string, ErrorGuide> = {
   'CAGE-APPR-001': {
     title: '审批字段声明无效',
     when: 'approval.routable 引用了不存在字段，或 approver.field 指向未声明、隐藏、未进入 routable 的字段。',
-    fix: ['先在聚合声明实际字段，再将需要给审批路由的非隐藏字段放入 routable；不要把任意输入直接交给流程。', '字段选人值应为 UUID 或非空 UUID 数组，见 docs/ai/approvals.md；字段公开并不自动授予审批能力。'],
+    fix: ['先在聚合声明实际字段，再将需要给审批路由的非隐藏字段放入 routable；不要把任意输入直接交给流程。', '字段选人值应为 UUID 或非空 UUID 数组，见 docs/development/guides/approvals.md；字段公开并不自动授予审批能力。'],
     positive: "routable: ['amount', 'deptId'] // 两字段均在 PurchaseOrder.fields 中",
     negative: "routable: ['managerName'] // 聚合没有该字段",
   },

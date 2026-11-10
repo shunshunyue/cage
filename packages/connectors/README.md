@@ -97,8 +97,8 @@ if (stage() === 'fake') {
 
 ## 文档
 
-- [事件、出站与事务边界](https://github.com/shunshunyue/cage/blob/main/docs/ai/architecture.md)
+- [事件、出站与事务边界](https://github.com/shunshunyue/cage/blob/main/docs/development/getting-started/architecture.md)
 - [采购 ERP 完整声明](https://github.com/shunshunyue/cage/blob/main/examples/purchase-admin/packages/domain/src/integrations/erp.ts)
-- [排错方法](https://github.com/shunshunyue/cage/blob/main/docs/ai/troubleshooting.md)
+- [排错方法](https://github.com/shunshunyue/cage/blob/main/docs/development/tools/troubleshooting.md)
 
 源码与反馈：[GitHub](https://github.com/shunshunyue/cage)。许可证：[MIT](https://github.com/shunshunyue/cage/blob/main/LICENSE)。

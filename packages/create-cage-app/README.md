@@ -2,7 +2,9 @@
 
 从 Cage 模板创建 TypeScript + React 中后台项目。生成领域声明、契约、API、worker、业务 Web 与部署配置，由同版本 `@yss123/cage-*` 包提供框架能力。本包是 `cage create` 的简短命令入口，无需全局安装，也没有供业务导入的运行时 API。
 
-产物自带 `AGENTS.md`、`docs/ai` 业务开发指南、采购标准范例与 `docs/errors` 错误码册。使用 Codex 等编程工具时，让它先读项目根目录 `AGENTS.md`，按 `docs/ai/recipes.md` 开发客户业务，无需克隆 Cage 框架仓库。
+产物自带 `AGENTS.md`、`CLAUDE.md`、`.agents/skills/cage-development`、`docs/development` 业务开发指南、采购标准范例与 `docs/errors` 错误码册。使用编程 agent 时，从这些入口读取项目内的 Cage Skill；需求或文档不明确时，提出疑点、可行选项与推荐，由用户选择业务规则，再按框架实现和验收，无需克隆 Cage 框架仓库。
+
+这些资料随新项目一起创建。已有项目的 `cage sync` 只更新 AGENTS 托管区，不会自动刷新教材或 Skill；升级时需从同版本模板审查并合入资料，保留项目自己的业务约定。
 
 ## 使用
 
@@ -14,7 +16,7 @@ pnpm create @yss123/cage-app my-app
 
 | 模板 | 内容 |
 | --- | --- |
-| 空白业务项目 `blank` | 登录、用户/部门/角色、权限、系统管理和 AI 教材；采购源码仅存于 docs 供参考 |
+| 空白业务项目 `blank` | 登录、用户/部门/角色、权限、系统管理和 框架教材；采购源码仅存于 docs 供参考 |
 | 采购示例项目 `purchase` | 完整采购、库存锁、审批、fake ERP 及业务页面 |
 
 脚本或 CI 可跳过选择，必须明确指定目录和模板：
@@ -66,13 +68,13 @@ pnpm dev
 | `apps/web/src/modules` | 按业务模块组织页面与交互 |
 | `apps/web/src/shared` | 无具体业务归属的共用组件和工具 |
 | `db/migrations` | 审查后的数据库迁移，已执行版本不改写 |
-| `docs/ai`、`docs/errors` | 本地学习资料和错误排查 |
+| `docs/development`、`docs/errors` | 本地学习资料和错误排查 |
 
 新增对象后运行 `pnpm exec cage check`、`pnpm gen`，审查迁移，并由管理员配置新能力与数据范围。
 
 空白模板中的采购源码仅位于 `docs/examples/purchase-admin`，不参与运行或建表；采购模板的 ERP 默认 fake 不等于真实联调通过，AI 能力也需模型配置、权限和迁移才能实际使用。
 
-- [完整使用说明](https://github.com/shunshunyue/cage/blob/main/docs/使用说明.md)
+- [完整使用说明](https://github.com/shunshunyue/cage/blob/main/docs/manual/使用说明.md)
 - [框架源码与范例](https://github.com/shunshunyue/cage)
 - [问题反馈](https://github.com/shunshunyue/cage/issues)
 

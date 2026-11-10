@@ -10,6 +10,8 @@ pnpm add -D @yss123/cage-cli
 
 首次使用建议通过脚手架创建完整项目，所需依赖由模板统一配置。需要 Node.js 24 或更新版本。
 
+创建的两种模板均携带 `docs/development` 教材、Cage Skill、`.agents/skills/cage-development` 发现入口及 `CLAUDE.md`。agent 从项目 AGENTS 进入，遇到需求或文档疑点时提出选项、影响与推荐，与用户确定业务后实施。`cage sync` 只更新 AGENTS 托管区，已有项目的教材和 Skill 需另行审查合入同版本模板内容。
+
 ## 从零开始
 
 ```powershell
@@ -56,9 +58,11 @@ pnpm dev
 
 `pnpm exec cage create my-app` 交互选择空白业务项目或采购示例项目；也可显式指定 `--template blank` 或 `--template purchase`。省略目录时可交互输入，非交互终端必须同时提供目录与模板。`--framework-path F:/cage` 可链接已构建的本地框架。
 
-自 `0.2.0` 起，两种产物都包含根目录 `AGENTS.md`、`docs/ai` 业务开发教材和 `docs/errors` 离线错误码册。空白项目只运行组织模型，采购参考代码在 `docs/examples/purchase-admin`；采购项目运行完整演示链路。让 Codex 等编程工具先读 `AGENTS.md`，无需另行克隆框架源码。
+自 `0.2.0` 起，两种产物都包含根目录 `AGENTS.md`、`docs/development` 业务开发教材和 `docs/errors` 离线错误码册。空白项目只运行组织模型，采购参考代码在 `docs/examples/purchase-admin`；采购项目运行完整演示链路。让 Codex 等编程工具先读 `AGENTS.md`，无需另行克隆框架源码。
 
 `cage sync` 更新 AGENTS 框架托管区，保留标记外的项目业务约定；它不自动覆盖业务代码或学习资料。
+
+当前创建产物还带有 `.agents/skills/cage-development/SKILL.md` 发现入口，以及引导 Claude 读取同一教材的 `CLAUDE.md`。框架开发方法统一维护在 `docs/development/skills/cage-development/SKILL.md`，按需阅读专题与完整入门课；全部为本地文件，无需向量模型、索引构建或独立服务。不支持 Skills 的工具也可直接按 AGENTS.md 阅读。发现入口不保证每个宿主的自动选择行为，实际加载与业务结果需分别验证。
 
 ## 用本体图开发业务
 
@@ -76,9 +80,9 @@ pnpm exec cage context command:PurchaseOrder.cancel --format json --out .cage/co
 
 CLI 每次重新抽取，不需要数据库；报告包含中文候选与依据、业务关系解释、源码位置、契约/前端/测试候选、迁移和授权提示。默认 Markdown；查询支持 `--format json`、`--out`，context 可用 `--depth` / `--limit` 控制范围。图规则错误仍输出可用上下文并返回非零；无命中、精确节点歧义或深度内无路径也非零。Web 节点详情可复制同源 AI 上下文，修改代码后先重新抽取。
 
-名称、SQL 字段和测试匹配是线索；具体执行条件需阅读源码。上述命令自 `0.2.0` 提供，完整流程随新项目分发在 `docs/ai/ontology-context.md`。
+名称、SQL 字段和测试匹配是线索；具体执行条件需阅读源码。上述命令自 `0.2.0` 提供，完整流程随新项目分发在 `docs/development/tools/ontology-context.md`。
 
-- [完整使用说明](https://github.com/shunshunyue/cage/blob/main/docs/使用说明.md)
+- [完整使用说明](https://github.com/shunshunyue/cage/blob/main/docs/manual/使用说明.md)
 - [框架源码与范例](https://github.com/shunshunyue/cage)
 - [问题反馈](https://github.com/shunshunyue/cage/issues)
 
