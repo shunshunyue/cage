@@ -160,7 +160,7 @@ pnpm dev
 
 打开终端打印的 Web 地址。初始登录凭据由 `bootstrap` 写入指定的受限文件，交付后移除；日常启动使用 `pnpm dev`，结构变更经审查后显式迁移。
 
-启用智能能力时，继续完成模型配置、权限和界面接入。详细启动与部署步骤见[中文使用说明](docs/manual/使用说明.md)，数据库配置见[接入说明](docs/maintainers/local-postgres.md)。
+启用智能能力时，按[原生 AI 指南](docs/development/guides/intelligence.md)完成模型配置、权限和界面接入。当前启动与验证命令见[开发步骤](docs/development/getting-started/workflow.md)，数据库配置见[接入说明](docs/maintainers/local-postgres.md)。
 
 ## 继续了解
 

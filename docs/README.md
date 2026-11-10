@@ -1,16 +1,16 @@
 # Cage 文档导航
 
-开发业务从 [框架学习入口](development/README.md) 开始；agent 使用 [Cage 开发 Skill](development/skills/cage-development/SKILL.md)。本目录按用途分层，当前用法、设计讨论和历史验收各有入口。
+本仓库的开发文档以 agent 为主要读者。开发业务先读项目 AGENTS.md 与 [Cage 开发 Skill](development/skills/cage-development/SKILL.md)，再用[任务导航](development/README.md)查本次需要的资料。维护框架时还须遵守仓库 AGENTS.md 的包边界与验证要求。
 
 框架原生 AI 的模型接入、智能助理和 AI 审批，见[原生 AI 能力指南](development/guides/intelligence.md)。
 
-Skill 负责引导 agent 的工作与判断，教材解释框架能力和具体做法。用户描述或业务文档不清楚时，按[业务澄清与共同设计](development/guides/business-collaboration.md)提出疑问、选项和建议，再把用户的选择落实到项目业务规则与验收。
+Skill 统一规定“理解需求、澄清、查证能力、说明实现映射、编码、验收”的顺序；专题文档提供具体做法。业务开发通常只需 `development/` 和 `errors/`，框架设计提案、历史手册和验收记录按明确目的查阅。
 
 | 目录 | 放什么 | 阅读入口 |
 | --- | --- | --- |
-| `development/` | 使用 Cage 开发应用的教材、能力指南、规范、工具、示例和 Skill，供开发者与编程 Agent 共用 | [学习路径](development/README.md) |
+| `development/` | 编程 agent 使用的当前开发流程、能力指南、规范、工具和示例 | [任务导航](development/README.md) |
 | `errors/` | 从错误码源资料生成的逐码手册，以及 HTTP 运行时错误说明 | [按错误码排查](errors/README.md) |
-| `manual/` | 既有综合使用手册与协议说明，版本范围以各页开头为准 | [综合说明](manual/使用说明.md)、[导入导出协议](manual/导入导出.md) |
+| `manual/` | 历史综合说明与协议资料，版本范围以各页开头为准；当前用法查 development | [综合说明](manual/使用说明.md)、[导入导出协议](manual/导入导出.md) |
 | `maintainers/` | 框架维护、发布操作、环境配置与教学效果评估 | [发包步骤](maintainers/npm发布说明.md)、[数据库配置](maintainers/local-postgres.md)、[agent 评估](maintainers/agent-evaluation.md) |
 | `design/` | 架构提案、路线图和设计实现对照，包含尚未实现的内容 | [AI 后端设计](design/ai-backend-design.md)、[MCP 提案](design/mcp-design.md)、[OA 路线图](design/oa-flowable-roadmap.md)、[设计对照](design/design-coverage.md) |
 | `verification/` | 各次实施与验收记录，描述记录时的状态 | [实施记录](verification/implementation-status.md)、[反馈改进](verification/feedback-refactor.md)、[采购 OA 验收](verification/purchase-oa-verification.md)、[流程时效](verification/approval-operations-verification.md)、[并行审批](verification/approval-parallel-verification.md) |

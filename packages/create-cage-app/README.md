@@ -74,7 +74,7 @@ pnpm dev
 
 空白模板中的采购源码仅位于 `docs/examples/purchase-admin`，不参与运行或建表；采购模板的 ERP 默认 fake 不等于真实联调通过，AI 能力也需模型配置、权限和迁移才能实际使用。
 
-- [完整使用说明](https://github.com/shunshunyue/cage/blob/main/docs/manual/使用说明.md)
+- [当前开发指南与 Agent 流程](https://github.com/shunshunyue/cage/blob/main/docs/development/README.md)
 - [框架源码与范例](https://github.com/shunshunyue/cage)
 - [问题反馈](https://github.com/shunshunyue/cage/issues)
 

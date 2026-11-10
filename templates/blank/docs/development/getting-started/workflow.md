@@ -2,6 +2,8 @@
 
 [返回学习入口](../README.md) · [框架开发 Skill](../skills/cage-development/SKILL.md) · [完整入门课](first-feature.md) · [详细中文注释](../reference/commenting.md)
 
+本页提供应用启动、修改和验证的操作命令。需求理解、与用户澄清、能力查证和编码前的实现映射统一按[Skill](../skills/cage-development/SKILL.md)执行；下列操作用于落实已经明确的设计。
+
 本页命令在**应用根目录**执行，除非注明“框架根目录”。使用项目安装的 CLI：`pnpm exec cage ...`。项目脚本可简写为 `pnpm gen / pnpm migrate / pnpm dev / pnpm verify`；不要假定机器已全局安装 cage。
 
 ## 第一次启动应用
@@ -31,15 +33,16 @@ pnpm dev
 
 框架仓库首次先在根目录 `pnpm install`、`pnpm build`，再进入 `examples/purchase-admin` 配置。`dev` 不自动执行迁移；生成新迁移后要审查并显式运行 migrate。
 
-## 做一项业务修改
+## 按已明确的设计修改业务
 
-1. 读 AGENTS.md 和[框架开发 Skill](../skills/cage-development/SKILL.md)，确认需求属于领域模块、前端模块、组织配置还是框架。阅读需求和文档后，按[业务澄清与共同设计](../guides/business-collaboration.md)主动提出疑问、选项和建议，与用户确定相关规则及验收；已明确部分继续推进。按任务选手册，必要时本地搜索术语；用 `capabilities` 核对公开 API、`context "需求关键词"` 定位当前业务。按需 `graph search/inspect/path`，阅读对应源码、范例与测试；证据边界见[本体上下文指南](../tools/ontology-context.md)。遵守[目录规范](../reference/project-structure.md)和[详细中文注释规范](../reference/commenting.md)，发现能力缺口先说明，不编造 API。
-2. 涉及已存在业务含义变化时，**修改前**运行 `pnpm exec cage snapshot save before-change` 保存命名基线；也可使用真实 Git 提交或独立本体图文件。
-3. 在所属领域模块写字段、状态、不变量和命令输入；再实现 handler、事件、查询与审批。跨模块反应放 workflows，第三方协议放 integrations。从模块 index 到 domain 总入口逐层导出，避免跨文件 export 名冲突。同步编写详细中文注释：文件职责与调用链、导出声明及输入字段、权限/状态/reads/事件/事务、关键步骤和失败边界；涉及已有行为时补齐受影响的上下游说明。
-4. `pnpm exec cage check` 检查声明和图规则；`pnpm gen` 更新契约与迁移草稿。聚合和命令填写中文 `description`，需要覆盖时补 `cage.config.json` 的 `graph.labels`（如 `aggregate:Note`、`command:Note.archive`、`capability:Note.export`）。这些名称同时用于图谱和 `/admin` 授权界面；修改后重启 API。不重命名实际能力点来实现翻译。在图谱确认连接与资源生命周期。
-5. 审查数据库变更，特别是非空字段、数据回填、删列和索引。已执行的迁移不可改写。需要落库时显式 `pnpm migrate`。
-6. 页面和表单放 `apps/web/src/modules/<业务>`，从模块公开入口接入 app 的 URL 路由；依赖生成 contracts，处理失败结果。列表、详情等多页面使用 React Router，筛选和分页进入 URL；组件状态只管理页面内临时交互。新增能力由管理员授权，页面按钮可用 `useCan` 控制。按[路由与浏览器验收](../guides/routing.md)检查直达、刷新、前进后退和登录回跳。
-7. 补足重要业务反例并运行相关验证；测试解释夹具目的、所保护的规则和覆盖边界。按注释规范审查本次 diff，核对页面、组件/hooks、类型字段、脚本副作用和恢复流程的说明是否完整准确。提交源声明、契约和审查过的迁移，报告跳过及未执行项。
+只执行实现映射涉及的操作；文案或样式调整无需修改 domain、生成迁移或重新授权。实现过程中发现业务规则尚不清楚，回到[业务澄清](../guides/business-collaboration.md)处理相关部分。
+
+1. **保存基线。** 涉及已存在业务含义变化时，修改前运行 `pnpm exec cage snapshot save before-change`；也可使用真实 Git 提交或独立本体图文件。
+2. **修改声明与导出。** 按[目录规范](../reference/project-structure.md)在所属领域模块修改字段、状态、不变量、命令及必要的后续流程。跨模块反应放 workflows，第三方协议放 integrations；从模块 index 到 domain 总入口逐层导出，避免重名丢失。按[注释规范](../reference/commenting.md)同步解释职责、输入、权限/状态/reads、事件/事务与失败边界。
+3. **检查与生成。** `pnpm exec cage check` 检查声明和图规则；`pnpm gen` 更新契约与迁移草稿，不手改生成物。聚合和命令填写中文 `description`，需要覆盖时补 `cage.config.json` 的 `graph.labels`（如 `aggregate:Note`、`command:Note.archive`、`capability:Note.export`）。名称用于图谱和 `/admin` 授权界面，修改后重启 API；不重命名能力点来翻译。在图谱核对连接与资源生命周期。
+4. **审查与迁移。** 核对非空字段、回填、删列和索引，保留已执行迁移；有结构变化且需落库时显式 `pnpm migrate`。按需要配置能力、范围和外部服务，API/worker 使用一致声明。
+5. **接入页面。** 在 `apps/web/src/modules/<业务>` 使用真实生成契约，从模块入口接入 app 路由。处理业务失败与版本冲突；多页面使用独立 URL，筛选/分页进入 URL。`useCan` 只控制按钮，服务端仍校验授权；成功后重新读取或失效查询。按[浏览器验收](../guides/routing.md)检查对应操作和导航。
+6. **核对规则与交付。** 对照编码前的规则与验收例子，补足关键反例，执行下文与改动匹配的检查。审查 diff 中的业务变化、生成物和中文注释；交付源声明、契约、审查过的迁移及配置要求，分别报告通过、跳过、未执行。
 
 ### 如何保存和比较基线
 
@@ -137,17 +140,8 @@ CSV 编码、限制、SDK 与完整接口见本项目自带的[业务页导入�
 
 派生测试无法凭空推断所有业务合法输入，会报告跳过。它们证明的是通用性质，不能代替采购 happy path、审批配置和第三方真实联调。
 
-## 可以交给 AI 的任务描述
+## 交付说明
 
-```text
-先读 AGENTS.md 和它指定的 docs/development/README.md，再参考对应标准范例。
-需求：为某业务增加……
-阅读需求、业务文档和现有代码，主动指出疑点与建议，给出可行选项、影响和推荐理由，让我选择业务规则；已给出的答案直接沿用，技术事实自行查证。
-先用 cage context 查询现有业务，必要时 graph inspect/path，确认候选与关系后阅读实现。
-把已确定的规则映射到字段、状态、能力与范围、事件/资源和验收，再修改 domain、生成契约和迁移草稿、接入业务页面；等待业务选择时推进独立部分。
-使用真实公开 API；不要手写业务路由、直接写表或新增本地数据库生命周期命令。
-按 docs/development/reference/commenting.md 给新建和修改代码写详细中文注释，覆盖职责、API/字段、步骤、原因和边界，同步修正相关上下游说明。
-按改动运行必要检查，报告通过/跳过/未执行项和需要的管理员配置。
-```
+可复用的需求输入见[任务模板](../guides/recipes.md#给编程工具的任务模板)，工作流程使用 Skill，不另维护一套提示词。
 
 交付说明至少包含行为变化、源文件、生成物/迁移、角色授权需求、详细中文注释覆盖的主要职责与边界、验证结果，以及尚未做的真实外部联调。注释未覆盖项如实说明，不能用聊天中的解释代替源码注释。遇到错误先修复根因；不把待办未生成、任务已接受或 fake 成功写成业务全部完成。

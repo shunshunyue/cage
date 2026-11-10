@@ -10,13 +10,13 @@
 
 | 需求关键词 | 公开入口 | 本页使用说明 |
 | --- | --- | --- |
-| AI审批、智能审批、转人工 | `@yss123/cage-approval` 的 `step`、`AiStepOptions` | “AI 是一个正常审批步骤”；沿用 `approval`，声明三态及真实角色 |
-| 业务助理、本体助理 | `@yss123/cage-ai` 的 `ai` | “启用后端”“助理工具来自注册表”；框架编译工具，应用提供声明 |
-| 页面上下文、随页助理 | `@yss123/cage-client` 的 `useAssistant`、`useAiPageContext`、`AiPageContext` | “SDK 传入页面内容”；应用维护界面与语义快照 |
-| 模型管理、动态配置 | `@yss123/cage-ai` 的 `managedModel` | “启用后端”；Admin 配置连接，部署配置凭据加密密钥 |
-| Responses | `managedModel` 的 Admin 协议选项；代码配置用 `responsesModel` | “Responses 会话与上下文配置”；实际验证网关接续及压缩支持 |
-| 性格、自定义人设 | `useAssistant`、`client.ai`；类型由 `@yss123/cage-ai-protocol` 提供 | “Admin 配置助理性格”；内置预设与自定义表达，不改变审核策略 |
-| 上下文预算、大本体 | `@yss123/cage-ai` 的 `AiContextOptions`，传入 `ai({ context: ... })` | “大本体按需加载”；工具、历史、页面与输出共同受预算约束 |
+| AI审批、智能审批、转人工 | `@yss123/cage-approval` 的 `step`、`AiStepOptions` | [AI 审批步骤](#ai-是一个正常审批步骤)；沿用 `approval`，声明三态及真实角色 |
+| 业务助理、本体助理 | `@yss123/cage-ai` 的 `ai` | [启用后端](#启用后端)、[工具来源](#助理工具来自注册表)；框架编译工具，应用提供声明 |
+| 页面上下文、随页助理 | `@yss123/cage-client` 的 `useAssistant`、`useAiPageContext`、`AiPageContext` | [SDK 与页面内容](#sdk-传入页面内容)；应用维护界面与语义快照 |
+| 模型管理、动态配置 | `@yss123/cage-ai` 的 `managedModel` | [启用后端](#启用后端)；Admin 配置连接，部署配置凭据加密密钥 |
+| Responses | `managedModel` 的 Admin 协议选项；代码配置用 `responsesModel` | [Responses 配置](#responses-会话与上下文配置)；实际验证网关接续及压缩支持 |
+| 性格、自定义人设 | `useAssistant`、`client.ai`；类型由 `@yss123/cage-ai-protocol` 提供 | [Admin 性格配置](#admin-配置助理性格)；内置预设与自定义表达，不改变审核策略 |
+| 上下文预算、大本体 | `@yss123/cage-ai` 的 `AiContextOptions`，传入 `ai({ context: ... })` | [按需加载](#大本体按需加载)；工具、历史、页面与输出共同受预算约束 |
 
 在应用根目录按需查询，例如：
 
@@ -37,6 +37,8 @@ pnpm exec cage capabilities "Responses" --format json
 | 实际验证通过 | 真实角色和模型下完成本次需求的读取、交互、审批或写入验收；报告通过、跳过与未执行项 |
 
 先查现有 domain 入口，已有 AI 运行时就扩展该声明；框架只允许一个 `ai()` 运行时。空白模板只注册组织模型，`docs/examples/purchase-admin` 是参考源码，不代表启用了助理。标准范例可沿 `packages/domain/src/integrations/intelligence.ts`、`packages/domain/src/modules/purchase/approvals.ts` 和 `apps/web/src/shared/ui/assistant-panel.tsx` 阅读，路径规则见[学习入口](../README.md)。后端循环、通用工具、会话表和性格管理使用框架；应用侧完成业务策略、授权与界面组合。
+
+按本次实现范围选择阅读顺序：业务助理走[后端启用与迁移授权](#启用后端) → [工具边界](#助理工具来自注册表) → [页面 SDK](#sdk-传入页面内容) → [验收](#接入后的验收)；AI 审批走同一后端前提 → [审批步骤](#ai-是一个正常审批步骤) → [验收](#接入后的验收)。Responses、性格和预算按需求补读。先按 Skill 明确助理应帮助用户完成哪些动作、审批采用哪些规则，再选择接入点。
 
 ## 启用后端
 
@@ -61,6 +63,8 @@ export const intelligence = ai({
 });
 ```
 
+只有 AI 审批时可以省略 `assistant`。审查并执行 `pnpm migrate` 后再启动 API/worker；新增命名系统迁移由框架携带，`cage doctor` 会列出未执行项，不把建表放到服务启动。管理员显式向使用助理的人授予 `Sys.ai.use`，再按需授予领域 `read`、命令与范围；启用服务不自动授予业务权限。AI 审批的执行角色与授权按下文审批步骤配置。
+
 `managedModel` 是框架托管的模型入口。应用引用稳定别名，实际模型名称、HTTP / HTTPS API 基地址、API Key、接口协议、上下文窗口、超时及启停状态在 `/admin/#/models` 配置。可声明多个入口供审批和助理分别使用。不需要在业务项目定义模型配置表、管理路由或环境变量读取逻辑。
 
 部署向 API 和 worker 注入同一份 `CAGE_AI_ENCRYPTION_KEY`（32 字节随机密钥的标准 Base64），也可通过连接器 `SecretProvider` 提供。它是加密模型凭据的部署主密钥，不是模型 API Key；应稳定保存并与数据库分开备份。不要随进程启动重新生成，也不要直接轮换它而不重新加密旧配置。未配置时不能保存 API Key。
@@ -70,6 +74,8 @@ export const intelligence = ai({
 每个模型步进重新读取配置，API 与 worker 无需重启；已发出的请求继续使用当时的快照。托管模型始终调用实际服务，独立于 ERP 等连接器的 `CAGE_STAGE=fake`。接口协议可选 **Chat Completions** 或 **Responses**，服务须支持所选协议的 SSE 与函数工具。地址可填 `https://服务主机/v1` 或完整的 `/chat/completions`、`/responses` 路径，框架按协议选择终点。连接测试只发送固定诊断文字，不携带业务数据；成功不代表工具支持或审批判断质量已验收。
 
 需要代码配置或离线测试时，可使用 `chatModel('language-model', { model, hosts, secret, fake })` 或同包导出的 `responsesModel`：`secret` 是 SecretProvider 的密钥名称；默认遵循 `CAGE_STAGE`，fake 阶段必须显式提供模拟函数且禁止外呼；`environment: 'test' | 'prod'` 可独立选择真实模型环境。自定义 `credential` 解析器只在服务端按次调用，不参与声明序列化。两者默认 HTTPS，可显式设置 `protocol: 'http:'` 连接 HTTP 网关。所有标准模型外呼经过框架连接器的地址校验、限流、取消和超时。
+
+`ModelProvider` 是服务端扩展接口，可适配其他协议；适配器必须响应 `AbortSignal`。运行时仍会在超时后放弃等待，迟到结果不会被提交。
 
 ### Responses 会话与上下文配置
 
@@ -82,10 +88,6 @@ Responses 请求使用 `store: true` 和 `previous_response_id`。框架持久�
 远端链条超过本地估算预算，或服务返回历史不存在时，框架用本地记录重建有界请求。原始工具计划、命令回执及模型返回的不透明推理项仍在后端；同配置恢复时保留原生输出项，跨配置不复用它们。已完成的命令从回执恢复，不再次提交。外部服务的会话保存不能代替 Cage 的审计、授权和恢复记录。
 
 升级执行系统迁移 `cage:ai_context_001` 和 `cage:ai_execution_001`：前者增加模型协议/窗口及接续状态，后者将调用预留、尝试次数、接续兼容性及工具预算单独持久化；不改写已有迁移。旧运行的已有计数保留，不追溯推测其费用。前端调用 `client.ai` 的发送、流式订阅与交互方法不变。
-
-只有 AI 审批时可以省略 `assistant`。`ModelProvider` 是服务端扩展接口，可适配其他协议；适配器必须响应 `AbortSignal`。运行时仍会在超时后放弃等待，迟到结果不会被提交。
-
-审查并执行 `pnpm migrate` 后再启动 API/worker。新增命名系统迁移由框架携带，`cage doctor` 会列出未执行项。不要把建表放到服务启动。管理员显式向使用助理的人授予 `Sys.ai.use`，再按需授予领域 `read`、命令与范围；启用服务不自动授予业务权限。
 
 ## Admin 配置助理性格
 

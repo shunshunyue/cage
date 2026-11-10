@@ -1,6 +1,8 @@
 # Cage 框架学习入口
 
-本目录是开发者与编程 Agent 共用的 Cage 应用开发教材，帮助你理解框架并把业务需求落实为可运行的应用。开发方法的统一入口是 [cage-development Skill](skills/cage-development/SKILL.md)。教材由框架维护，随脚手架分发；读取教材无需额外服务、模型或向量索引。
+本目录面向使用 Cage 编写业务的 agent，帮助 agent 理解需求、查证框架并完成真实实现。先读项目 AGENTS.md，再按 [cage-development Skill](skills/cage-development/SKILL.md) 工作；本页只负责按任务定位资料。教材由框架维护，随脚手架分发，读取无需额外服务、模型或向量索引。
+
+工作主线：**理解需求 → 提出疑问与建议 → 核对现有业务和框架能力 → 说明实现映射 → 编码 → 按规则验收**。明确的规则直接采用，技术事实自行查证，需要用户决定的业务取舍再交给用户选择。
 
 模型接入、智能助理和 AI 审批属于框架的原生 AI 能力，具体接入见[原生 AI 专题](guides/intelligence.md)。
 
@@ -10,12 +12,23 @@
 | --- | --- | --- |
 | 第一次使用 Cage | [Skill 的运行模型](skills/cage-development/SKILL.md#先建立正确的运行模型) → [第一条完整业务链](getting-started/first-feature.md) | 理解声明、导出、生成、授权、契约与持久读写如何连接 |
 | 用户描述或文档不清楚 | [业务澄清与共同设计](guides/business-collaboration.md) | 主动提出疑问、可行选项与建议，与用户选择业务规则，再落实到实现和验收 |
-| 把需求转成设计 | [业务设计与能力选择](guides/recipes.md) | 确定聚合边界、命令、范围、关系和一致性要求 |
-| 实现或修改功能 | [Skill 的实施流程](skills/cage-development/SKILL.md#4-沿一条真实链路实施再扩展) → [开发步骤](getting-started/workflow.md) | 沿实际调用链完成受影响的功能，并取得验证证据 |
+| 把需求转成设计 | [业务设计与能力选择](guides/recipes.md) → [编码前的映射](skills/cage-development/SKILL.md#4-写代码前说明实现映射) | 业务规则、查证过的能力、修改位置和验收例子一一对应 |
+| 实现或修改功能 | [Skill 的实施流程](skills/cage-development/SKILL.md#5-沿一条真实链路实施再扩展) → [开发步骤](getting-started/workflow.md) | 沿实际调用链完成受影响的功能，并取得验证证据 |
 | 已有功能不正常 | [排错方法](tools/troubleshooting.md) → [诊断工具](tools/diagnostics.md) / [错误码册](../errors/README.md) | 找到第一个失败边界，修复原因并复验 |
 | 查询一个能力的用法 | 下方专题表，必要时本地搜索术语 | 找到当前任务的 API、接入前提与限制 |
 
 已经熟悉框架时不必每次重读课程。不要将所有专题一次加载，也不要把参考业务注册到客户应用。
+
+## 各类文件的责任
+
+| 文件 | 负责什么 |
+| --- | --- |
+| 项目 AGENTS.md | 项目入口、代码与环境约束；项目业务约定保留在框架托管区外 |
+| [Skill](skills/cage-development/SKILL.md) | agent 的工作顺序、判断依据及何时与用户互动 |
+| [业务澄清](guides/business-collaboration.md) | 如何发现疑点、比较方案、保留并落实用户选择 |
+| [能力选择](guides/recipes.md) | 业务规则如何映射到 Cage，包含编码前的映射示例 |
+| [开发步骤](getting-started/workflow.md) | 已确定设计的修改、生成、迁移和验证命令 |
+| 其他专题、参考与源码 | 当前能力用法、前提与边界，按需阅读；示例业务不成为当前需求 |
 
 ## 按资料用途查找
 
@@ -36,7 +49,7 @@
 
 空白模板只启用组织基础；`docs/examples/purchase-admin` 是离线采购参考源码，不参与注册、编译或迁移。采购模板直接在业务目录包含该范例。框架仓库的应用根目录是 `examples/purchase-admin`，规范教材位于仓库 `docs/development`，以应用 AGENTS.md 的说明为准。
 
-`docs/development` 是框架教学内容的唯一手写来源；Skills 发现入口和模板副本由同步脚本生成。用户的业务约定保留在项目 AGENTS.md 的托管区外。教材分发检查只能证明资料存在且一致，模型是否学会需要框架维护者另做任务评估。
+`docs/development` 是框架教学内容的唯一手写来源；Skills 发现入口和模板副本由同步脚本生成。用户的业务约定保留在项目已有业务文档或 AGENTS.md 的托管区外。教材分发检查只能证明资料存在且一致，模型是否学会需要框架维护者另做任务评估。
 
 ## 当前实现边界
 

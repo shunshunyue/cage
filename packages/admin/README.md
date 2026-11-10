@@ -71,7 +71,7 @@ pnpm dev
 
 `ui/src/app` 负责页面组合，`ui/src/modules` 按管理功能组织，`ui/src/shared` 放请求、标签和 DOM 组件。界面由 TypeScript 编译成原生浏览器模块，不要求业务项目使用特定前端框架。执行 `pnpm build` 同时构建接口与界面；发布时分发 `ui/dist`、HTML 和 CSS，不直接执行 TypeScript 源码。
 
-- [完整使用说明](https://github.com/shunshunyue/cage/blob/main/docs/manual/使用说明.md)
+- [当前开发指南与 Agent 流程](https://github.com/shunshunyue/cage/blob/main/docs/development/README.md)
 - [框架源码与范例](https://github.com/shunshunyue/cage)
 - [问题反馈](https://github.com/shunshunyue/cage/issues)
 

@@ -82,7 +82,7 @@ CLI 每次重新抽取，不需要数据库；报告包含中文候选与依据�
 
 名称、SQL 字段和测试匹配是线索；具体执行条件需阅读源码。上述命令自 `0.2.0` 提供，完整流程随新项目分发在 `docs/development/tools/ontology-context.md`。
 
-- [完整使用说明](https://github.com/shunshunyue/cage/blob/main/docs/manual/使用说明.md)
+- [当前开发指南与 Agent 流程](https://github.com/shunshunyue/cage/blob/main/docs/development/README.md)
 - [框架源码与范例](https://github.com/shunshunyue/cage)
 - [问题反馈](https://github.com/shunshunyue/cage/issues)
 
