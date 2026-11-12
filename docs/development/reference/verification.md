@@ -22,9 +22,30 @@
 
 PostgreSQL 用例在独立测试环境执行。CAGE_TEST_DATABASE_URL 供独立测试集群使用；testkit 可按配置准备临时数据库和角色，缺省环境也可能使用内嵌真实 PostgreSQL。普通应用 dev 继续连接项目已配置的数据库。
 
-派生测试从声明推导通用性质，无法自动知道所有合法业务夹具。跳过用例需要补足相应证据；它不能代替具体业务成功链、审批选人或外部联调。verify --skip-tests 明确标记不完整。
+派生测试从声明推导能力、状态、范围、审计、幂等、掩码和不变量等通用性质，无法自动知道所有合法业务夹具。测试使用真实 testkit 执行，有效通过的用例能提供相应证据；其数量不代表业务需求覆盖。仍需按规则编写或运行具体业务成功链、审批选人及外部联调。
+
+cage test 和 verify 的退出码 0 表示本次没有检查失败；Vitest 允许部分用例 skip/todo，退出码不能表示全部用例已执行。查看 .cage/test-results.json 的通过、失败、跳过及待实现数量；verify 也将摘要写入 .cage/verify.json。省略测试阶段、存在 skip/todo 或没有用例时，verify 的 complete 为 false。complete 为 true 只表示所配置门禁及报告中的用例完成，业务与浏览器证据仍单独验收。
 
 源码修改还要人工核对文件职责、公开 API、复杂分支和边界的中文注释。生成代码从生成器维护；已执行迁移不因注释或排错改写。
+
+## 先写一项能发现业务错误的测试
+
+完成[关系课程](../guides/relations.md)后，可以将[评论测试完整文件](../examples/note/note-comments.test.ts)放到 note-comments.ts 旁边。它导入 it/expect、draftOf/fakeRepo/handlerCtx 和真实声明；其中一项反例为：
+
+<!-- cage:example archived-comment-test -->
+```ts
+it('读到已归档父便笺时拒绝评论', async () => {
+  const parent = draftOf(createNote, { status: 'archived', title: '历史纪要' });
+  const input = createNoteComment.input.parse({ noteId: parent.id, body: '补充事项' });
+  const result = await createNoteComment.handler(
+    draftOf(createNoteComment), input,
+    { notes: fakeRepo<typeof Note>([parent]) }, handlerCtx(),
+  );
+  expect(result).toMatchObject({ code: 'NOTE_ARCHIVED' });
+});
+```
+
+完整文件另测允许创建和父对象未命中。fakeRepo 只替代只读依赖，直接调用 handler 没有经过能力、范围、schema 流水线、事务和审计；这些需要真实集成用例。测试刻意检查归档拒绝与部门来源，不能只断言“函数被调用”。
 
 ## 如实报告
 

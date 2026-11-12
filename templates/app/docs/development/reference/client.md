@@ -26,6 +26,24 @@ createdAfter 包含下界，createdBefore 不含上界。普通过滤是允许�
 
 DOMAIN_ERROR 的业务含义看 domainCode；CONFLICT 需要重新读取并核对；NOT_FOUND 也可能表示范围外。NETWORK、CANCELLED、TIMEOUT 可以由客户端产生，status 为 0。
 
+[完整客户端示例](../examples/note/note-client.ts)放到 Web 的便笺模块，导入生成的 note 和 Note 类型。下面的函数保留三种不同结果：
+
+<!-- cage:example rename-note -->
+```ts
+export async function renameNote(record: Note, title: string) {
+  const result = await note.update(record.id, { title }, record.version);
+  if (!result.ok) {
+    if (result.code === 'CONFLICT') {
+      return { kind: 'conflict' as const, latest: await note.get(record.id) };
+    }
+    return { kind: 'rejected' as const, error: result };
+  }
+  return { kind: 'saved' as const, record: result.data };
+}
+```
+
+页面只在 kind 为 saved 时显示保存成功；conflict 时保留输入，latest 仍是需要检查 ok 的读取结果，不保证冲突后当前用户还能读到记录。
+
 useCageQuery/useCageList 失败抛 CageQueryError。useCageCommand 成功返回业务数据，失败抛 CageCommandError，因此 mutation.isSuccess 表示业务成功；只有成功才触发所配置的查询失效。是否等待重新读取完成，由页面流程决定。
 
 ## 版本、幂等与重试
@@ -33,6 +51,19 @@ useCageQuery/useCageList 失败抛 CageQueryError。useCageCommand 成功返回�
 修改已有记录时传读取到的 version，防止旧页面覆盖新值。冲突后保留用户草稿，刷新当前记录并让用户确认下一步。
 
 RequestOptions 支持 signal、timeoutMs、idempotencyKey。每次独立 post 默认生成新幂等键；业务要恢复同一次操作时，需要保存原输入和键。当前页面的提交锁可以避免重复点击，但不能替代跨刷新或跨设备去重。
+
+同一文件的辅助函数保存一次输入与键：
+
+<!-- cage:example prepare-note-creation -->
+```ts
+export function prepareNoteCreation(title: string) {
+  const input = { title };
+  const options = { idempotencyKey: crypto.randomUUID() };
+  return () => note.create(input, options);
+}
+```
+
+用户确定标题后创建一次 submit = prepareNoteCreation(title)，页面保存 submit。需要恢复同一次请求时调用同一个函数；新意图再调用 prepareNoteCreation。它不会自动重试，也未保存跨刷新的状态；重试前仍需核对上一次是否已提交。
 
 网络失败不自动重放写入。仅明确 CSRF 拒绝时刷新令牌并沿用同一键重试一次。取消或超时结束的是客户端等待，服务端可能已经提交；重试前核对结果。内核幂等缓存有期限，长期业务去重需要业务标识或专门回执。
 

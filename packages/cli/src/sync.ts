@@ -44,13 +44,13 @@ export const managedBlock = `<!-- cage:begin v${VERSION} -->
 - 领域含义变化先保存基线，修改后 check/gen 并审查迁移；生成契约不手改，已执行迁移保留。操作见 docs/development/getting-started/workflow.md。
 - 多页面使用独立 URL，筛选/分页进查询参数；导航与真实交互按 docs/development/guides/routing.md 验收。
 - 使用已有 PostgreSQL 和项目配置；init、migrate、bootstrap、dev 各自显式执行。凭据与 .env 不进入源码、文档或日志，普通业务不建连接池或管理 Docker。
-- 业务数据、权限、流程结果来自实际服务端，界面草稿与模拟数据不能替代正式保存。已有框架能力先复用，具体 API 用 cage capabilities 查，现有业务用 cage context 查。
+- 业务数据、权限、流程结果来自实际服务端，界面草稿与模拟数据不能替代正式保存。先阅读相关源码、调用方和测试；跨模块声明关系可用 cage context 辅助定位，API 不明确时用 cage capabilities 或公开类型核对安装版本。按问题选工具，检索未命中不能说明能力或实现不存在。
 
 ### 可选能力与完成依据
 
 原生 AI、AI 审批和随页助理先读 docs/development/guides/intelligence.md，核对 domain 启用、模型、迁移与授权；框架支持、应用启用与实际结果分别说明。
 
-按 docs/development/reference/verification.md 对照本次规则验证持久化、权限、流程、文件、异步终态与页面。交付分别报告通过、跳过、未执行；诊断 unknown 或 verify --skip-tests 不能算完整通过，小改动按影响检查。
+按 docs/development/reference/verification.md 对照本次规则验证持久化、权限、流程、文件、异步终态与页面。交付分别报告通过、跳过、未执行；诊断 unknown、verify --skip-tests 或测试用例跳过均需说明证据缺口，小改动按影响检查。
 
 出错保留 code/at/reason/fix，查 docs/errors/README.md 与 docs/development/tools/troubleshooting.md，修复最早断点，保持权限、约束、门禁和迁移历史有效。
 <!-- cage:end -->`;

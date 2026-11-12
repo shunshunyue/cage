@@ -10,6 +10,19 @@
 
 manyToMany 的新增目标在事务内校验租户、可见性和读取能力，源记录版本共同递增。附件的字节上传在业务事务外，ready 文件由命令事务绑定；业务失败不会把临时文件伪装成正式附件。
 
+例如[归档联动](../guides/automation.md#调用另一个对象的命令)在原归档命令 emit NoteArchived，再调用另一个聚合的记录命令。完整声明在[archive-log.ts](../examples/note/archive-log.ts)，事务选择直接写在反应上：
+
+<!-- cage:example same-archive-log -->
+```ts
+export const logNoteArchive = reaction(NoteArchived, {
+  command: recordNoteArchive,
+  tx: 'same',
+  map: (event) => ({ noteId: event.noteId, title: event.title, deptId: event.deptId }),
+});
+```
+
+若 recordNoteArchive 被拒绝，archiveNote 的状态变化也不提交；成功后仍分别通过安全读侧读取便笺和日志。改为 outbox 后主归档可先成功，日志要等 worker；这就是两种事务选择在实际结果上的区别。
+
 ## outbox 与 worker
 
 outbox 事件在主事务提交后可见。worker 按消费者记录执行与重试；同聚合顺序和死信可能阻塞后续动作。重试后的业务必须仍符合命令状态、授权和幂等要求。

@@ -12,6 +12,21 @@
 
 这些声明是模块顶层的 export const，并沿模块入口导出到 domain 根入口。声明函数返回规格，不在导入时连接数据库或执行命令。
 
+例如[便笺完整文件](../examples/note/note.ts)中的归档命令如下，Note 和 command 都来自该文件已声明或导入的符号：
+
+<!-- cage:example archive-note -->
+```ts
+export const archiveNote = command(Note, {
+  name: 'archive',
+  description: '归档便笺',
+  from: 'active',
+  to: 'archived',
+  handler: (draft) => draft,
+});
+```
+
+handler 保留业务字段，状态由 to 指定并由内核写入。前端生成 note.archive(id, version)，再次归档或编辑已归档记录会在状态检查阶段拒绝，不需要在页面自己改 status。
+
 ## 注册、生成与运行各负责什么
 
 ```text

@@ -56,6 +56,26 @@ result.ok 只说明任务接受，HTTP 为 202。保存 result.data.id，用 cli
 
 useTransfer 处理中每两秒刷新，终态停止。完成后使用 client.transferDownloadUrl(id) 下载。导入报告提供行号、成功/失败、code/domainCode 和字段名，不含原始单元格敏感值。
 
+下面是一个完整的结果组件，id 来自任务接受后的 result.data.id。它可放到 Web 的便笺模块中，与提交按钮组合：
+
+<!-- cage:example transfer-result -->
+```tsx
+import { client, useTransfer } from '@yss123/cage-client';
+
+/** 跟踪一项已接受的任务，completed 才展示下载，处理中的响应不会显示为导入完成。 */
+export function TransferResult({ id }: { id: string }) {
+  const task = useTransfer(id);
+  if (task.isPending) return <p role="status">正在读取任务…</p>;
+  if (task.isError) return <button onClick={() => void task.refetch()}>读取失败，重试查询</button>;
+  if (task.data.status === 'failed') return <p role="alert">任务失败：{task.data.errorCode}</p>;
+  if (task.data.status === 'expired') return <p>任务结果已过期</p>;
+  if (task.data.status !== 'completed') return <p role="status">任务处理中：{task.data.status}</p>;
+  return <a href={client.transferDownloadUrl(id)}>下载{task.data.kind === 'import' ? '逐行报告' : '导出文件'}</a>;
+}
+```
+
+[完整 CSV 面板](../examples/note/transfer-panel.tsx)进一步包含文本输入、导入/导出按钮、能力显示、重复提交限制和任务标识。复制到 apps/web/src/modules/note/transfer-panel.tsx，在已有页面中挂载 NoteTransferPanel；普通授权、worker 和真实便笺契约仍须已接通。
+
 任务和结果默认保留 24 小时。读取、执行和下载重新核对身份与权限；授权变化可能使原导出文件不再可下载。
 
 ## 协议与部署

@@ -17,32 +17,58 @@
 
 ## 一对多：外键属于子对象
 
-在已有 Note.fields 中追加：
+以[便笺课程](../getting-started/first-feature.md)为基础，在 note.ts 的 kernel import 中补 hasMany、manyToMany，再向 Note.fields 追加：
 
+<!-- cage:example note-relations-fields -->
 ```ts
 comments: hasMany('NoteComment', { mappedBy: 'noteId', description: '便笺评论' }),
+members: manyToMany('User', { description: '协作成员' }),
 ```
 
 NoteComment 作为独立聚合，声明 noteId: ref('Note')、body、deptId 与 createdBy。mappedBy 必须指向目标上真实存在、引用 Note 的 ref。
 
 创建评论时，命令 input 接收 noteId 和正文，通过 reads: { notes: Note } 读取便笺，确认可见且符合业务状态，再将其部门复制到评论。子对象的授权和范围仍需独立配置；ref 不自动继承父对象范围。
 
+将[评论完整文件](../examples/note/note-comments.ts)放到同一模块的 note-comments.ts，并逐层导出。它包含 NoteComment 聚合、import 和下面这个创建命令：
+
+<!-- cage:example create-note-comment -->
+```ts
+export const createNoteComment = command(NoteComment, {
+  name: 'create',
+  description: '评论使用中的便笺',
+  from: 'new',
+  to: 'active',
+  input: z.object({ noteId: z.uuid(), body: z.string().trim().min(1).max(1000) }),
+  reads: { notes: Note },
+  handler: async (_draft, input, deps) => {
+    const parent = await deps.notes.get(input.noteId);
+    if (!parent) return fail('NOTE_NOT_READABLE', '无法读取所属便笺');
+    if (parent.status !== 'active') return fail('NOTE_ARCHIVED', '已归档便笺不能评论');
+    return { noteId: input.noteId, body: input.body, deptId: parent.deptId };
+  },
+});
+```
+
+fail 会使本次评论创建回滚；deps.notes.get 不取得父记录更新锁，因此上述检查针对读到的快照。需要严格防止并发归档与评论交错时，另行设计一致性边界。
+
 comments 是只读反查，不占 Note 主表列，也不进入可写草稿。移动或创建评论调用评论命令，给 Note 传 comments 数组会被拒绝。
 
 ## 多对多：修改来源对象的完整集合
 
-在 Note.fields 中追加：
-
-```ts
-members: manyToMany('User', { description: '协作成员' }),
-```
-
 框架生成中间表、同租户外键和组合主键。业务命令 input 使用 UUID 数组，handler 返回 members；新建缺省为 []，框架去重、规范化并排序。
 
-替换命令的核心可以是：
+已有上面的 members 字段后，将[成员命令完整文件](../examples/note/note-members.ts)放到同一模块并导出：
 
+<!-- cage:example set-note-members -->
 ```ts
-handler: (_draft, input) => ({ members: input.members }),
+export const setNoteMembers = command(Note, {
+  name: 'setMembers',
+  description: '替换便笺协作成员',
+  from: 'active',
+  to: null,
+  input: z.object({ id: z.uuid(), members: z.array(z.uuid()).max(50) }),
+  handler: (_draft, input) => ({ members: input.members }),
+});
 ```
 
 这里 input 必须是业务期望的完整目标集合，[] 表示全部解绑。增量追加可使用草稿中的完整集合拼接新增 ID，让框架去重。不能把当前关联分页结果直接当作全量集合提交，否则会丢失未加载的关联。
@@ -54,6 +80,27 @@ handler: (_draft, input) => ({ members: input.members }),
 ## 单独分页读取关联
 
 生成后使用 note.related.members(id, params) 或 useNoteRelatedMembers(id, params)，评论同理。关系不会在普通 get 响应中自动完整展开。
+
+下面是 Web 模块中可直接使用的完整调用片段，三个方法都返回 CageResult，页面分别检查 ok 后取 data：
+
+<!-- cage:example relation-client -->
+```ts
+import { note, noteComment, type Note } from '@app/contracts';
+
+/** 独立读取关联第一页，保留两个结果各自的成功或失败，不把一页当全量集合。 */
+export async function loadNoteRelations(id: string) {
+  const members = await note.related.members(id, { page: 1, pageSize: 20 });
+  const comments = await note.related.comments(id, { page: 1, pageSize: 20 });
+  return { members, comments };
+}
+
+/** 创建评论，noteId 指向便笺；正文、父状态与部门由服务端继续校验。 */
+export const commentOnNote = (id: string, body: string) => noteComment.create({ noteId: id, body });
+
+/** desiredIds 来自用户确认的完整目标集合，不能直接使用上面第一页成员的 IDs。 */
+export const replaceNoteMembers = (record: Note, desiredIds: string[]) =>
+  note.setMembers(record.id, { members: desiredIds }, record.version);
+```
 
 公开关联同时要求源和目标 read，并通过两侧安全视图落实范围和目标掩码。响应 total 只统计当前可见结果，可能少于真实链接总数；普通源详情也不能推断已加载全体成员。
 

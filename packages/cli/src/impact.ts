@@ -34,6 +34,8 @@ export interface ImpactResult {
   unsafe: { base: number; head: number };
   /** 事件兼容等影响规则发现。 */
   findings: Finding[];
+  /** 分析器交付的边界说明；兼容外部构造的旧结果时可省略，未列出或候选数量不代表完整覆盖。 */
+  limitations?: string[];
 }
 
 /**
@@ -243,6 +245,11 @@ export function impact(
     confirm: [...new Set(confirm)],
     unsafe: { base: base.unsafeCount ?? 0, head: head.unsafeCount ?? 0 },
     findings: checkEventCompat(base, head),
+    limitations: [
+      '影响仅按本体节点哈希、传入的改动文件和已抽取的新旧声明关系推导，不分析完整导入或函数调用依赖。',
+      '辅助函数、闭包值、前端或外部协议变化可能未进入结果；未列出不代表不受影响。',
+      '测试按 subject 或传入文件中的源码名称匹配，只是尚未执行的候选；仍需按业务规则选择与补充验证。',
+    ],
   };
 }
 
@@ -314,7 +321,8 @@ export function formatImpact(
         )
       : ['  无']),
   );
-  L.push(`${h('必须运行的测试：')}派生测试 ${r.tests.length} 个，项目测试 ${r.projectTests.length} 个`);
+  L.push(`${h('验证候选（尚未执行）：')}派生测试 ${r.tests.length} 个，项目测试 ${r.projectTests.length} 个`);
+  L.push(...(r.limitations ?? []).map((limitation) => `说明：${limitation}`));
   L.push(
     `${h('unsafe：')}${r.unsafe.head}（${r.unsafe.head === r.unsafe.base ? '与基线持平' : r.unsafe.head > r.unsafe.base ? `比基线多 ${r.unsafe.head - r.unsafe.base}` : `比基线少 ${r.unsafe.base - r.unsafe.head}`}）`,
   );

@@ -12,6 +12,20 @@ Cage 用 TypeScript 声明业务对象、允许的操作和后续流程，再从
 
 日常修改直接用[开发步骤](getting-started/workflow.md)。编程 AI 读取项目 AGENTS.md 后使用[开发 Skill](skills/cage-development/SKILL.md)，再进入本次需要的指南。
 
+## 跟着代码接一项能力
+
+先完成基础便笺，再按本次需求选取扩展示例；不需要把它们全部注册到项目。正文解释连接步骤，完整教学文件包含 import、声明或组件：
+
+| 想看哪种写法 | 正文与完整代码 |
+| --- | --- |
+| 带读取依赖和拒绝分支的命令 | [关系课程](guides/relations.md) · [评论声明](examples/note/note-comments.ts) · [成员替换](examples/note/note-members.ts) |
+| 同事务联动、定时和出站 | [自动化](guides/automation.md) · [归档记录](examples/note/archive-log.ts) · [任务](examples/note/jobs.ts) · [连接器](examples/note/archive-service.ts) |
+| Ant Design 表单、URL 筛选和分页 | [前端组件](guides/frontend-ui.md) · [完整列表](examples/note/notes-table-page.tsx) |
+| 结果、版本冲突与同次请求恢复 | [客户端](reference/client.md) · [调用示例](examples/note/note-client.ts) |
+| CSV 接受任务后继续查到终态 | [数据传输](guides/transfers.md) · [完整面板](examples/note/transfer-panel.tsx) |
+| 部门审批和可编译待办调用 | [审批课程](guides/approvals.md) · [领域](examples/approval/review-request.ts) · [客户端](examples/approval/request-actions.ts) |
+| 纯 handler 的成功和拒绝测试 | [验证参考](reference/verification.md) · [评论测试](examples/note/note-comments.test.ts) |
+
 ## 按任务查找
 
 | 要完成的事 | 阅读入口 |
@@ -30,7 +44,7 @@ Cage 用 TypeScript 声明业务对象、允许的操作和后续流程，再从
 
 声明参数查[原语参考](reference/primitives.md)，授权查[权限与范围](reference/authorization.md)，前端结果与版本查[客户端](reference/client.md)。代码组织与注释分别遵守[目录规范](reference/project-structure.md)和[中文注释规范](reference/commenting.md)。
 
-不知道当前版本有没有某个 API，使用[能力与状态诊断](tools/diagnostics.md)；不知道项目在哪里实现，使用[本体检索](tools/ontology-context.md)；操作失败按[排错顺序](tools/troubleshooting.md)找到断点。收到具体 CAGE 码时进入[错误码册](../errors/README.md)。
+理解已有业务先阅读项目入口、相关模块、调用方与测试。框架 API 不明确时查公开类型或[能力诊断](tools/diagnostics.md)；需要梳理跨模块声明关系时可用[本体检索](tools/ontology-context.md)辅助定位；操作失败按[排错顺序](tools/troubleshooting.md)找到断点。收到具体 CAGE 码时进入[错误码册](../errors/README.md)。
 
 ## 本手册的路径与版本
 

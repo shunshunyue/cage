@@ -32,6 +32,29 @@ parallel('联合审核',
 
 这是 route 数组中的组合片段。每组 2–16 个不重名分支，整条声明最多 128 个办理节点、512 个结构节点和 8 层容器。条件全部不满足的分支直接参加汇合；整条路由没有办理节点时拒绝启动。
 
+要把部门申请课程改为“部门负责人先审，业务与法务并行会审，最后经理确认”，用下面完整声明替换原 requestRoute，保留相同 process，不另注册第二条同名路由：
+
+<!-- cage:example parallel-request-route -->
+```ts
+import { approver, branch, parallel, route, step } from '@yss123/cage-approval';
+
+/** 部门负责人先处理，两个分支汇合后由经理承担最终结论；角色需配置真实有权人员。 */
+export const requestRoute = route('department-request', [
+  step('部门负责人', approver.deptLeader('deptId')),
+  parallel('专业会审',
+    branch('业务', step('业务审核', approver.role('reviewer'))),
+    branch('法务', step('法务审核', approver.role('legal'))),
+  ),
+  step('最终确认', approver.role('manager'), {
+    assignment: 'candidate',
+    actions: { transfer: true, delegate: true, addSign: true },
+    sla: { durationMinutes: 60, remindBeforeMinutes: 10 },
+  }),
+]);
+```
+
+SLA 需要从 domain 导出 approvalOperations()，见下节；这段没有新增条件字段，原 routable: ['deptId'] 可以继续使用。最后节点先领取再处理，候选池是 manager 角色成员，权限与职责分离仍由领域命令检查。
+
 拒绝、退回或取消结束整轮，关闭其他活动任务。开启新节点失败回滚本次推进；前面已在其他事务通过的票保留。汇合后需要固定责任人时声明最终节点，否则最后完成分支的人可能承担结论身份，并接受领域约束。
 
 currentSteps 是完整活动集合，currentStep 仅是最小索引。历史含 branchPath、dependsOn 和 definitionVersion；该指纹标识路由内容，不包含领域命令代码，也不提供在途迁移或版本回滚。
@@ -71,6 +94,21 @@ any 的其他原票可被 skipped，但已创建的追加票仍必签；all 中�
 | approvalHistory(aggregate, id) | 轮次、节点、并行路径及审核解释 |
 
 转办/委派传 targetUserId，加签传 userIds 与可选 placement；所有管理动作传 expectedRevision、reason。HTTP 管理路径为 /api/approval/tasks/:id/动作，addSign 对应 add-sign；历史为 /api/approval/task-history/:process/:aggregate/:id。
+
+例如 Web 模块中的转办函数如下。task 是刚读取的待办，targetUserId 来自本租户的有权人员选择，而不是页面虚构身份：
+
+<!-- cage:example transfer-approval-task -->
+```ts
+import { client, type ApprovalTask } from '@yss123/cage-client';
+
+/** 按当前待办 revision 转交责任；失败保留原任务，成功后页面重新读取任务与历史。 */
+export async function transferTask(task: ApprovalTask, targetUserId: string, reason: string) {
+  return client.approvalTaskAction(task.id, {
+    action: 'transfer', targetUserId, reason,
+    expectedRevision: task.revision,
+  });
+}
+```
 
 本人或候选清单先各扫描每流程最近 200 条，再按当前授权过滤，当前无分页；返回不足不能推断历史总量。摘要不暴露额外敏感明文。人工历史按当前单据读取权限展示，处理过任务不会获得永久读权。
 

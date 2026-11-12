@@ -242,8 +242,8 @@ export function buildContext(
     review,
     nextSteps: [
       '先按源码位置阅读实现，确认候选入口符合需求；不要仅凭箭头推断条件与运行结果。',
-      '改动前 cage snapshot save before-change，保存带时间与版本的独立基线；查询不修改命名快照。',
-      '修改后运行 cage check、cage gen、cage doctor，审查契约/迁移，再 cage impact --snapshot before-change。',
+      '领域含义变化前保留可比较的 Git 提交或本体基线；没有可用基线时用 cage snapshot save <新名称> 保存，查询不修改快照。',
+      '修改声明后按项目要求检查、生成并审查契约/迁移；需要比较声明影响时用 cage impact，排查注册、生成或运行状态时再用 cage doctor。',
       '阅读候选测试，按实际风险运行必要验证；报告通过、跳过、未执行项。',
     ],
   };

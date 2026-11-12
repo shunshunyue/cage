@@ -25,6 +25,39 @@ scope.none() 没有提供部门元数据，也不关闭聚合对 createdBy 的�
 
 公司、项目、团队等自定义字段并不会自动加入部门树范围算法。确认业务需要的隔离模型，再核对当前公开能力。
 
+例如[便笺完整聚合](../examples/note/note.ts)已有 deptId 和 createdBy，使用 scope.deptSubtree('deptId')。测试账号的实际授权可以通过 testkit 表达；下面的完整辅助函数只用于独立测试环境，不是生产授权脚本：
+
+<!-- cage:example dept-editor -->
+```ts
+import type { TestEnv } from '@yss123/cage-testkit';
+
+/** 为测试创建只能读写本部门便笺的账号，部门 UUID 来自该测试环境真实创建的部门。 */
+export async function createDeptEditor(test: TestEnv, deptId: string) {
+  return test.user({
+    caps: ['Note.read', 'Note.create', 'Note.update', 'Note.archive'],
+    scopes: { Note: 'dept' },
+    deptId,
+  });
+}
+```
+
+这里聚合具备部门字段，账号却只选择 dept，所以不自动包含下级部门。正式应用在系统管理中按真实角色分配相同含义的能力与范围。
+
+## 把本次操作限制写进命令
+
+审批课程使用下面的命令禁止申请人批准自己。ReviewRequest、command、sod 的完整定义和 import 见[部门申请源码](../examples/approval/review-request.ts)：
+
+<!-- cage:example approve-review-request -->
+```ts
+export const approveReviewRequest = command(ReviewRequest, {
+  name: 'approve', description: '批准部门申请', from: 'pending', to: 'approved',
+  invokedBy: 'process', constraints: [sod.notSameAs('createdBy')],
+  handler: draft => draft,
+});
+```
+
+invokedBy 限定调用入口，sod 检查本次真人与创建人不同；审批人仍须具备结论能力和单据范围。流程选人不替代这两层判断。
+
 ## 角色授权怎样生效
 
 普通角色显式获得目录中的能力与聚合范围，多角色能力和范围合并。显式聚合范围优先于通配范围；缺省或空范围回退到 self，有能力也不意味着能匹配任意记录。
@@ -38,6 +71,19 @@ self 比较当前用户或受托真人与 ownerField。dept 比较部门，deptS
 ## 敏感字段和读取
 
 safe 视图根据会话落实范围与掩码，业务 query 也从这里读取。hidden 字段排除于普通公开 DTO；sensitive 的明文需 Aggregate.unmask.kind 等对应能力，潜在明文交付还需可靠审计。
+
+字段组合可以这样声明，再放入相应 aggregate.fields。这里的 optional 明确允许 null；hidden 字段不进入普通公开 DTO：
+
+<!-- cage:example protected-fields -->
+```ts
+import { text } from '@yss123/cage-kernel';
+
+/** 联系方式按 phone 掩码；内部备注只供服务端规则使用，不通过普通读取交付。 */
+export const protectedFields = {
+  phone: text(32).optional().sensitive('phone').describe('联系电话'),
+  internalMemo: text(500).optional().hidden().describe('内部备注'),
+};
+```
 
 handler 的 reads 返回内部快照，用于业务判断；它与浏览器安全 DTO 不同。审批变量去除隐藏字段并掩码，具有明文能力也要经正式读取入口取得带审计的明文。
 

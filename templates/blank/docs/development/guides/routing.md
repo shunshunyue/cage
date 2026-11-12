@@ -15,6 +15,33 @@
 
 列表使用 useSearchParams 读写 status、page 等条件。条件变化时重置相应页码，并把筛选提交给服务端。组件内的 tab/page 状态适合页内临时交互，不能承担独立页面导航。
 
+[Ant Design 完整列表](../examples/note/notes-table-page.tsx)使用下面的读取逻辑，useSearchParams 来自 react-router-dom，useNoteList 来自生成契约：
+
+<!-- cage:example note-url-query -->
+```tsx
+const [search, setSearch] = useSearchParams();
+const requestedPage = Number(search.get('page'));
+const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+const rawStatus = search.get('status');
+const status = rawStatus === 'active' || rawStatus === 'archived' ? rawStatus : undefined;
+const query = useNoteList({ page, pageSize: 20, status, sort: '-createdAt' });
+```
+
+筛选和翻页共用一个 URL 更新函数。筛选变化传 nextPage = 1；点击表格页码时传当前 status：
+
+<!-- cage:example note-url-change -->
+```tsx
+function changeList(nextPage: number, nextStatus: 'active' | 'archived' | undefined) {
+  const next = new URLSearchParams(search);
+  next.set('page', String(nextPage));
+  if (nextStatus) next.set('status', nextStatus);
+  else next.delete('status');
+  setSearch(next);
+}
+```
+
+访问 /notes?status=archived&page=2 应请求归档便笺的第二页；选择“全部”删除 status，而不是只过滤已加载的数据。完整页面还将 query.data.total 交给 Table.pagination，并用 Link 打开详情。
+
 ## 会话恢复和登录回跳
 
 应用启动先 loadMe，区分正在恢复、已登录、未登录和网络失败。网络失败显示重试并保留当前地址；UNAUTHENTICATED 才进入登录。

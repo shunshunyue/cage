@@ -31,6 +31,27 @@ domain 定义行为，contracts 连接前后端，Web 负责交互，API/worker 
 
 多个领域模块的导出名必须兼容：例如分别使用 createNote、createRequest，并在 command.name 中保留 create 能力名。根入口只组合，避免重名 export * 遮蔽声明。
 
+例如便笺模块有基础读写、评论和成员命令，packages/domain/src/modules/note/index.ts 组合：
+
+<!-- cage:example note-module-exports -->
+```ts
+export * from './note.js';
+export * from './queries.js';
+export * from './note-comments.js';
+export * from './note-members.js';
+```
+
+domain/src/index.ts 保留已有组织及业务导出，再追加 export * from './modules/note/index.js'。Web 的模块入口使用同样的组合职责，例如：
+
+<!-- cage:example note-web-exports -->
+```ts
+export { NotesPage } from './pages/notes-page';
+export { NoteDetailPage } from './pages/note-detail-page';
+export { NotesTablePage } from './pages/notes-table-page';
+```
+
+app/app.tsx 从 ../modules/note 导入页面；便笺模块内部从 @app/contracts 读取对象方法，不反向导入 app 或 domain。没有评论、查询或表格页面的项目只导出自己实际存在的文件。
+
 页面、组件、专用 hooks、api 与样式放所属模块；目录只在确实需要时创建。测试与被测业务相邻，使用 *.test.ts(x)。全局主题和基础布局放 app，专用样式就近维护。
 
 ## 依赖方向

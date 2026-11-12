@@ -5,7 +5,7 @@
  */
 // 命令入口只负责参数、输出和退出码；分析、生成、迁移都保留独立公共函数供测试调用。
 import { parseArgs } from 'node:util';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, globSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { loadConfig, abs } from './config.js';
 import { errorsOnly, formatFindings } from './findings.js';
@@ -31,7 +31,7 @@ const help = `cage ${VERSION}
   graph search <关键词>           中文/标识检索；--kind 类型 --limit 10
   graph inspect <节点>             节点详情、关联原因与源码位置
   graph path <起点> <终点>        最短关系链；--direction out|both --depth 6
-  context <需求或节点>            AI 业务上下文；--depth 3 --limit 40
+  context <关键词或节点>          声明子图与源码/测试候选；--depth 3 --limit 40
     查询输出：--format md|json --out <文件>；默认 Markdown，每次重新抽取
   gen [--check]                    生成契约、SQL、状态图和迁移草稿
   impact --base <提交>             与 Git 基线比较
@@ -292,6 +292,11 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     a.graph,
     o.base ? changedFiles(cfg.root, o.base) : [],
     deriveTests(cfg, a.graph).tests,
+    // 与 test 的项目用例目录一致；只查找名称相关候选，不声称完整调用覆盖。
+    globSync(['packages/**/src/**/*.test.ts', 'apps/api/**/*.test.ts'], {
+      cwd: cfg.root,
+      exclude: ['**/node_modules/**', '**/dist/**'],
+    }).map((file) => abs(cfg, file)),
   );
   const saved = o.snapshot ? (await import('./snapshots.js')).readSnapshot(cfg, o.snapshot) : undefined;
   const comparison = {

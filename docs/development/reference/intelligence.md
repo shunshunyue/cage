@@ -12,6 +12,25 @@ API Key 留空保留原值；换地址时需同时提供新密钥，避免将旧
 
 代码配置可使用 chatModel/responsesModel：hosts 为环境主机，secret 是 SecretProvider 名称。普通模型阶段默认遵循 CAGE_STAGE，fake 需明确 fake 函数；environment 可选择真实 test/prod。默认 HTTPS，公开选项可显式使用 HTTP 网关。ModelProvider 用于服务端适配，需响应 AbortSignal；迟到结果不会提交。
 
+例如服务器 integrations 中可以定义一个 Responses provider，再用它替换既有 ai().models.main；不要再创建第二个 AI 运行时：
+
+<!-- cage:example responses-model -->
+```ts
+import { responsesModel } from '@yss123/cage-ai';
+
+/** 声明允许的网关和真实窗口；主机、模型标识需换成实际服务，secret 只保存密钥名称。 */
+export const mainModel = responsesModel('main', {
+  model: 'your-model',
+  hosts: { test: 'ai-sandbox.example.com', prod: 'ai.example.com' },
+  secret: 'AI_API_TOKEN',
+  environment: 'test',
+  contextWindowTokens: 32768,
+  compaction: false,
+});
+```
+
+这是代码配置的替代接法；使用 managedModel 时继续在 Admin 配置。构造 provider 不发请求，实际服务必须支持对应协议，32768 也要按真实模型容量核对。
+
 ## Responses 接续
 
 Responses 保存 response ID，后续携带 previous_response_id 并只发新增条目；系统规则、性格和页面上下文每次重新提供。模型配置、权限或注册指纹改变后不继续旧链，浏览器不能指定该 ID。

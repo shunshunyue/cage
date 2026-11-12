@@ -27,6 +27,51 @@ Web 入口已经组合 ConfigProvider、中文 locale、主题 token 和 Ant Des
 
 每页处理加载、空结果、失败、权限与提交中状态。未知数据不能默认显示为零或成功。表格使用稳定 rowKey，分页和筛选同步 URL 与服务端；表单校验用于即时反馈，服务端 schema 与规则决定最终写入。
 
+## 一个表单怎样接到真实保存
+
+[完整的 Ant Design 便笺页面](../examples/note/notes-table-page.tsx)包含 import、表单、查询、筛选和错误状态。放到 apps/web/src/modules/note/pages/notes-table-page.tsx，从模块导出并让 /notes 路由渲染 NotesTablePage；详情继续使用基础课程页面。
+
+组件内通过 App.useApp() 取得 message，通过 Form.useForm() 保存表单。下面是完整文件里的提交函数，query 来自 useNoteList，submitting、saving、error 都是当前组件状态：
+
+<!-- cage:example create-note-form -->
+```tsx
+async function create(values: { title: string }) {
+  if (submitting.current) return;
+  submitting.current = true;
+  setSaving(true);
+  setError('');
+  try {
+    const result = await note.create({ title: values.title.trim() });
+    if (!result.ok) {
+      setError(`创建失败：${result.domainCode ?? result.code}`);
+      return;
+    }
+    form.resetFields();
+    void message.success('便笺已保存');
+    await query.refetch();
+  } catch {
+    setError('请求未完成，请重新读取列表核对结果后再决定是否重试。');
+  } finally {
+    submitting.current = false;
+    setSaving(false);
+  }
+}
+```
+
+onFinish 接到该函数；loading 控制提交反馈，disabled 防止保存过程中输入被后来成功的 resetFields 清掉：
+
+<!-- cage:example note-form-view -->
+```tsx
+{canCreate && <Form form={form} layout="inline" onFinish={create}>
+  <Form.Item name="title" label="标题" rules={[{ required: true, whitespace: true, max: 120 }]}>
+    <Input maxLength={120} disabled={saving} />
+  </Form.Item>
+  <Button type="primary" htmlType="submit" loading={saving}>创建</Button>
+</Form>}
+```
+
+canCreate 使用 useCan('Note.create')。失败时上述路径没有 resetFields，用户可以保留内容处理原因；成功后重新读取服务端列表。表格和 URL 部分见[路由指南](routing.md)。
+
 列表和详情有独立 URL，app 从模块公开入口组合。跨模块导航由 app 协调；只有确实被多个模块复用的 UI 或纯工具才进入 shared。具体边界见[目录规范](../reference/project-structure.md)。
 
 ## 完成后检查

@@ -32,6 +32,25 @@ states 的 terminal 标记供检查和展示使用；哪些操作实际允许仍
 
 集合关系不使用 optional/unique/hidden/sensitive；文件也有自己的修饰限制。关系、文件不能嵌入 list，事件传递关联或文件时使用普通 ID 值。
 
+下面是可放入 aggregate.fields 的费用字段组合。完整 import 一并给出；金额约定人民币元、数量单位为件，输入命令仍要校验正数和非空明细：
+
+<!-- cage:example expense-fields -->
+```ts
+import { date, int, list, money, ref, text } from '@yss123/cage-kernel';
+
+/** 费用聚合的字段组合；可空日期表示尚未发生，明细是对象内部快照。 */
+export const expenseFields = {
+  title: text(120).describe('费用标题'),
+  amount: money().describe('含税金额，单位为人民币元'),
+  incurredOn: date().optional().describe('发生日期，尚未发生时为空'),
+  deptId: ref('Dept').describe('承担部门'),
+  createdBy: ref('User').describe('创建人'),
+  items: list({ sku: text(40), qty: int() }).describe('费用明细，数量单位为件'),
+};
+```
+
+对应普通业务值例如 amount: '128.50'、incurredOn: null、items: [{ sku: 'PAPER-A4', qty: 2 }]。money 的传输值是十进制字符串，不能据此省略业务计算和精度规则。
+
 ## 命令
 
 command(aggregate, options) 保存一次写入的规格，由 domain 导出后注册能力。显式 name 优先，否则使用顶层导出名；最终为 Aggregate.commandName。
@@ -64,11 +83,22 @@ deps 只包含 reads 声明的别名：
 
 这些内部快照供服务端计算使用，不能作为绕过公开读侧掩码的响应。跨对象读取本身不保证后续并发写安全。
 
+完整 reads、异步 handler、fail 和字段补丁的例子见[评论创建命令](../guides/relations.md#一对多外键属于子对象)，完整源码为[note-comments.ts](../examples/note/note-comments.ts)。其中输入只接收 noteId/body，部门通过 deps.notes.get 查到的父对象取得。
+
 ## 约束与不变量
 
 constraints 判断“这次操作是否允许”，例如 sod.notSameAs('createdBy') 或 stepUp。invariants 判断“最终对象是否合法”，在结果合并和目标状态确定后检查。任一失败都回滚命令事务。
 
 自定义 Constraint 使用公开类型与真实签名。输入校验、操作约束和最终不变量分别覆盖不同阶段，页面校验只能提供即时反馈。
+
+例如[便笺源码](../examples/note/note.ts)的最终不变量为：
+
+<!-- cage:example note-invariant -->
+```ts
+invariants: { titleNotBlank: (record) => record.title.trim().length > 0 },
+```
+
+它放在 aggregate 选项中，不放在 command.handler 里。职责分离的完整命令例子见[权限参考](authorization.md#把本次操作限制写进命令)。
 
 ## 事件与反应
 

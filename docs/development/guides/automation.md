@@ -10,6 +10,32 @@
 
 ## 调用另一个对象的命令
 
+先做一个小例子：“便笺归档与归档记录必须一起成功”。以[便笺课程](../getting-started/first-feature.md)为基础，将[归档记录完整文件](../examples/note/archive-log.ts)放到 modules/note/archive-log.ts 并导出。文件定义 NoteArchived、NoteArchiveLog 和 recordNoteArchive。
+
+在 note.ts 导入 kernel 的 emit 及同模块的 NoteArchived，为原有 archiveNote 增加 emits：
+
+<!-- cage:example note-archive-emits -->
+```ts
+emits: [emit(NoteArchived, record => ({
+  noteId: record.id,
+  title: record.title,
+  deptId: record.deptId,
+}))],
+```
+
+映射取归档后的字段快照。归档记录文件中的反应调用真实命令完成第二个对象的写入：
+
+<!-- cage:example log-note-archive -->
+```ts
+export const logNoteArchive = reaction(NoteArchived, {
+  command: recordNoteArchive,
+  tx: 'same',
+  map: (event) => ({ noteId: event.noteId, title: event.title, deptId: event.deptId }),
+});
+```
+
+成功时便笺为 archived，安全读取归档记录可找到相同 noteId；目标命令失败时两边都不提交。若业务允许稍后记录，可按需求改为 outbox，并通过 worker 终态验收。完整文件里的 recordNoteArchive 只接受 process 调用，不向浏览器生成写方法。
+
 采购批准与库存锁必须共同成功，因此反应使用 same：
 
 ```ts
@@ -31,6 +57,25 @@ export const lockOnApprove = reaction(OrderApproved, {
 
 job 声明 cron、reads、calls 和 run。run 获得 query、call、now，只读取显式依赖并调用已声明命令，例如找出过期草稿再逐条取消。任务成功、失败与重复执行都要能从命令和运行记录观察。
 
+假设本例的规则是“创建超过三十天且仍在使用中的便笺，每天最多归档 200 条”。将[任务完整文件](../examples/note/jobs.ts)放到同一领域模块并导出；archiveNote 的调用用途可明确写成 invokedBy: ['user', 'job']：
+
+<!-- cage:example archive-old-notes -->
+```ts
+export const archiveOldNotes = job('archiveOldNotes', {
+  description: '归档创建超过三十天的使用中便笺',
+  cron: '0 2 * * *',
+  reads: [Note],
+  calls: [archiveNote],
+  run: async ({ query, call, now }) => {
+    const cutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const records = await query.list(Note, { status: 'active', createdBefore: cutoff }, { limit: 200 });
+    for (const record of records) await call(archiveNote, { id: record.id });
+  },
+});
+```
+
+这里判断创建时间，不是最后编辑时间；时区沿调度环境解释。每次 call 独立提交，后续失败不会撤回之前的归档；候选在调用前已被其他人归档时，命令状态检查仍会拒绝。本例的批量上限不表示一次处理全量。
+
 所有声明从 domain 导出，API/worker 使用相同版本。默认 outbox、调度和连接器由 worker 执行；具体事务与停机边界见[执行参考](../reference/execution.md)。
 
 ## 与第三方系统交换
@@ -44,6 +89,38 @@ connector 定义允许的主机、密钥名称和操作；op 为每项操作声�
 | write | 无法安全重试；结果未知时隔离，等待核对 |
 
 出站用 outbound(event, operation, { map, idempotencyKey, onSuccess })。map 为纯函数，可返回 null；幂等键跨重投稳定，运行时带租户前缀。成功回写调用 external 命令，保留状态的迟到回执可用 to: null，但仍声明允许的 from。
+
+延续归档例子，将[连接器完整文件](../examples/note/archive-service.ts)放到 integrations/archive-service.ts 并从 domain 导出。它导入上面的 NoteArchived，并声明：
+
+<!-- cage:example archive-service -->
+```ts
+export const archiveService = connector('archive-service', {
+  hosts: { test: 'archive-sandbox.example.com', prod: 'archive.example.com' },
+  secret: 'ARCHIVE_API_TOKEN',
+  timeoutMs: 5000,
+  operations: {
+    save: op({
+      effect: 'retryableWrite',
+      method: 'POST',
+      path: '/api/notes',
+      request: z.object({ externalId: z.uuid(), title: z.string() }),
+      response: z.object({ receiptId: z.string() }),
+    }),
+  },
+});
+```
+
+主机是协议占位地址，需换成自己的实际服务；ARCHIVE_API_TOKEN 是密钥名称。只有对方确认相同幂等键会去重时，才使用 retryableWrite。事件到外部请求的接线为：
+
+<!-- cage:example send-note-archive -->
+```ts
+export const sendNoteArchive = outbound(NoteArchived, archiveService.operations.save, {
+  idempotencyKey: (event) => `note-archive-${event.noteId}`,
+  map: (event) => ({ externalId: event.noteId, title: event.title }),
+});
+```
+
+这里只发送 UUID 和标题，连接器保存实际回执；未声明 onSuccess，所以不另改业务字段。需要回填业务编号时，沿下面的采购范例使用 external 命令。
 
 入站用 inbound，将原始正文验签、schema 校验后的输入映射到领域命令。hmacSha256 默认检查 x-signature，接受 hex 或 sha256=hex；签名基于原始字节，不能重新序列化 JSON 后计算。
 

@@ -57,14 +57,34 @@ manual 指向用户可调用动作；automatic 需要真实触发路径；wait �
 
 单对象的简单生命周期通常无需额外包装。完整写法可读采购 workflows/purchase-process.ts，位置说明见[采购导读](../examples/purchase-example.md)。
 
+下面用便笺展示最小构造形状；只有确需独立流程阅读板块时才添加。将[完整文件](../examples/note/note-process.ts)放到 workflows/note-process.ts 并导出，其中 Note/createNote/archiveNote 来自领域模块公开入口：
+
+<!-- cage:example note-lifecycle -->
+```ts
+export const noteLifecycle = businessProcess('note-lifecycle', {
+  title: '便笺生命周期',
+  description: '说明便笺创建与人工归档的阅读主线',
+  area: { id: 'collaboration', title: '部门协作', description: '部门内资料协作与保留' },
+  subject: Note,
+  entry: 'create',
+  stages: {
+    create: { title: '创建便笺', description: '保存标题和归属', actor: '有创建能力的用户', action: createNote },
+    archive: { title: '归档保留', description: '保留历史并关闭编辑', kind: 'end', action: archiveNote },
+  },
+  transitions: [{ from: 'create', to: 'archive', mode: 'manual', label: '有权用户决定归档' }],
+});
+```
+
+这里 manual 说明用户触发，end 说明阅读主线结束；真正归档仍调用 archiveNote。把 mode 改成 automatic 不会替应用生成调度或事件反应。
+
 ## 先检查结构，再检查业务
 
 ```powershell
 pnpm exec cage check
 pnpm gen
-pnpm exec cage graph
-pnpm exec cage context "本次业务用语" --format json
 ```
+
+需要浏览声明模型时可运行 cage graph，需要梳理关联入口时可运行 cage context；两者按问题选用，局部实现可直接阅读源码。
 
 CAGE-ONTOLOGY-001 检查当前项目可定位的聚合、字段、状态、命令、事件、查询和任务是否有非空名称。依赖包无本地位置的节点不在同一覆盖范围内；字段和状态可能定位到所属聚合。
 

@@ -41,6 +41,21 @@
 
 实际工作用查到的模块、符号、签名和生成差异替换抽象位置。是否新增迁移由结构变化决定；是否能恢复、谁能恢复，属于另一个需要业务依据的动作。
 
+例如[便笺源码](../examples/note/note.ts)用下面的真实命令落实归档。它复用现有 Note，创建新能力 Note.archive；原 updateNote 仍限定 from: 'active'：
+
+<!-- cage:example recipe-archive-note -->
+```ts
+export const archiveNote = command(Note, {
+  name: 'archive',
+  description: '归档便笺',
+  from: 'active',
+  to: 'archived',
+  handler: (draft) => draft,
+});
+```
+
+页面再通过生成的 note.archive(record.id, record.version) 调用。能否归档由能力和范围判断，归档后的编辑由服务端 from 拒绝；表格四条规则因此分别落在状态、授权、命令和读取上。
+
 小改动用一两句话完成说明即可。新建业务还要讲清对象含义、关系方向和基数、状态以及动作后的结果。
 
 ## 复用已有实现

@@ -35,16 +35,16 @@
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/cli/src/verify.ts:48`
+- `packages/cli/src/verify.ts:64`
 
 实现片段（位置随框架版本更新）：
 
 ```ts
-  if (code !== 0) return code;
+  if (code !== 0) return { code };
   if (!existsSync(report)) throw new Error('[CAGE-TEST-001] 测试进程未输出结果报告，不能判定通过');
   const result = JSON.parse(readFileSync(report, 'utf8'));
-  if (result.numPendingTests) console.log(`覆盖提示：${result.numPendingTests} 个用例跳过，请结合业务测试验收。`);
-  return result.success ? 0 : 1;
+  const summary: TestSummary = {
+    total: result.numTotalTests,
 ```
 
 </details>

@@ -14,8 +14,8 @@ Node.js 24+。已有应用安装 pnpm add -D @yss123/cage-cli，新项目使用 
 
 | 任务 | 命令 |
 | --- | --- |
-| 找公开 API | capabilities 关键词 |
-| 找应用业务和关系 | context、graph search/inspect/path |
+| 核对安装版本的公开 API | capabilities 关键词，或直接阅读公开类型 |
+| 辅助定位声明与跨模块关系 | context、graph search/inspect/path；实现仍需读源码 |
 | 浏览模型 | graph |
 | 修改与产物 | check、gen、gen --check、migrate |
 | 比较变化 | snapshot save/list、impact |
@@ -23,7 +23,9 @@ Node.js 24+。已有应用安装 pnpm add -D @yss123/cage-cli，新项目使用 
 | 测试与门禁 | test、verify、budget |
 | 项目指引 | sync；升级先 upgrade --dry-run |
 
-doctor 区分 pass/fail/unknown，退出码 2 表示证据不完整；verify --skip-tests 也不算完整通过。诊断运行接口需要受权会话。
+查询与诊断按问题使用，无需在每次修改前后依次运行。gen 自带声明检查，verify 已包含声明与生成一致性等门禁，同一份代码无需重复跑相同检查。
+
+doctor 区分 pass/fail/unknown，退出码 2 表示诊断证据不完整。test/verify 的退出码 0 只说明未发现失败，仍需检查 skip/todo；verify 省略测试、存在跳过或无用例时 complete 为 false。工具通过不能代替业务与浏览器验收；诊断运行接口需要受权会话。
 
 ## 教材与分发
 
