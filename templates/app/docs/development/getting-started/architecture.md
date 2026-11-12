@@ -39,6 +39,15 @@ domain 导出
 
 写了文件但没有导出，后续各层就无法使用它。check 检查声明结构，gen 生成本地文件，migrate 更新数据库，API/worker 启动时加载实际注册表。这几个步骤分别产生证据。
 
+例如在 modules/note/index.ts 导出领域文件，再让根入口导出模块；只做第一行、遗漏第二层，仍没有完成注册链：
+
+```ts
+// modules/note/index.ts
+export * from './note.js';
+// domain/src/index.ts 中追加
+export * from './modules/note/index.js';
+```
+
 前端从 contracts 取得对象方法和 hooks，使用 client 处理网络、会话与结果。浏览器依赖契约和协议；领域 handler、数据库连接和运行时留在服务端。
 
 ## 一次写入怎样提交
@@ -56,25 +65,80 @@ handler 可以等待声明的只读依赖，不能自己提交 SQL、网络或�
 
 版本冲突与幂等解决不同问题：版本防止旧页面覆盖新记录；同次请求复用幂等键可以恢复已提交结果。独立的两次客户端调用默认有不同键。
 
+例如两张页面同时读到 version = 1，第一张改标题成功后记录变成 version = 2；第二张仍带 1 提交会冲突，handler 不会覆盖新标题：
+
+<!-- cage:check web architecture-write-version -->
+```ts
+export const updateLoadedNote = (record: Note, title: string) =>
+  note.update(record.id, { title }, record.version);
+```
+
 ## 读取怎样限制范围
 
 普通 list/get、关联分页和 query 通过只读账号读取 safe 视图。数据库会话携带当前主体的范围与敏感字段权限；hidden 字段不作为普通公开字段，sensitive 字段按权限掩码。
 
 归属声明告诉框架使用哪个部门或所有者字段；角色授权决定当前用户能看本人、本部门、下级部门或其他范围。按钮的 can() 只影响呈现，服务端每次操作仍要判断权限。完整规则见[权限与范围](../reference/authorization.md)。
 
+例如甲只有本部门 Note.read，列表与详情都通过同一安全读侧；同部门记录可见，其他部门记录无法读取。前端只发正常查询，不自行拼接“排除其他部门”的过滤：
+
+<!-- cage:check web architecture-safe-read -->
+```ts
+export const visibleNotes = () => note.list({ page: 1, pageSize: 20 });
+export const visibleNote = (id: string) => note.get(id);
+```
+
 ## 同事务与异步的选择
 
 批准申请时必须同时登记资源占用，就用 tx: 'same' 的反应调用资源命令。主命令或任一反应失败，整条事务回滚。
 
+例如归档必须同时留一条归档记录，反应明确用 same；记录命令失败，便笺仍保持原状态：
+
+<!-- cage:check domain architecture-same -->
+```ts
+export const archiveTogether = reaction(NoteArchived, {
+  command: recordNoteArchive, tx: 'same',
+  map: event => ({ noteId: event.noteId, title: event.title, deptId: event.deptId }),
+});
+```
+
 允许稍后完成的动作使用默认 outbox 反应。主命令先提交，worker 再消费事件；失败可能重试或进入死信。同一聚合的后续消息可能受前一条死信阻塞，因此业务页面需要区分“提交成功”和“后续完成”。
 
+同一记录动作若允许稍后完成，可选 outbox。此时主归档返回成功，不能立即宣称记录已经生成：
+
+<!-- cage:check domain architecture-outbox -->
+```ts
+export const archiveLater = reaction(NoteArchived, {
+  command: recordNoteArchive, tx: 'outbox',
+  map: event => ({ noteId: event.noteId, title: event.title, deptId: event.deptId }),
+});
+```
+
 第三方请求放到连接器。数据库无法回滚已经发生的远端写入，必须依据远端协议设计幂等、结果核对与补偿。acquires/releases 只是静态资源配对标签，真正取得与释放资源仍由命令完成。具体做法见[自动化指南](../guides/automation.md)。
+
+例如外部归档服务已保存文件，本地回填命令却失败：回滚本地事务不会删除外部记录，恢复应复用回执或按协议补偿。只在图中写 acquires: 'archive.slot' 也不会自动创建外部记录。
 
 ## 审批和 AI 怎样进入这条链
 
 审批决定哪个节点、哪些人负责处理；结论通过 process 命令落实。被选中不会获得额外权限，最终决定人仍需符合领域授权与约束。
 
+例如先选部门负责人，处理通过后由引擎调用 ReviewRequest.approve，而不是页面直接改 status：
+
+<!-- cage:check domain architecture-approval-step -->
+```ts
+export const departmentReview = step('部门负责人审批', approver.deptLeader('deptId'));
+```
+
 原生 AI 使用 ai() 启用持久运行时。助理从注册表发现授权工具，AI 审批使用现有 step 的 kind: 'ai'。模型负责提出工具计划或审核判断，服务端执行层负责授权、状态、版本、确认与回执。应用提供审核政策和界面，见[原生 AI](../guides/intelligence.md)。
+
+例如应用声明一个需要写入确认的助理，模型实际连接在 Admin 配置；它仍不能归档当前用户无权操作的便笺：
+
+<!-- cage:check domain architecture-ai -->
+```ts
+export const assistantRuntime = ai({
+  models: { main: managedModel('main') },
+  assistant: { model: 'main', confirmWrites: true },
+});
+```
 
 ## 数据库与进程的分工
 
@@ -87,6 +151,15 @@ handler 可以等待声明的只读依赖，不能自己提交 SQL、网络或�
 | worker | outbox、审批启动/取消、连接器、任务和运行时步进 |
 
 框架管理连接池和事务，应用提供已有数据库的连接。首次 init 准备账号，migrate 更新结构，bootstrap 初始化组织，dev 启动进程。接管历史表需要另外设计映射与迁移。
+
+例如同一条便笺，创建走 APP 事务，列表走 READ 安全视图，增加字段后的 DDL 走 MIGRATE；业务模块无需为三个账号自行 new 连接池。命令在应用根目录分阶段执行：
+
+```powershell
+pnpm gen
+# 审查新迁移后才执行结构更新
+pnpm migrate
+pnpm dev
+```
 
 图谱展示声明关系和源码依据；任意 handler 的正确性还需业务用例。审计与重试的具体保证见[执行边界](../reference/execution.md)。
 

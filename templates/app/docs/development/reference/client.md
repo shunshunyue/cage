@@ -18,7 +18,24 @@ await note.archive(id, version);
 
 list/related 返回 items、total、page、pageSize，total 是当前权限和筛选范围内数量。页码默认 1、每页默认 20，普通读取最多 200。status 可逗号分隔；sort 前缀 - 表示降序，默认 -createdAt，另按 id 保持稳定。
 
+例如 active 便笺第二页按创建时间倒序，分页直接交服务端；关联评论独立分页，不从普通 get 猜完整集合：
+
+<!-- cage:check web client-pagination -->
+```ts
+export const secondPage = () => note.list({ status: 'active', page: 2, pageSize: 20, sort: '-createdAt' });
+export const firstComments = (id: string) => note.related.comments(id, { page: 1, pageSize: 20 });
+```
+
 createdAfter 包含下界，createdBefore 不含上界。普通过滤是允许字段的等值条件；JSON、集合、隐藏和敏感字段不能任意作为普通过滤字段。非法布尔、日期、数值、页码或排序字段返回 INVALID_INPUT。当前使用 offset 和精确计数，大规模成本需要实际评测。
+
+例如查询 UTC 11 月创建的记录，起点包含、12 月 1 日零点不包含，避免相邻月份重复统计：
+
+<!-- cage:check web client-date-filter -->
+```ts
+export const novemberNotes = () => note.list({
+  createdAfter: '2026-11-01T00:00:00Z', createdBefore: '2026-12-01T00:00:00Z', pageSize: 20,
+});
+```
 
 ## 处理 CageResult
 
@@ -46,6 +63,16 @@ export async function renameNote(record: Note, title: string) {
 
 useCageQuery/useCageList 失败抛 CageQueryError。useCageCommand 成功返回业务数据，失败抛 CageCommandError，因此 mutation.isSuccess 表示业务成功；只有成功才触发所配置的查询失效。是否等待重新读取完成，由页面流程决定。
 
+例如包装生成的 update，mutateAsync 接收参数数组；下面只声明 hook，组件在用户提交时调用，不在渲染时执行写入：
+
+<!-- cage:check web client-command-hook -->
+```ts
+export function useRenameNote() {
+  return useCageCommand(note.update, [['note']]);
+}
+// 组件内：mutation.mutateAsync([record.id, { title }, record.version])
+```
+
 ## 版本、幂等与重试
 
 修改已有记录时传读取到的 version，防止旧页面覆盖新值。冲突后保留用户草稿，刷新当前记录并让用户确认下一步。
@@ -67,11 +94,41 @@ export function prepareNoteCreation(title: string) {
 
 网络失败不自动重放写入。仅明确 CSRF 拒绝时刷新令牌并沿用同一键重试一次。取消或超时结束的是客户端等待，服务端可能已经提交；重试前核对结果。内核幂等缓存有期限，长期业务去重需要业务标识或专门回执。
 
+例如读取可以绑定页面的 AbortSignal 和十秒等待时间；收到 TIMEOUT 后只能说等待结束，不能据此断言远端没有提交过某次写入：
+
+<!-- cage:check web client-cancellation -->
+```ts
+export const cancellableRead = (id: string, signal: AbortSignal) =>
+  note.get(id, { signal, timeoutMs: 10000 });
+```
+
 ## 会话与缓存
 
 CageClient 实例各自保存身份与能力。默认 client、loadMe、currentUser、can 和 hooks 使用约定实例；需要多实例时显式传入当前公开 API 支持的实例参数。
 
+例如启动时先恢复默认实例会话，读取结果后再展示登录区域；不要根据本地缓存里的 role 字符串假装已经登录：
+
+<!-- cage:check web client-session-load -->
+```ts
+export const restoreSession = () => loadMe();
+export const mayCreateNote = () => can('Note.create');
+```
+
 应用启动先恢复会话，再显示登录区域。通过 client.subscribe 处理 logout、401、account-switch 等事件，取消旧身份请求并清理应用的查询缓存。SDK 的 revision 防止迟到响应恢复旧身份，应用自己的业务缓存仍需清理。
+
+例如 QueryClientProvider 内建立一次监听，并由 useEffect 返回解绑函数。失效、退出或切换账号后清掉旧用户查询：
+
+<!-- cage:check web client-session-cache -->
+```ts
+export function useSessionCacheCleanup() {
+  const cache = useQueryClient();
+  useEffect(() => client.subscribe((_snapshot, reason) => {
+    if (reason === 'loaded') return;
+    void cache.cancelQueries();
+    cache.clear();
+  }), [cache]);
+}
+```
 
 ## 通用能力
 
@@ -82,6 +139,15 @@ CageClient 实例各自保存身份与能力。默认 client、loadMe、currentU
 | 附件 | beginUpload、upload、uploadSession、fileInfo 等，[文件指南](../guides/files.md) |
 | 随页助理 | client.ai、useAssistant、useAiPageContext，[原生 AI](../guides/intelligence.md) |
 
+例如同一默认 client 发起 CSV 导入，拿到任务 ID 后交给 useTransfer；它与生成的 note 方法共用当前会话：
+
+<!-- cage:check web client-transfer-call -->
+```ts
+export const importNoteTitles = (csv: string) => client.importCsv('Note.create', csv, { atomic: false });
+```
+
 前端 Zod 校验提供即时提示。可执行 refine、transform 等规则不能完整复制到契约，服务端仍决定是否接受；生成警告 CAGE-GEN-003 指出无法完整表达的位置。
+
+例如页面通过“非空”校验，服务器还有“标题不可使用保留名称”的业务规则，命令仍可能返回 DOMAIN_ERROR。应保留用户输入并显示 domainCode，而不是因为表单校验通过就显示成功。
 
 [页面与路由](../guides/routing.md) · [返回开发手册](../README.md)

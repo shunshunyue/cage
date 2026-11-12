@@ -28,6 +28,24 @@ for (const guide of globSync('**/*.md', { cwd: materials }).sort()) {
   }
 }
 const checked = new Set<string>();
+/** 新增短片段在明确的领域、Web 或测试上下文中逐个编译；共享 import 只提供教材已有真实符号。 */
+const snippets: {
+  /** 全册唯一的片段 ID，同时用于隔离验证文件命名。 */
+  id: string;
+  /** 由匹配规则限定的 domain/web/test 上下文，决定可用依赖及包内位置。 */
+  scope: string;
+  /** ts 或 tsx，保留原片段是否需要 JSX 编译。 */
+  language: string;
+  /** 作者手写的正文代码，只用于编译验证，不反向生成教材。 */
+  code: string;
+}[] = [];
+for (const guide of globSync('**/*.md', { cwd: materials }).sort()) {
+  const text = readFileSync(join(materials, guide), 'utf8');
+  for (const match of text.matchAll(/<!-- cage:check (domain|web|test) ([a-z0-9-]+) -->\r?\n```(ts|tsx)\r?\n([\s\S]*?)```/g)) {
+    if (snippets.some(snippet => snippet.id === match[2])) throw new Error(`短示例标记重复：${match[2]}`);
+    snippets.push({ scope: match[1], id: match[2], language: match[3], code: match[4] });
+  }
+}
 
 /** 取得指定教材代码并登记覆盖，路径和 ID 必须同时匹配，防止移动段落后悄悄检验其他例子。 */
 function example(guide: string, id: string): string {
@@ -59,9 +77,7 @@ try {
     );
   }
   const domainFile = 'packages/domain/src/modules/note/note.ts';
-  const fileGuide = readFileSync(join(repository, 'docs/development/guides/files.md'), 'utf8');
-  const fileExamples = [...fileGuide.matchAll(/```ts\r?\n([\s\S]*?)```/g)].map(match => match[1]);
-  if (fileExamples.length !== 3) throw new Error('附件指南应提供字段、上传和命令绑定三个片段');
+  const fileExamples = ['files-field', 'files-upload', 'files-bind'].map(id => example('guides/files.md', id));
   // 用教程规定的附件扩展更新临时 Note，强制实际契约接受文件 ID；正式便笺源码保持最小业务。
   const noteSource = readFileSync(join(course, 'note.ts'), 'utf8')
     .replace('aggregate, command, ref', 'aggregate, command, emit, files, hasMany, manyToMany, ref')
@@ -87,10 +103,8 @@ try {
   const approvalCourse = join(repository, 'docs/development/examples/approval');
   put('packages/domain/src/modules/review-request/review-request.ts', readFileSync(join(approvalCourse, 'review-request.ts'), 'utf8'));
   put('packages/domain/src/modules/review-request/index.ts', "export * from './review-request.js';\n");
-  const intelligenceGuide = readFileSync(join(repository, 'docs/development/guides/intelligence.md'), 'utf8');
-  const intelligenceExample = intelligenceGuide.match(/```ts\r?\n([\s\S]*?)```/)?.[1];
-  const assistantExample = intelligenceGuide.match(/```tsx\r?\n([\s\S]*?)```/)?.[1];
-  if (!intelligenceExample || !assistantExample) throw new Error('AI 指南缺少后端声明或页面上下文示例');
+  const intelligenceExample = example('guides/intelligence.md', 'ai-runtime');
+  const assistantExample = example('guides/intelligence.md', 'ai-page-context');
   put('packages/domain/src/integrations/intelligence.ts', intelligenceExample);
   put(
     'packages/domain/src/index.ts',
@@ -129,9 +143,35 @@ try {
     ['guides/transfers.md', 'transfer-result', 'apps/web/src/modules/note/transfer-result.tsx'],
   ];
   for (const [guide, id, target] of completeExamples) put(target, example(guide, id) + '\n');
+  const domainImports = [
+    "import { aggregate, command, fail, states, scope, text, int, number, money, id, ref, date, datetime, bool, enumOf, list, json, hasMany, manyToMany, file, files, event, emit, reaction, reactionEach, query, approval, job, unsafe, sod, stepUp, ok, violation, type Constraint, type SnapshotOf, type ReadRepo } from '@yss123/cage-kernel';",
+    "import { approver, route, step, when, gt, gte, lt, lte, eq, ne, isIn, parallel, branch, approvalOperations } from '@yss123/cage-approval';",
+    "import { connector, op, outbound, inbound, hmacSha256, fakeConnector } from '@yss123/cage-connectors';",
+    "import { ai, managedModel, chatModel, responsesModel } from '@yss123/cage-ai';",
+    "import { z } from 'zod';",
+    "import { Note, createNote, updateNote, archiveNote, NoteArchived, NoteArchiveLog, recordNoteArchive } from '../src/modules/note/index.js';",
+    "import { ReviewRequest, ReviewRequestSubmitted, ReviewRequestWithdrawn, approveReviewRequest, rejectReviewRequest } from '../src/modules/review-request/index.js';",
+    "import { archiveService } from '../src/integrations/archive-service.js';",
+  ].join('\n');
+  const webImports = [
+    "import { client, can, loadMe, useCan, useCageCommand, useTransfer, useAssistant, useAiPageContext, AiPageContext, type ApprovalTask, type ApprovalRequest, type AiEvent, type FileUploadTask, type UploadSession } from '@yss123/cage-client';",
+    "import { note, noteComment, reviewRequest, queries, useNote, useNoteList, type Note } from '@app/contracts';",
+    "import { useEffect, useRef, useState } from 'react';",
+    "import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';",
+    "import { useQueryClient } from '@tanstack/react-query';",
+    "import { loginReturnTo } from '../src/shared/lib/navigation';",
+    "import { Alert, App, Button, Descriptions, Empty, Form, Input, Select, Skeleton, Space, Table, Tag } from 'antd';",
+  ].join('\n');
+  const testImports = domainImports + "\nimport { expect, it } from 'vitest';\nimport { createTestEnv, draftOf, fakeRepo, handlerCtx, type TestEnv } from '@yss123/cage-testkit';\n";
+  // 声明替代写法只验证类型，不注册第二份同名声明；真实组合仍由上面的完整课程通过 analyze/gen。
+  for (const snippet of snippets) {
+    const isWeb = snippet.scope === 'web';
+    const target = isWeb ? 'apps/web/guide-checks' : 'packages/domain/guide-checks';
+    const imports = isWeb ? webImports : snippet.scope === 'test' ? testImports : domainImports;
+    put(`${target}/${snippet.id}.${snippet.language === 'tsx' ? 'tsx' : 'ts'}`, imports + '\n' + snippet.code);
+  }
   // AI 审核步骤属于既有 route 中的局部例子；验证其真实重载，不把缺少业务绑定的片段冒充完整流程。
-  const aiStep = [...intelligenceGuide.matchAll(/```ts\r?\n([\s\S]*?)```/g)][1]?.[1];
-  if (!aiStep) throw new Error('AI 指南缺少材料预审步骤');
+  const aiStep = example('guides/intelligence.md', 'ai-review-step');
   put('packages/domain/guide-checks/ai-step.ts',
     "import { approver, step } from '@yss123/cage-approval';\nexport const materialReview = " + aiStep);
 
@@ -160,6 +200,23 @@ try {
     const actual = readFileSync(join(materials, 'examples', source), 'utf8');
     if (!comparable(actual).includes(comparable(example(guide, id))))
       throw new Error(`正文代码与教学源码不一致：${guide} / ${id}`);
+  }
+  // 采购导读展示当前范例原文，单独核对来源，防止维护课程时把真实路径或业务边界改成自造写法。
+  const purchaseExcerpts: [string, string][] = [
+    ['purchase-domain-exports', 'index.ts'],
+    ['purchase-invariants', 'modules/purchase/purchase-order.ts'],
+    ['purchase-submit', 'modules/purchase/purchase-order.ts'],
+    ['purchase-conditional-review', 'modules/purchase/approvals.ts'],
+    ['purchase-lock-reaction', 'workflows/purchase-inventory.ts'],
+    ['purchase-release-reaction', 'workflows/purchase-inventory.ts'],
+    ['purchase-erp-outbound', 'integrations/erp.ts'],
+    ['purchase-erp-receipt-options', 'modules/purchase/purchase-order.ts'],
+    ['purchase-erp-inbound', 'integrations/erp.ts'],
+  ];
+  for (const [id, source] of purchaseExcerpts) {
+    const actual = readFileSync(join(repository, 'examples/purchase-admin/packages/domain/src', source), 'utf8');
+    if (!comparable(actual).includes(comparable(example('examples/purchase-example.md', id))))
+      throw new Error(`采购正文与实际源码不一致：${id}`);
   }
   const unchecked = [...examples.keys()].filter(id => !checked.has(id));
   if (unchecked.length) throw new Error(`教学示例尚未接入验证：${unchecked.join('、')}`);
@@ -203,7 +260,7 @@ try {
           types: [],
           paths: { '@app/contracts': ['./packages/contracts/src/index.ts'] },
         },
-        include: ['packages/domain/src', 'packages/domain/guide-checks', 'packages/contracts/src', 'apps/web/src'],
+        include: ['packages/domain/src', 'packages/domain/guide-checks', 'packages/contracts/src', 'apps/web/src', 'apps/web/guide-checks'],
       },
       null,
       2,
@@ -224,7 +281,7 @@ try {
   execFileSync(process.execPath, [join(repository, 'node_modules/vitest/vitest.mjs'), 'run', '--config', join(application, 'vitest.lesson.config.mts')],
     { cwd: application, stdio: 'inherit', windowsHide: true });
   console.log(
-    `教学验证通过：${checked.size} 段正文示例、便笺/关系/自动化/审批/附件/AI、真实契约与页面、生成一致性及评论 handler 测试；未连接数据库、外部服务、模型或浏览器。`,
+    `教学验证通过：${checked.size} 段组合/摘录与 ${snippets.length} 段逐项短例、真实契约与页面、生成一致性及评论 handler 测试；未连接数据库、外部服务、模型或浏览器。`,
   );
 } finally {
   // 只清理本次 mkdtemp 创建的确定目录；junction 删除仅解除链接，不清理被复用的范例依赖。

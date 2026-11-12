@@ -8,7 +8,7 @@
 
 目录与依赖遵守[工程组织规范](../../docs/development/reference/project-structure.md)：业务在 modules 内集中，前端 app 负责组合，跨领域模块反应在 workflows，第三方在 integrations。不要把业务重新平铺到 src 根目录。
 
-<!-- cage:begin v0.4.0 -->
+<!-- cage:begin v0.4.1 -->
 ## Cage 开发约定（框架托管）
 
 本项目通过 @yss123/cage-* 使用框架。真实业务入口、环境及客户规则以本文托管区外说明为准；本区由 cage sync 更新。

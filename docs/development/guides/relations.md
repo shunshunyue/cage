@@ -15,6 +15,15 @@
 
 至多一对一不要求目标一定被引用，也不自动创建目标。集合关系不用 optional/unique/hidden/sensitive；无成员为 []，名称可用 describe 或 options.description。
 
+例如“一个用户至多担任一条记录的专属责任人”写成唯一引用；用户是否有对应记录仍需另查，引用不会反向自动创建：
+
+<!-- cage:check domain relation-unique-reference -->
+```ts
+export const exclusiveOwner = ref('User').unique().describe('专属责任人');
+```
+
+若关系自己还有有效期和岗位，便是独立的任职对象；例如任职记录有 userId、noteId、role、validUntil，而不是往 manyToMany 的 UUID 数组里夹任职详情。
+
 ## 一对多：外键属于子对象
 
 以[便笺课程](../getting-started/first-feature.md)为基础，在 note.ts 的 kernel import 中补 hasMany、manyToMany，再向 Note.fields 追加：
@@ -73,9 +82,25 @@ export const setNoteMembers = command(Note, {
 
 这里 input 必须是业务期望的完整目标集合，[] 表示全部解绑。增量追加可使用草稿中的完整集合拼接新增 ID，让框架去重。不能把当前关联分页结果直接当作全量集合提交，否则会丢失未加载的关联。
 
+例如“新增一个成员”应基于命令草稿里的完整集合，并继续保留最多 50 人的规则：
+
+<!-- cage:check domain relation-add-member -->
+```ts
+export const addMember = command(Note, {
+  name: 'addMember', description: '新增便笺成员并保留原集合', from: 'active', to: null,
+  input: z.object({ id: z.uuid(), userId: z.uuid() }),
+  handler: (draft, input) => {
+    const members = [...new Set([...draft.members, input.userId])];
+    return members.length > 50 ? fail('MEMBERS_LIMIT', '最多 50 位成员') : { members };
+  },
+});
+```
+
 新增目标需要调用者具备目标 read 且目标在范围内；源对象命令仍检查自身能力、状态和版本。关联变更与源对象共同事务提交、增加版本并审计，不授予修改目标内容的能力。
 
 双向各声明一个 manyToMany 是两个独立集合，不会自动互为镜像。需要统一关系时，明确由哪一侧维护。
+
+例如 Note.members 链接甲，并不自动让另一个 User.notes 集合也包含这条便笺。关系只有一份事实时，应统一维护来源侧，而不是期待两套中间表互相同步。
 
 ## 单独分页读取关联
 
@@ -104,6 +129,8 @@ export const replaceNoteMembers = (record: Note, desiredIds: string[]) =>
 
 公开关联同时要求源和目标 read，并通过两侧安全视图落实范围和目标掩码。响应 total 只统计当前可见结果，可能少于真实链接总数；普通源详情也不能推断已加载全体成员。
 
+例如便笺实际有 50 位成员，当前用户只可读取其中 5 位，关联 total 可以是 5。拿这 5 位去调用完整替换，会删除其余链接；读取结果不是完整编辑清单。
+
 关联分页、筛选和排序沿用目标字段规则。源对象已删除或不可见时，关联也不能借此绕过源授权。
 
 ## 生成和验收
@@ -111,5 +138,7 @@ export const replaceNoteMembers = (record: Note, desiredIds: string[]) =>
 从 domain 入口导出相关聚合及命令，运行 check/gen。审查 ref 外键、唯一索引、自动中间表与迁移草稿，执行新迁移后再用真实账号测试。
 
 覆盖新增、解绑、空集合、重复 ID、目标越权、源越权、版本冲突和分页不覆盖完整集合。删除或更改已部署关系通过新迁移处理，历史迁移保留。
+
+例如先设 [甲, 乙]，再设 [乙, 乙]，最终应只有乙；传 [] 后关联为空。另一次用旧 version 替换应冲突，新增不可读取的用户应被拒绝，而不是悄悄丢掉该 ID。
 
 [原语参考](../reference/primitives.md) · [返回开发手册](../README.md)

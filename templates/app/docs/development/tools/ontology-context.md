@@ -25,6 +25,13 @@ search 返回候选，inspect 查看指定节点和直接关联，path 在深度
 
 中文按名称和相邻词匹配，没有模型或向量服务。未命中时缩短关键词、换标识或分页查看；同义词、否定和复杂业务含义还需阅读源码。候选测试只是定位线索，名字相关不证明覆盖了本次行为。
 
+例如“归档以后应该释放什么”未命中，不说明项目没有释放逻辑；先尝试机器名或具体声明，再沿源码跟读：
+
+```powershell
+pnpm exec cage graph search archive --kind command
+pnpm exec cage context command:Note.archive
+```
+
 路径中有 reads、所属对象或文本匹配，不表示一定会执行后续动作。真实自动化要沿 emits、reaction、审批结论或连接器回写确认，map 也可能跳过。
 
 例如 graph path 的 JSON 返回以下节选时，只能说明深度 6 内没找到符合方向的路径。应检查端点、方向、深度和源码，不能据此断言两个业务绝无关系：
@@ -69,5 +76,15 @@ context/search/inspect/path 只查询，不更新当前图或命名基线；anal
 ## 图谱准确的前提
 
 对象、字段、状态和动作需要结构化名称；阅读流程需要引用真实声明。写法见[本体建模](../guides/ontology-modeling.md)。图规则验证可识别结构，任意 handler、条件映射和实际授权还需业务用例。
+
+例如写了 JSDoc 的 title 字段仍需 describe 才进入字段名称；状态名称则写进 labels，不能只在页面上翻译：
+
+<!-- cage:check domain ontology-names -->
+```ts
+export const titleForGraph = text(120).describe('便笺标题');
+export const statesForGraph = states('active', 'archived', {
+  terminal: ['archived'], labels: { active: '使用中', archived: '已归档' },
+});
+```
 
 [返回开发手册](../README.md)

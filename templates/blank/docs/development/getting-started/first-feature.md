@@ -81,6 +81,17 @@ pnpm gen
 
 声明 scope.deptSubtree 并不会自动授予部门及下级范围；角色的实际授权才决定可见性。验证普通账号，才能观察是否符合本课的部门规则。完整语义见[权限参考](../reference/authorization.md)。
 
+例如部门 A 的编辑者配置以下能力与范围；同部门只读账号仅授 Note.read，部门 B 的账号即使有 Note.read 也只匹配 B 的数据：
+
+```json
+{
+  "capabilities": ["Note.read", "Note.create", "Note.update", "Note.archive"],
+  "scopes": { "Note": "dept" }
+}
+```
+
+这是所需授权的业务表示，不是直接提交给某个接口的角色请求体；在 Admin 按上述含义配置真实角色。
+
 ## 4. 让列表和详情消费契约
 
 将两个教学页面放入 apps/web/src/modules/note/pages，再从模块 index.ts 导出：
@@ -125,6 +136,8 @@ Route、RequireCapability 和页面组件从当前应用真实入口导入。菜
 | 提交失败 | 保留输入并显示可处理的原因 |
 
 再运行相关类型检查、构建和生成一致性检查。教程编译检查不连接数据库；没有完成实际账号和浏览器操作时，明确列为未执行。
+
+例如先创建“季度复盘”，复制详情 URL 到另一标签页；两页分别改名，第一张成功、第二张得到 CONFLICT。然后归档，再直接请求修改，应该被状态拒绝。整个过程中刷新仍能读取同一 id，不能靠页面本地数组伪装保存。
 
 现在已经走通“声明 → 导出 → 生成 → 迁移与授权 → 契约 → 页面 → 独立读取”。真实业务替换对象与规则，并按需要加入[关系](../guides/relations.md)、[审批](../guides/approvals.md)或[事件联动](../guides/automation.md)。
 

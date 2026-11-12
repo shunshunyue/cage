@@ -10,6 +10,14 @@ Cage 的本体由已注册声明抽取。字段、状态、对象关系与触发
 
 例如评论属于便笺：noteId 应在评论上声明 ref('Note')，便笺 hasMany 反查。评论部门是否跟随便笺、归档后能否评论，要由评论命令读取和检查；外键本身不继承这些规则。
 
+对应字段写法如下；这说明引用方向，并没有替业务实现“部门自动随父对象变化”：
+
+<!-- cage:check domain modeling-reference-direction -->
+```ts
+export const commentReference = ref('Note').describe('所属便笺'); // NoteComment.fields.noteId
+export const commentCollection = hasMany('NoteComment', { mappedBy: 'noteId' }).describe('便笺评论');
+```
+
 ## 名称写在哪里
 
 | 内容 | 框架识别的位置 |
@@ -48,6 +56,13 @@ graph.labels 可用 state:Note.archived、field:Note.deptId、command:Note.archi
 | 文本或名称匹配 | 候选线索，需要阅读源码确认 |
 
 从一个状态能进入下一个状态，不代表系统会自动推进；读了库存，也不代表会扣库存。重要联动需要找到真实执行链和事务选择，再用业务结果验证。
+
+例如下面两种关系只能支持不同结论，不能互换：
+
+```text
+approve --reads--> Inventory：批准时可读取库存，不证明会扣减
+approve --emits--> OrderApproved --reaction--> acquireLock：声明了后续命令，仍检查 map 与事务
+```
 
 ## 解释完整业务主线
 

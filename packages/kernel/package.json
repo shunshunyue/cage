@@ -1,6 +1,6 @@
 {
   "name": "@yss123/cage-kernel",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "笼子内核：声明原语、写入流水线、范围组合子、读侧、worker 运行时",
   "type": "module",
   "main": "dist/index.js",

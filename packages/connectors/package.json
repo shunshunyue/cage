@@ -1,6 +1,6 @@
 {
   "name": "@yss123/cage-connectors",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "第三方连接器原语与运行时",
   "type": "module",
   "main": "dist/index.js",

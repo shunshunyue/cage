@@ -71,17 +71,38 @@ Web module 不依赖其他前端模块或 app，Web 不导入 domain/数据库/�
 
 共享目录不能成为规避模块边界的容器。某个任务要组合两边时，由 workflows 或 app 承担组合职责。
 
+例如跨领域归档联动从业务模块公开入口取得声明；Web 页面则从契约取方法，两者的依赖入口不同：
+
+```ts
+// domain/src/workflows/note-process.ts
+import { Note, createNote, archiveNote } from '../modules/note/index.js';
+// web/src/modules/note 的页面或专用 hook
+import { note, useNoteList } from '@app/contracts';
+```
+
+审批页需要打开便笺详情时，由 app 提供 URL 映射，例如把 { aggregate: 'Note', businessKey: id } 映射到 /notes/id；审批模块不用导入便笺内部页面文件。
+
 ## 生成物和资料
 
 contracts 按聚合生成，根 @app/contracts 是稳定公开入口；手写业务不穿透其内部目录。迁移和契约需要审查，生成变更通过 gen 更新；有生成签名的陈旧契约由生成器清理，手写文件保留。
 
 空白模板真实领域只有组织基础，采购参考在 docs/examples/purchase-admin，未参与注册和编译。采购模板直接包含业务源码。教材命令默认相对真实应用根目录。
 
+例如修改标题长度时，来源是 packages/domain/src/modules/note/note.ts；运行 gen 后审查 contracts 和新迁移。即使生成的 titleSchema 看起来容易修改，也应回到来源调整，保留已执行的 0001_init.sql。
+
 ## 门禁与整理
 
 模板使用 structure: 'modular'。CAGE-STRUCT-001 检查 src 根入口布局，CAGE-STRUCT-002 检查模块依赖和公开入口；相对路径、别名和转导出参与解析。类型声明及相邻测试按规则豁免。
 
 整理已有项目先移动文件、改导入、保留公开 API，再运行类型、check、gen 和生成一致性。目录移动一般不改变结构；意外出现迁移时核对原因。CLI 升级不自动搬动客户源码，保持门禁有效。
+
+例如把平铺的 note.ts 移入 modules/note/note.ts，同时新增模块 index 并改根导出；对象名 Note 和命令 name 不变时，不应借整理目录意外把数据库表改名。检查路径使用真实项目脚本：
+
+```powershell
+pnpm exec cage check
+pnpm gen
+pnpm exec cage gen --check
+```
 
 所有手写源码同步遵守[中文注释规范](commenting.md)，脚本使用 TypeScript。目录表明归属，注释负责解释职责、流程与实际保证。
 

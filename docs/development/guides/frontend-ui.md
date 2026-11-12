@@ -15,9 +15,31 @@ Cage Web 使用 React、React Router 和 Ant Design。页面围绕用户动作�
 
 默认控件来自 antd 和 @ant-design/icons。聊天气泡与推理步骤确有需要时可评估 Ant Design X；模板未预装。界面由实际业务组合，不需要引入页面描述语言或固定 CRUD 渲染体系。
 
+例如字段查看使用 Descriptions，状态用 Tag，避免让读者从一组没有标签的字符串猜业务含义。这里 record 来自真实生成契约：
+
+<!-- cage:check web frontend-detail-components -->
+```tsx
+export function NoteSummary({ record }: { record: Note }) {
+  return <Descriptions title="便笺信息" items={[
+    { key: 'title', label: '标题', children: record.title },
+    { key: 'status', label: '状态', children: <Tag>{record.status === 'active' ? '使用中' : '已归档'}</Tag> },
+  ]} />;
+}
+```
+
 ## 沿用应用上下文
 
 Web 入口已经组合 ConfigProvider、中文 locale、主题 token 和 Ant Design App。组件内通过 App.useApp() 使用 message、notification、modal，继承当前上下文。
+
+例如组件显示输入提示，使用当前 App 的 message，不自行另起一个没有主题与语言上下文的消息实例：
+
+<!-- cage:check web frontend-app-context -->
+```tsx
+export function InputHint() {
+  const { message } = App.useApp();
+  return <Button onClick={() => void message.info('请核对标题后再保存')}>填写说明</Button>;
+}
+```
 
 样式优先使用组件 props 和主题 token。业务 CSS 就近维护，避免把旧原生 button 的全局类直接赋给 Ant Design 控件。图标用清楚的操作文字补充，布局在窄屏仍可操作。
 
@@ -26,6 +48,20 @@ Web 入口已经组合 ConfigProvider、中文 locale、主题 token 和 Ant Des
 开始前读取真实模块、路由和契约类型。表单保存草稿，提交调用对应生成命令；检查业务成功后再清空、关闭或刷新查询，失败保留输入并显示可处理原因。
 
 每页处理加载、空结果、失败、权限与提交中状态。未知数据不能默认显示为零或成功。表格使用稳定 rowKey，分页和筛选同步 URL 与服务端；表单校验用于即时反馈，服务端 schema 与规则决定最终写入。
+
+例如列表明确区分加载、失败和真正空结果，不把 query.data 缺省当作零条：
+
+<!-- cage:check web frontend-query-states -->
+```tsx
+export function NoteRows() {
+  const query = useNoteList();
+  if (query.isPending) return <Skeleton active />;
+  if (query.isError) return <Alert type="error" title="便笺读取失败" />;
+  if (query.data.items.length === 0) return <Empty description="当前范围没有便笺" />;
+  return <Table<Note> rowKey="id" dataSource={query.data.items} pagination={false}
+    columns={[{ title: '标题', dataIndex: 'title' }]} />;
+}
+```
 
 ## 一个表单怎样接到真实保存
 
@@ -77,5 +113,7 @@ canCreate 使用 useCan('Note.create')。失败时上述路径没有 resetFields
 ## 完成后检查
 
 用浏览器完成成功与失败操作，确认输入保留、版本冲突、查询刷新和账号切换清理。再按[路由指南](routing.md)检查深链接与部署；展示的数据、权限和流程状态都要有服务端来源。
+
+例如填“季度复盘”后服务端拒绝创建，表单仍保留该标题；修正原因后成功保存，刷新可读取真实记录。切换到没有该记录范围的账号，再打开相同 URL 应显示不可读取，不残留旧账号内容。
 
 [返回开发手册](../README.md)

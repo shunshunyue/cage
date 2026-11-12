@@ -1,6 +1,6 @@
 {
   "name": "@yss123/cage-cli",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "cage 命令行：init、gen、check、graph、context、impact、test、verify、budget、sync、upgrade、dev、migrate",
   "type": "module",
   "bin": {

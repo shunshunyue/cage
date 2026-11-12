@@ -1,6 +1,6 @@
 {
   "name": "@yss123/cage-files",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Cage 私有文件与可恢复分片上传：本地存储及对象存储适配接口",
   "type": "module",
   "main": "dist/index.js",

@@ -1,6 +1,6 @@
 /**
  * 验证关联原语、关系本体和生成 SDK 的一致性。
- * 覆盖反向外键、自动中间表冲突、四种基数及影响传播，并用真实 TypeScript 程序检查生成契约与 hooks。
+ * 覆盖反向外键、自动中间表冲突、四种基数及影响传播，并用真实 TypeScript 程序检查生成契约、hooks 和教材唯一引用短例。
  * 生成产物写入测试临时目录；本套件不迁移业务数据库。
  */
 // 关系声明、生成契约和图谱的定向回归；数据库行为由 testkit 的真实 PG 用例覆盖。
@@ -116,9 +116,16 @@ draft.children = ['id'];
 `,
   );
   const root = fileURLToPath(new URL('../../../', import.meta.url));
-  // 教材中的完整业务文件也参与编译，避免分发给 AI 的示例只在文字上成立。
+  // 按教材标记选取唯一引用短例，并补齐其公共导入；文档首个代码块不再约定是完整业务文件。
+  // 组合领域、真实生成契约及其页面由 docs:examples 独立验证，此处保留关系 SDK 的定向编译回归。
   const guide = readFileSync(join(root, 'docs/development/guides/relations.md'), 'utf8');
-  writeFileSync(join(temporary, 'guide-domain.ts'), guide.match(/```ts\n([\s\S]*?)\n```/)![1]);
+  const uniqueReference = guide.match(
+    /<!-- cage:check domain relation-unique-reference -->\s*```ts\r?\n([\s\S]*?)\r?\n```/,
+  )![1];
+  writeFileSync(
+    join(temporary, 'guide-domain.ts'),
+    `import { ref } from '@yss123/cage-kernel';\n${uniqueReference}\n`,
+  );
   const program = ts.createProgram(
     [
       ...Object.keys(generated).map((name) => join(temporary, name)),

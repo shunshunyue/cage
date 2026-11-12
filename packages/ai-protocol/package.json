@@ -1,6 +1,6 @@
 {
   "name": "@yss123/cage-ai-protocol",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "type": "module",
   "description": "Cage AI 的浏览器安全协议与输入校验",
   "main": "dist/index.js",

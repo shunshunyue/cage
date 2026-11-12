@@ -15,13 +15,39 @@
 
 前端 can/useCan 用于显示；直接发请求仍经过服务端检查。process 不是角色，审批人被选中后也仍需要相应业务能力与范围。
 
+例如按钮只看当前显示能力，但提交仍走真正的归档请求；绕过按钮发相同请求也会执行服务端权限检查：
+
+<!-- cage:check web authorization-button -->
+```tsx
+export function ArchiveButton({ record }: { record: Note }) {
+  const allowed = useCan('Note.archive');
+  if (!allowed) return null;
+  return <button onClick={() => void note.archive(record.id, record.version)}>归档</button>;
+}
+```
+
+这段只演示能力显示，正式页面还需按客户端章节检查返回结果和提交状态。
+
 ## 声明归属
 
 聚合的 scope 提供 deptField 和 ownerField 元数据，角色数据选择实际组合子。可用 scope.self、dept、deptSubtree、deptSet 或 scope.of({ dept, owner }) 表达字段位置；hint 只是声明建议。
 
+例如各声明分别表达字段位置；第三行即使建议下级部门，角色仍可以实际只授本部门：
+
+<!-- cage:check domain authorization-scope-metadata -->
+```ts
+export const ownerScope = scope.self('createdBy');
+export const departmentScope = scope.dept('deptId');
+export const subtreeScope = scope.deptSubtree('deptId');
+export const selectedDepartments = scope.deptSet('deptId');
+export const customOwnerScope = scope.of({ dept: 'deptId', owner: 'ownerId' });
+```
+
 聚合存在 createdBy 时自动识别为 ownerField；自定义所有者字段可通过 scope 指定。内核新建时以 actorUserId 设置所有者，后续命令不能改写。部门字段缺省取当前主体部门；显式输入和最终结果仍需满足创建范围。
 
 scope.none() 没有提供部门元数据，也不关闭聚合对 createdBy 的自动识别。没有可用归属字段时，self 或 dept 等范围无法匹配记录；有相应 all 授权才能访问。scope.all() 同样只是元数据，不能自行授予全部可见。
+
+例如字段里仍有 createdBy = 甲，即使 scope.none()，self 仍可按甲匹配；若对象既没有所有者又没有部门，给角色 self 并不会因此得到全部记录。
 
 公司、项目、团队等自定义字段并不会自动加入部门树范围算法。确认业务需要的隔离模型，再核对当前公开能力。
 
@@ -64,6 +90,19 @@ invokedBy 限定调用入口，sod 检查本次真人与创建人不同；审批
 
 self 比较当前用户或受托真人与 ownerField。dept 比较部门，deptSubtree 使用真实部门祖先路径，deptSet 使用授权部门集合；外层始终隔离租户。
 
+例如对一条属于部门 A、创建人为甲的便笺，下面每个结果对应一种范围选择：
+
+| 授权例子 | 能否匹配这条便笺 |
+| --- | --- |
+| 甲的 self | 能 |
+| 同部门乙的 self | 不能，只是同部门还不够 |
+| 同部门乙的 dept | 能 |
+| A 上级部门的 deptSubtree | 能，前提是真实部门树包含 A |
+| 其他部门的 deptSet，集合含 A | 能 |
+| 另一租户的 all | 不能跨租户 |
+
+多角色合并也按实际选择。例如一个角色授 self、另一个授本部门，用户可以读取本人和本部门的并集；显式 Note 范围不会被通配范围无条件替换。
+
 首次 bootstrap 创建的超级管理员使用受控 * 标记，按当前目录展开能力与本租户全部范围。普通管理员不能创建该标记或接管超级管理员角色。既有显式授权角色不会因升级自动获得此标记；普通生产角色也不会自动得到新增命令。
 
 前端切换门户或本地 role 变量不改变服务端身份。公开 SessionUser 只有约定字段，不能用类型断言假造角色列表。
@@ -87,11 +126,24 @@ export const protectedFields = {
 
 handler 的 reads 返回内部快照，用于业务判断；它与浏览器安全 DTO 不同。审批变量去除隐藏字段并掩码，具有明文能力也要经正式读取入口取得带审计的明文。
 
+例如 phone 与 internalMemo 按上面的修饰符声明后，普通读取只交付脱敏 phone，internalMemo 不出现在 DTO。不能把 deps.users.get 返回的内部对象直接发送给浏览器来绕过这个边界。
+
 范围外详情通常返回 NOT_FOUND，避免泄露对象存在性。页面应表达“无法读取”，保留不存在、会话失效和范围外等可能性。
 
 ## 用真实主体验证
 
 准备允许、缺能力、同范围和范围外账号，分别直接调用读写接口。部门负责人、角色成员、账号 active 与单据归属都使用真实数据；菜单是否隐藏不能作为越权请求已被拒绝的证据。
+
+例如在独立 testkit 环境先准备 noteId，再直接以缺能力账号调用，不经过前端按钮：
+
+<!-- cage:check test authorization-denied-test -->
+```ts
+export async function checkArchiveDenied(test: TestEnv, noteId: string) {
+  const actor = await test.actorWithout('Note.archive');
+  const result = await test.callAs(actor, 'Note.archive', { id: noteId });
+  expect(result).toMatchObject({ ok: false, code: 'FORBIDDEN' });
+}
+```
 
 需要解释拒绝原因时，受权管理员使用 cage explain。它观察身份、输入、能力、范围、状态、版本和硬约束，不执行 handler，也不发出之后可复用的授权许可。
 

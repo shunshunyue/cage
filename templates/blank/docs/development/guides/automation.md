@@ -88,6 +88,26 @@ connector 定义允许的主机、密钥名称和操作；op 为每项操作声�
 | retryableWrite | 对方按稳定幂等键去重，允许相同请求重投 |
 | write | 无法安全重试；结果未知时隔离，等待核对 |
 
+例如协议操作分别声明读、可去重写入和不可自动重试写入。op、connector 等来自 cage-connectors，z 来自 zod：
+
+<!-- cage:check domain automation-operation-effects -->
+```ts
+export const readStatus = op({
+  effect: 'read', method: 'GET', path: '/api/status',
+  request: z.object({ externalId: z.uuid() }), response: z.object({ status: z.string() }),
+});
+export const retryableSave = op({
+  effect: 'retryableWrite', method: 'POST', path: '/api/notes',
+  request: z.object({ externalId: z.uuid() }), response: z.object({ receiptId: z.string() }),
+});
+export const nonRetryableSave = op({
+  effect: 'write', method: 'POST', path: '/api/legacy-notes',
+  request: z.object({ externalId: z.uuid() }), response: z.object({ receiptId: z.string() }),
+});
+```
+
+read 不能作为 outbound 写映射；retryableSave 只有对方按稳定键去重时才成立；nonRetryableSave 超时后的结果需要先核对。
+
 出站用 outbound(event, operation, { map, idempotencyKey, onSuccess })。map 为纯函数，可返回 null；幂等键跨重投稳定，运行时带租户前缀。成功回写调用 external 命令，保留状态的迟到回执可用 to: null，但仍声明允许的 from。
 
 延续归档例子，将[连接器完整文件](../examples/note/archive-service.ts)放到 integrations/archive-service.ts 并从 domain 导出。它导入上面的 NoteArchived，并声明：
@@ -122,7 +142,56 @@ export const sendNoteArchive = outbound(NoteArchived, archiveService.operations.
 
 这里只发送 UUID 和标题，连接器保存实际回执；未声明 onSuccess，所以不另改业务字段。需要回填业务编号时，沿下面的采购范例使用 external 命令。
 
+例如想把外部 receiptId 作为业务记录保存，可以新建回执聚合，并由 external 命令接收已验证响应；这个扩展复用上面的 archiveService：
+
+<!-- cage:check domain automation-success-command -->
+```ts
+export const ArchiveReceipt = aggregate('ArchiveReceipt', {
+  description: '外部归档回执',
+  fields: {
+    noteId: ref('Note').describe('所属便笺'),
+    receiptId: text(120).describe('外部回执编号'),
+    deptId: ref('Dept').describe('所属部门'),
+  },
+  states: states('active', { terminal: ['active'], labels: { active: '已记录' } }),
+  scope: scope.deptSubtree('deptId'),
+});
+export const recordReceipt = command(ArchiveReceipt, {
+  name: 'record', description: '保存外部归档回执', from: 'new', to: 'active', invokedBy: 'external',
+  input: z.object({ noteId: z.uuid(), receiptId: z.string().max(120), deptId: z.uuid() }),
+  handler: draft => draft,
+});
+export const sendAndRecordReceipt = outbound(NoteArchived, archiveService.operations.save, {
+  idempotencyKey: event => `note-archive-${event.noteId}`,
+  map: event => ({ externalId: event.noteId, title: event.title }),
+  onSuccess: {
+    command: recordReceipt,
+    map: (response, event) => ({ noteId: event.noteId, receiptId: response.receiptId, deptId: event.deptId }),
+  },
+});
+```
+
+应以这个出站替换原 sendNoteArchive，不同时注册两套发送。外呼与本地回执写入分阶段，回写失败不能报告业务记录已保存。
+
 入站用 inbound，将原始正文验签、schema 校验后的输入映射到领域命令。hmacSha256 默认检查 x-signature，接受 hex 或 sha256=hex；签名基于原始字节，不能重新序列化 JSON 后计算。
+
+例如外部系统签名请求归档一条便笺，先定义只供 external 的实际命令，再让回调映射到它；归档仍发出本应用的事件：
+
+<!-- cage:check domain automation-inbound -->
+```ts
+export const archiveFromWebhook = command(Note, {
+  name: 'archiveFromWebhook', description: '接收外部归档请求', from: 'active', to: 'archived', invokedBy: 'external',
+  emits: [emit(NoteArchived, record => ({ noteId: record.id, title: record.title, deptId: record.deptId }))],
+  handler: draft => draft,
+});
+export const requestedArchive = inbound(archiveService, 'archiveRequested', {
+  verify: hmacSha256('ARCHIVE_WEBHOOK_SECRET'),
+  payload: z.object({ externalId: z.uuid() }), command: archiveFromWebhook,
+  map: payload => ({ id: payload.externalId }),
+});
+```
+
+签名例子：原正文的字节被签名后，不能先格式化成带空格的另一个字符串再验证；修改一个字节也应失败。密钥只通过部署注入。
 
 完整接法可沿采购 integrations/erp.ts 阅读：批准事件出站 → 保存 ERP 回执 → external 命令回填 → 验签收货回调 → 收货命令及释放事件。字段、状态、权限和幂等规则均由当前业务明确。
 
@@ -130,7 +199,20 @@ export const sendNoteArchive = outbound(NoteArchived, archiveService.operations.
 
 先用 fakeConnector 验证协议和回写，再配置测试/生产主机与实际密钥。CAGE_STAGE 决定普通连接器阶段；fake 的调用记录只证明本地链路。
 
+例如在 worker 的 fake 分支中注册确定的回执。fakeConnector 属于 cage-connectors 运行入口，这段不放进领域 handler 或声明导入时执行：
+
+<!-- cage:check domain automation-fake -->
+```ts
+export function registerLocalArchiveFake() {
+  fakeConnector(archiveService, {
+    save: request => ({ receiptId: `DEMO-${request.externalId}` }),
+  });
+}
+```
+
 真实联调至少核对重复投递、超时后对方是否已成功、响应格式变化、回写失败恢复、取消后的晚到回执及补偿。外呼成功和本地回写分别观察，unknown 不能直接重放。当前没有通用解除未知结果的管理 API。
+
+例如同一业务键连续投递两次，对方应只有一条记录；把网络断在远端提交之后，本地不能把超时当成未提交；恢复应先核对外部记录和连接器回执，再确认最终本地状态。
 
 普通业务 handler 不自行发 HTTP、开数据库池或编写扫表改状态脚本。声明表达不了的特殊情况需具体说明并评审；unsafe 记录原因和负责人，不增加执行权限。
 

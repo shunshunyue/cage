@@ -6,7 +6,14 @@
 
 独立项目就在包含 package.json、cage.config.json 和 .env.example 的根目录操作。框架源码仓库先在根目录运行 `pnpm install`、`pnpm build`，再进入 `examples/purchase-admin`。
 
-还没有独立项目时，运行 `pnpm create @yss123/cage-app@0.4.0 my-app`，选择 blank 或 purchase，然后进入 my-app。blank 带登录和组织基础；purchase 另带完整采购演示。
+还没有独立项目时，运行 `pnpm create @yss123/cage-app@0.4.1 my-app`，选择 blank 或 purchase，然后进入 my-app。blank 带登录和组织基础；purchase 另带完整采购演示。
+
+例如从当前工作目录创建一个空白项目，命令执行位置随创建结果切换：
+
+```powershell
+pnpm create @yss123/cage-app@0.4.1 my-app --template blank
+Set-Location my-app
+```
 
 ## 准备连接和账号
 
@@ -53,6 +60,8 @@ pnpm dev
 ## 确认启动结果
 
 打开终端打印的 Web 地址，使用凭据登录，进入系统管理查看部门、用户和角色。API 与 worker 应连接同一库、加载相同 domain。修改 .env 后重启相关进程。
+
+例如能登录并看到组织管理，只证明基础链已启动；首次新增 Note 后仍需要生成、迁移和授权。如果提交申请后没有待办，应继续检查 worker，而不是把“首页能打开”当作流程已启用。
 
 常见断点：
 

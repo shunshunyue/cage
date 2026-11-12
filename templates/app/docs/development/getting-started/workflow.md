@@ -58,6 +58,8 @@ pnpm verify 汇总类型、依赖、lint、声明、生成一致性、托管区�
 
 verify --skip-tests、用例 skip/todo 或无用例都会保留不完整标记，退出码 0 只表示已执行检查没有失败。测试使用独立 PostgreSQL 环境，不能指向生产或业务集群。详细证据与报告方式见[验证参考](../reference/verification.md)。
 
+例如只把表单按钮“提交”改成“保存”，检查页面呈现即可；若把归档 from 从 active 改成多状态，则需生成、类型和成功/拒绝用例。不要因为两次修改都在同一项目就运行完全相同的一长串命令。
+
 ## 常用命令
 
 | 需要回答的问题 | 按需使用的命令 |
@@ -73,5 +75,11 @@ verify --skip-tests、用例 skip/todo 或无用例都会保留不完整标记�
 | 内核规模与 unsafe 是否超预算 | cage budget；计数约束不证明设计或业务正确 |
 
 单独调用 CLI 使用 pnpm exec cage；项目脚本使用 pnpm gen、pnpm dev 等。诊断前提见[诊断工具](../tools/diagnostics.md)。交付说明行为变化、受影响文件、生成物、配置及通过/跳过/未执行的结果。
+
+例如已经知道要改 modules/note/note.ts，就直接读该文件及调用方；只有想找“归档以后还触发谁”时，再选择上下文或关系查询：
+
+```powershell
+pnpm exec cage context command:Note.archive
+```
 
 [返回开发手册](../README.md)

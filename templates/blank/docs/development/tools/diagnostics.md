@@ -18,6 +18,12 @@ capabilities 读取已安装包的公开声明，返回包版本、导出名、�
 
 未安装的包标为未检查，未命中不能证明能力不存在。换公开符号或手册用语继续查证；调用参数还要结合指南的前提和实际生成契约。
 
+例如“只让本人可见”未命中，改查真实符号 scope，并阅读返回的公开声明位置；这不是重新让 AI 猜一个权限配置名：
+
+```powershell
+pnpm exec cage capabilities scope --format json
+```
+
 ## 项目是否真正启用
 
 ```powershell
@@ -65,11 +71,23 @@ pnpm exec cage timeline --request-id 请求标识 --runtime-url http://127.0.0.1
 
 也可按 --outbox-id，或 --aggregate 与 --aggregate-id 查询。时间线关联实际 outbox、消费者、连接器和审计；它不依据静态箭头推断某次操作完成。
 
+例如只知道刚读取的便笺 ID，使用对象筛选；$recordId 是该真实 ID，其他凭据前提与上面相同：
+
+```powershell
+pnpm exec cage timeline --aggregate Note --aggregate-id $recordId --runtime-url http://127.0.0.1:3000 --cookie-file .cage/diagnostic-cookie.txt
+```
+
 访问还需相关对象 read 和范围，诊断他人另需相应 User.read/范围。没有记录时先检查身份和筛选，再核对真实请求，不能直接认定没有执行。
 
 ## 为什么当前主体被拒绝
 
 准备命令输入 JSON，再运行：
+
+例如将刚读取记录的实际 id/version 填到 .cage/archive-input.json，下面仅示意文件形状：
+
+```json
+{ "id": "550e8400-e29b-41d4-a716-446655440000", "expectedVersion": 3 }
+```
 
 ```powershell
 pnpm exec cage explain Note.archive --input-file .cage/archive-input.json --runtime-url http://127.0.0.1:3000 --cookie-file .cage/diagnostic-cookie.txt
@@ -78,5 +96,7 @@ pnpm exec cage explain Note.archive --input-file .cage/archive-input.json --runt
 受权诊断可用 --user-id 指定用户。工具解释认证、输入、调用身份、能力、范围、状态、版本和硬约束；不执行 handler、不抢更新锁、不写业务审计。新建最终范围和无法检查的依赖会保留未知。
 
 explain 只是观测时刻的说明，实际执行仍重新判断。结果与修复应回到[排错顺序](troubleshooting.md)，最终按[验证参考](../reference/verification.md)证明本次业务完成。
+
+例如 explain 时状态 active、版本 3，随后另一个人先归档了该记录；真实命令仍会重新拒绝。此前的解释报告不能充当之后可复用的授权票据。
 
 [返回开发手册](../README.md)

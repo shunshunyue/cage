@@ -21,10 +21,10 @@ Web → contracts → 命令事务 / 安全读取
 
 ## 创建并运行
 
-需要 Node.js 24+、pnpm 10 和一个已存在的 PostgreSQL 数据库。当前源码包版本为 0.4.0，创建示例使用相同版本：
+需要 Node.js 24+、pnpm 10 和一个已存在的 PostgreSQL 数据库。当前源码包版本为 0.4.1，创建示例使用相同版本：
 
 ```powershell
-pnpm create @yss123/cage-app@0.4.0 my-app
+pnpm create @yss123/cage-app@0.4.1 my-app
 cd my-app
 pnpm install
 Copy-Item .env.example .env

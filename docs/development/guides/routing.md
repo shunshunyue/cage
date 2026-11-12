@@ -48,6 +48,30 @@ function changeList(nextPage: number, nextStatus: 'active' | 'archived' | undefi
 
 未登录访问详情时，跳到 /login?returnTo=原地址，保留 query/hash。登录后用 replace 返回原页，避免后退循环。共享 navigation.ts 的 loginReturnTo 只接受应用内页面，排除外站、登录循环和服务端保留路径。
 
+例如会话守卫已经确认未登录后，保留完整业务地址再导航。此组件只挂在未登录分支，不用于网络失败：
+
+<!-- cage:check web routing-login-redirect -->
+```tsx
+export function LoginRedirect() {
+  const location = useLocation();
+  const returnTo = location.pathname + location.search + location.hash;
+  return <Navigate replace to={`/login?returnTo=${encodeURIComponent(returnTo)}`} />;
+}
+```
+
+登录成功时调用回跳函数。loginReturnTo 从模板 shared/lib/navigation.ts 导入，签名为 (search, fallback)：
+
+<!-- cage:check web routing-login-return -->
+```ts
+export function useReturnAfterLogin() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  return () => navigate(loginReturnTo(location.search, '/workspace'), { replace: true });
+}
+```
+
+例如原地址 /notes/某实际ID?tab=comments#latest 应完整恢复；returnTo 指向外站或 /login 时回到 /workspace。
+
 退出、401 或账号切换时取消旧用户请求并清理应用查询缓存。SDK 防止迟到身份响应污染新账号，业务缓存仍由应用处理。403 显示权限提示，范围外详情通常为 404；二者不应触发同一套登录循环。
 
 ## 系统管理有独立入口
@@ -61,6 +85,15 @@ function changeList(nextPage: number, nextStatus: 'active' | 'archived' | undefi
 
 前端不注册覆盖 admin/auth 的路由。审批模块需要链接业务详情时，由 app 映射 businessKey，不跨模块导入另一模块的内部页面。
 
+例如同一个导航中，业务页面使用 Link，系统管理使用完整导航的 a：
+
+<!-- cage:check web routing-navigation-owners -->
+```tsx
+export function AppLinks() {
+  return <nav><Link to="/notes">部门便笺</Link> <a href="/admin/">系统管理</a></nav>;
+}
+```
+
 cage/no-manual-routes 约束手写后端业务接口，不禁止 React Router。已有老项目的页面迁入 URL 路由需要实际修改前端，单独升级框架依赖不会完成迁移。
 
 ## 深链接需要部署支持
@@ -68,6 +101,20 @@ cage/no-manual-routes 约束手写后端业务接口，不禁止 React Router。
 开发环境的 Vite 已代理协议和管理入口。生产可由 Cage API 使用 webDir 托管构建目录，标准入口通过 WEB_DIR 配置；也可由 Nginx/CDN 托管 Web 并代理 API。
 
 SPA 回退只用于业务页面。缺失 API、管理脚本和 JS/CSS 保持各自的错误响应，不能返回 index.html。模板 deploy/nginx.conf 和 Dockerfile 提供实际配置参考；开发环境能刷新不证明生产部署也正确。
+
+例如 Nginx server 中先保留服务端与资源入口，业务路径才回退 HTML。下列是模板的相关片段，完整配置还包括分片上传和 AI 流式代理：
+
+```nginx
+location ~ ^/(api|auth|hooks|admin)(/|$) {
+    proxy_pass http://127.0.0.1:3000;
+}
+location ^~ /assets/ {
+    try_files $uri =404;
+}
+location / {
+    try_files $uri $uri/ /index.html;
+}
+```
 
 ## 浏览器验收
 
@@ -85,5 +132,7 @@ SPA 回退只用于业务页面。缺失 API、管理脚本和 JS/CSS 保持各�
 | 打开 /admin/、请求缺失 API/资源 | 各自协议正确，不返回业务 HTML |
 
 检查控制台和实际响应，记录通过、跳过、未执行。构建和静态门禁不替代浏览器操作；模拟接口可以验证导航，真实权限与数据库需另外取得证据。
+
+例如先打开 /notes?status=archived&page=1，再进入一条真实详情；刷新、后退、前进各做一次，URL 与读取对象应一致。另请求不存在的 /api/对象 和 /assets/missing.js，响应不能是便笺页面 HTML。
 
 [客户端与缓存](../reference/client.md) · [返回开发手册](../README.md)

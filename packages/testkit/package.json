@@ -1,6 +1,6 @@
 {
   "name": "@yss123/cage-testkit",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "派生测试运行器、fake 仓储、测试数据库",
   "type": "module",
   "main": "dist/index.js",

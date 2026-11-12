@@ -22,6 +22,13 @@ client 来自 cage-client，csv 是 UTF-8 文本。用户需有该命令能力�
 
 更新命令还要有 id，可选 expectedVersion。表头不接受命令之外的字段，空可选单元格表示未提供；数组和对象使用单元格 JSON，CSV 内双引号要按 CSV 规则转义。当前不是任意 xlsx 文件识别。
 
+例如导入更新标题时，UUID 来自已经读取的记录，expectedVersion 是读取时的版本：
+
+```csv
+id,title,expectedVersion
+550e8400-e29b-41d4-a716-446655440000,季度复盘,3
+```
+
 ## 选择整批规则
 
 | 选项 | 业务结果 |
@@ -29,7 +36,17 @@ client 来自 cage-client，csv 是 UTF-8 文本。用户需有该命令能力�
 | atomic: false，默认 | 业务拒绝记录为失败行，正确行保留 |
 | atomic: true | 任一业务行失败则整批业务变更回滚，原成功行报告为 ABORTED |
 
+例如两行标题中第二行只有空格，会被 Note.create 拒绝。逐行策略保留第一行，原子策略回滚第一行；提交只相差 atomic：
+
+<!-- cage:check web transfer-atomic-options -->
+```ts
+export const keepValidRows = (csv: string) => client.importCsv('Note.create', csv, { atomic: false });
+export const allOrNothing = (csv: string) => client.importCsv('Note.create', csv, { atomic: true });
+```
+
 内部错误、连接故障与死锁属于任务失败或重试，不伪装成普通坏数据行。逐行模式不表示每一行在独立请求中即时提交；消费者使用事务与保存点管理任务。
+
+例如连接断开时不能给某一行写“标题不合法”；它属于执行故障。标题为空则是业务行拒绝，两种原因在任务和报告中分别观察。
 
 一次导入最多 1 MiB UTF-8、1000 数据行，不含表头。支持 BOM、CRLF、引号内换行和双引号转义；列数、重复/空表头和引号歧义明确拒绝。
 
@@ -42,6 +59,8 @@ const result = await note.export({ status: 'active', sort: '-createdAt' });
 note 来自本项目生成契约。导出需 Note.export，读取受当前范围与掩码约束；页面筛选应提交给服务端，不只过滤已加载的一页。
 
 worker 在同一可重复读快照中分批构建文件，当前上限 100000 行、20 MiB，超限失败并要求缩小范围。导出包含公开业务字段和系统列，公式前缀有安全转义；它不是可直接回导的命令模板，掩码和系统列也不能原样回写。
+
+例如当前筛选可见 100001 行，任务应失败并提示缩小范围，不生成一个“成功但少一行”的文件；导出的 version/createdAt 列也不能原样塞给 Note.create。
 
 ## 跟踪任务到终态
 
@@ -78,6 +97,13 @@ export function TransferResult({ id }: { id: string }) {
 
 任务和结果默认保留 24 小时。读取、执行和下载重新核对身份与权限；授权变化可能使原导出文件不再可下载。
 
+例如任务完成后查看导入的逐行报告，结果包含服务端行号与稳定错误，不包含原始敏感单元格：
+
+<!-- cage:check web transfer-report -->
+```ts
+export const readImportReport = (id: string) => client.importReport(id);
+```
+
 ## 协议与部署
 
 | 接口 | 用途 |
@@ -90,10 +116,20 @@ export function TransferResult({ id }: { id: string }) {
 
 具体路径和参数以 SDK/OpenAPI 为准。接口不要求把业务用户带到系统管理，也不统一要求 Sys.ops 权限；仍需目标命令/导出授权、会话、CSRF 和 worker。
 
+例如页面刷新后可以查询本人在 Note 上的任务，再用具体任务 ID 读取状态，不重新提交整个 CSV：
+
+<!-- cage:check web transfer-list-recover -->
+```ts
+export const myNoteTransfers = () => client.transfers('Note');
+export const currentTransfer = (id: string) => client.transfer(id);
+```
+
 结果与消费者记录共同持久化，崩溃可重投；任务接受、处理完成、报告下载是三个不同阶段。
 
 ## 验证
 
 导入准备全部成功、部分失败、原子回滚及缺能力样例；观察任务终态后独立读取业务数据。导出用不同范围和敏感字段权限比对，并检查超限、过期及下载时撤权。CSV 展示与真正写入规则分别核对。
+
+例如给甲导出部门 A 数据，在任务完成后撤销甲的导出或读取权限，再请求下载应拒绝；不能因为文件生成时有权就永久交付。原子导入第二行失败时，则独立读取确认第一行也没有保存。
 
 [返回开发手册](../README.md)

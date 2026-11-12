@@ -12,6 +12,8 @@ Cage 用 TypeScript 声明业务对象、允许的操作和后续流程，再从
 
 日常修改直接用[开发步骤](getting-started/workflow.md)。编程 AI 读取项目 AGENTS.md 后使用[开发 Skill](skills/cage-development/SKILL.md)，再进入本次需要的指南。
 
+例如第一次做部门便笺，先让空白应用能登录，再完成声明、列表和归档；已经有应用、只加成员关系时，直接进入关系章节，不必重走首次初始化。
+
 ## 跟着代码接一项能力
 
 先完成基础便笺，再按本次需求选取扩展示例；不需要把它们全部注册到项目。正文解释连接步骤，完整教学文件包含 import、声明或组件：
@@ -25,6 +27,8 @@ Cage 用 TypeScript 声明业务对象、允许的操作和后续流程，再从
 | CSV 接受任务后继续查到终态 | [数据传输](guides/transfers.md) · [完整面板](examples/note/transfer-panel.tsx) |
 | 部门审批和可编译待办调用 | [审批课程](guides/approvals.md) · [领域](examples/approval/review-request.ts) · [客户端](examples/approval/request-actions.ts) |
 | 纯 handler 的成功和拒绝测试 | [验证参考](reference/verification.md) · [评论测试](examples/note/note-comments.test.ts) |
+
+例如关系章节先说明 noteId 属于评论，再紧接创建评论的命令；读到 manyToMany 替换规则时，就地看到完整替换和增量追加。完整文件用来补齐 import 与目录，不代替正文示例。
 
 ## 按任务查找
 
@@ -40,14 +44,20 @@ Cage 用 TypeScript 声明业务对象、允许的操作和后续流程，再从
 | AI 审批、随页助理、模型与性格 | [原生 AI](guides/intelligence.md) |
 | 了解完整组合业务 | [采购范例导读](examples/purchase-example.md) |
 
+例如“要给便笺加评论和成员”选关系，“要归档后自动推外部”选自动化，“同一页面嵌入助理”选原生 AI；先按本次任务进入，再按代码里实际依赖补读。
+
 ## 查具体规则或定位故障
 
 声明参数查[原语参考](reference/primitives.md)，授权查[权限与范围](reference/authorization.md)，前端结果与版本查[客户端](reference/client.md)。代码组织与注释分别遵守[目录规范](reference/project-structure.md)和[中文注释规范](reference/commenting.md)。
 
 理解已有业务先阅读项目入口、相关模块、调用方与测试。框架 API 不明确时查公开类型或[能力诊断](tools/diagnostics.md)；需要梳理跨模块声明关系时可用[本体检索](tools/ontology-context.md)辅助定位；操作失败按[排错顺序](tools/troubleshooting.md)找到断点。收到具体 CAGE 码时进入[错误码册](../errors/README.md)。
 
+例如命令返回 CONFLICT，查客户端的版本处理；若生成时报 CAGE-GEN-001，则查错误码和生成差异。两者都叫“保存没成功”，实际应沿各自证据处理。
+
 ## 本手册的路径与版本
 
 命令默认在应用根目录执行。框架仓库的应用是 `examples/purchase-admin`；独立脚手架的应用就是新项目根目录。空白模板中的 `docs/examples/purchase-admin` 是阅读用源码，未注册为业务。
 
 教材随 CLI 分发，描述同一版本的用法。已安装 API 用 `pnpm exec cage capabilities 符号 --format json` 查真实签名，生成方法以本项目 contracts 为准。运行结果须由当前应用验证；设计提案与历史验收只能说明各自记录时的事实。
+
+例如 blank 项目的 docs/examples/purchase-admin 是离线采购参考；当前业务代码应写到自己的 packages/domain/src。修改参考文件不会给当前应用增加采购能力。
