@@ -1,40 +1,23 @@
 # Cage 空白业务项目
 
-这是可直接开发业务的 TypeScript + React 项目，框架由 `@yss123/cage-*` npm 包提供。当前仅注册用户、部门、角色基础模型，保留登录、权限、系统管理、审计和异步任务；没有采购、库存、审批演示声明或演示业务表。
+本项目已有登录、用户/部门/角色、权限与系统管理，业务模型从你的需求开始。框架由 @yss123/cage-* 提供。
 
-先读 [AGENTS.md](AGENTS.md) 和 [业务开发指南](docs/development/README.md)。给 Codex 等工具描述自己的业务需求，按 [任务配方](docs/development/guides/recipes.md) 开发即可。[采购范例导读](docs/development/examples/purchase-example.md) 对应 `docs/examples/purchase-admin` 中的参考源码；这些文件不参与编译、领域注册或迁移。
+## 启动
 
-## 首次启动
+在项目根目录按[启动指南](docs/development/getting-started/start.md)安装依赖、配置已有 PostgreSQL、init、构建/生成、审查迁移、bootstrap 后运行 dev。初始凭据通过新受限文件交付，交付后移除。
 
-需要 Node.js 24、pnpm 10，以及一个**已经存在**的 PostgreSQL 数据库。框架负责连接和表结构，不创建数据库，不管理 Docker。
+首次超级管理员可管理当前及以后新增能力，普通角色需明确授权。登录 /login，工作台 /workspace，组织成员列表 /directory/users 和详情 /directory/users/:id 使用真实 User 模型及读取范围。
 
-1. 在项目根目录执行 `pnpm install`。
-2. 复制 `.env.example` 为 `.env`。按其中注释，仅填写 `CAGE_ADMIN_DATABASE_URL`，指向已有数据库。密码含特殊字符时需 URL 编码。
-3. 执行 `pnpm exec cage init`。自动创建运行、只读、迁移账号和随机密码，填写 `.env` 并移除管理员连接；已有配置不会重置密码。
-4. 执行 `pnpm build:app`、`pnpm gen`。审查 `db/migrations` 后执行 `pnpm migrate`，创建本项目需要的组织与系统表。
-5. 执行 `pnpm exec cage bootstrap --credentials-file .cage/admin-credentials.json` 显式初始化组织；凭证只写到新的受限文件，交付后移除。业务能力需管理员配置。
-6. 执行 `pnpm dev`，在浏览器打开终端打印的 Web 地址。日常 API 启动不初始化组织或输出密码。
+## 添加自己的业务
 
-登录后可从“系统管理”配置用户、部门、角色与权限，再按业务需求添加模块。页面不会显示虚构业务数据。`.env` 中三个账号连接同一个数据库；日常运行不需要管理员账号。首次迁移应在为本项目准备的库中执行，接管历史业务表需要额外映射和迁移审查。
+按[便笺课程](docs/development/getting-started/first-feature.md)走通一个功能：在 domain/modules 声明并逐层导出，check/gen，审查迁移，配置权限，再在 Web modules 使用生成契约，通过 app 注册 URL。
 
-前端已配置 React Router：`/login` 登录、`/workspace` 工作台、`/directory/users` 成员列表、`/directory/users/:id` 成员详情，以及应用 404。成员页面只读取已有组织模型，需要 User.read，未增加演示业务或数据。详情可直达、刷新，登录后返回原地址。新增业务与生产 SPA 回退按[路由和浏览器验收指南](docs/development/guides/routing.md)执行；反向代理示例见 [deploy/nginx.conf](deploy/nginx.conf)。
+完整导航见[开发手册](docs/development/README.md)。编程 AI 读取 [AGENTS.md](AGENTS.md) 和本地 Skill；长期业务约定放托管区外。
 
-## 添加第一个业务模块
+docs/examples/purchase-admin 是离线阅读源码，不参与运行、编译或迁移，不代表已启用采购或 AI。使用[采购导读](docs/development/examples/purchase-example.md)参考组合方式。
 
-先读[工程目录与代码组织](docs/development/reference/project-structure.md)。在 `packages/domain/src/modules/<业务>` 新建声明，通过模块 index.ts 从领域总入口导出；运行 `pnpm exec cage check`、`pnpm gen`，审查生成契约和迁移。在 `apps/web/src/modules/<业务>` 使用 `@app/contracts` 实现页面和表单，通过模块公开入口接入 `app` 导航；共享 UI/工具放 `shared`。最后按需迁移，并由管理员分配新增能力。完整的 Note 对象示例见 [原语与最小业务](docs/development/reference/primitives.md)。
+## 日常修改
 
-`src/main.tsx` 只挂载 React 和全局 Provider，业务不平铺到 src 根目录。`cage.config.json` 已启用 `structure: modular`，check/verify 会检查目录和依赖边界；不要关闭检查或将所有业务移入 shared 来消除提示。
+pnpm dev 启动进程，pnpm gen 更新契约与草稿，pnpm migrate 执行审查后的结构，pnpm verify 汇总门禁。生成物从声明维护，已执行迁移保留；前端不直接导入 domain 或数据库。
 
-## 常用命令
-
-| 命令 | 用途 |
-| --- | --- |
-| `pnpm dev` | 连接已配置的数据库，启动 API、worker 与 Web |
-| `pnpm build:app` | 构建领域、API 和 Web |
-| `pnpm gen` | 生成契约、SQL、图谱和迁移草稿 |
-| `pnpm migrate` | 在已配置库中执行审查后的迁移 |
-| `pnpm exec cage graph` | 查看本体图谱；勾选“包含系统组织模型”可看初始组织模型 |
-| `pnpm verify` | 完整门禁，数据库测试须使用独立测试集群 |
-| `pnpm exec cage verify --skip-tests` | 仅静态门禁，会明确标为不完整 |
-
-配置错误看 `.env.example`，业务错误查 [错误码册](docs/errors/README.md)。不要编辑生成契约或已执行迁移；新增业务需要生成新的迁移。
+structure: modular 约束模块归属和依赖，代码按[目录规范](docs/development/reference/project-structure.md)组织。页面与配置的真实验证见[路由](docs/development/guides/routing.md)和[排错](docs/development/tools/troubleshooting.md)。

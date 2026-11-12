@@ -1,92 +1,79 @@
-# 在客户业务页接入导入和导出
+# 在业务页面导入和导出 CSV
 
-[返回学习入口](../README.md) · [开发步骤](../getting-started/workflow.md)
+Cage 把导入映射到现有用户命令，把导出映射到安全读取。两者先返回异步任务，页面负责选择文件、筛选、进度和报告展示。
 
-框架提供持久化任务、CSV 处理、权限和下载接口。业务项目决定入口、列名、上传表单、任务状态与报告如何展示；不要求用户进入系统管理页，也不要求具备 Sys.ops 能力。路径中的 `/api/sys/transfers` 是通用任务接口。
+## 导入：准备命令输入
 
-继续使用项目已有的 createServer 和 startWorker，不另写数据库连接、队列或文件服务。先审查并运行 `pnpm migrate`，同时部署 API 与 worker；只运行 API 会让任务一直等待。
-
-## 业务前端如何调用
-
-以下是业务事件处理函数，可按页面需要使用。目标导出对象与导入命令来自实际业务，不必固定为采购或库存。
-
-```ts
-import { client, purchaseOrder } from '@app/contracts';
-
-export async function exportApprovedOrders() {
-  // 同一次业务操作需要重试时，在页面保存并复用 key。
-  const key = crypto.randomUUID();
-  return purchaseOrder.export({ status: 'approved' }, { idempotencyKey: key });
-}
-
-export async function importCommandCsv(command: string, file: File, key: string) {
-  return client.importCsv(command, await file.text(), {
-    atomic: false,
-    idempotencyKey: key,
-  });
-}
-
-export async function inspectTransfer(id: string) {
-  const result = await client.transfer(id);
-  if (!result.ok) return result;
-  if (result.data.status !== 'completed') return result;
-  // 导入完成还可能有失败行，页面需展示报告中的 failed/succeeded。
-  if (result.data.kind === 'import') return client.importReport(id);
-  return client.transferDownloadUrl(id);
-}
-```
-
-所有提交先判断 `result.ok`，再保存返回任务的 id，HTTP 202 仅表示已接受。React 可从 `@app/contracts` 引入 `useTransfer(id)`：等待、处理中和重试中每两秒刷新，完成/失败/过期停止。没有 React 时自行调用 client.transfer。
-
-页面返回时可用 `client.transfers('实际聚合名')` 恢复本人该对象最近任务。任务状态包括 queued、processing、retrying、completed、failed、expired；completed 的导入也可能部分失败或整批回滚，不能只按状态显示“全部成功”。
-
-## 导入 CSV 怎么准备
-
-目标命令必须已经导出、允许 user 调用、使用 Zod object 输入，并且当前用户具有对应命令能力。比如业务输入 `{ sku: string, available: number }` 的 UTF-8 CSV：
+以便笺创建命令为例，CSV 表头就是该命令的输入字段：
 
 ```csv
-sku,available
-SKU-001,100
-SKU-002,50
+title
+月度工作纪要
+部门值班安排
 ```
 
-- 表头是**命令输入字段名**，使用小驼峰，不是数据库列名或中文标题。页面可自行做中文列名映射。
-- 可选列可省略；空的可选单元格表示不提供值。已有记录命令需要 id，还可提供 expectedVersion 控制乐观锁。
-- 数字按数字解析，布尔使用 true/false，数组与对象写 JSON，金额按字符串输入。
-- 复杂单元格仍要遵守 CSV 引号规则，例如 items 单元格可以是 `"[{""sku"":""A-01"",""qty"":1}]"`。
-- 支持 BOM、CRLF、引号中的逗号/换行及双引号转义。重复/未知表头、错列和未闭合引号等文件错误会在排队前拒绝。
-- 每行仍走原命令的权限、范围、状态、约束、不变量、审计、事件与同事务反应；导入不能绕过 process/external 限制。
+页面调用：
 
-默认 `atomic: false`：成功行提交，失败行及其同事务反应回滚。`atomic: true`：任意行失败撤销整批业务写入，原成功行在报告中标为 ABORTED。
+```ts
+const result = await client.importCsv('Note.create', csv, { atomic: false });
+```
 
-报告只含记录号、ok/code/domainCode/fields，不返回原始值或命令快照。表头算第 1 条，第一条数据记录为第 2 条；带换行的引号单元格仍只算一条记录。页面用记录号帮助用户修复 CSV，不把失败文本直接拼成 HTML。
+client 来自 cage-client，csv 是 UTF-8 文本。用户需有该命令能力，目标必须允许 user 调用且输入为 Zod 对象；每行继续经过输入、范围、状态、约束、不变量和审计。
 
-**导出文件不是导入模板。** 读侧导出包含 id/status/version 等系统列及掩码值，不能原样回写；按所选命令整理输入。
+更新命令还要有 id，可选 expectedVersion。表头不接受命令之外的字段，空可选单元格表示未提供；数组和对象使用单元格 JSON，CSV 内双引号要按 CSV 规则转义。当前不是任意 xlsx 文件识别。
 
-## 接口与授权
+## 选择整批规则
 
-| HTTP | 输入或结果 |
+| 选项 | 业务结果 |
 | --- | --- |
-| POST `/api/{聚合短横线名}/export` | 列表筛选参数；返回 202 和任务，需要该聚合 export 能力 |
-| POST `/api/sys/transfers/import` | `{ command, csv, atomic? }`，command 是 `聚合.命令` 能力标识；返回 202 和任务 |
-| GET `/api/sys/transfers/options` | 本人可用的导出对象、导入命令、字段 name/required 与限制 |
-| GET `/api/sys/transfers?aggregate=聚合名` | 本人最近 100 个任务，按需筛选业务对象 |
-| GET `/api/sys/transfers/:id` | 本人单个任务的状态、计数及 errorCode |
-| GET `/api/sys/transfers/:id/download` | 已完成导出的 CSV，或已完成导入的 JSON 报告 |
+| atomic: false，默认 | 业务拒绝记录为失败行，正确行保留 |
+| atomic: true | 任一业务行失败则整批业务变更回滚，原成功行报告为 ABORTED |
 
-options 可用 `client.get('/api/sys/transfers/options')` 读取，没有额外假定的专用 helper。直接调用 HTTP 时，提交必须附会话、CSRF 以及 1–200 字符 Idempotency-Key；client 会处理这些协议。相同租户/用户的同键同内容返回同一任务，同键不同内容返回 CONFLICT。
+内部错误、连接故障与死锁属于任务失败或重试，不伪装成普通坏数据行。逐行模式不表示每一行在独立请求中即时提交；消费者使用事务与保存点管理任务。
 
-导出经过安全视图，按提交人的范围和明文权限读取。仅提交人能下载；账号停用、能力收回或范围/明文权限/部门树变化后，旧文件可能被拒绝下载，需要重新导出。系统运维权限不会自动授予他人的文件下载权。
+一次导入最多 1 MiB UTF-8、1000 数据行，不含表头。支持 BOM、CRLF、引号内换行和双引号转义；列数、重复/空表头和引号歧义明确拒绝。
 
-## 限制与排错
+## 导出：使用服务端筛选
 
-| 项目 | 当前限制 |
+```ts
+const result = await note.export({ status: 'active', sort: '-createdAt' });
+```
+
+note 来自本项目生成契约。导出需 Note.export，读取受当前范围与掩码约束；页面筛选应提交给服务端，不只过滤已加载的一页。
+
+worker 在同一可重复读快照中分批构建文件，当前上限 100000 行、20 MiB，超限失败并要求缩小范围。导出包含公开业务字段和系统列，公式前缀有安全转义；它不是可直接回导的命令模板，掩码和系统列也不能原样回写。
+
+## 跟踪任务到终态
+
+result.ok 只说明任务接受，HTTP 为 202。保存 result.data.id，用 client.transfer(id) 或 useTransfer(id) 观察：
+
+| 状态 | 页面行为 |
 | --- | --- |
-| 导入 | UTF-8 CSV，1 MiB / 1000 条数据记录 |
-| 导出 | 100000 行 / 20 MiB；超限任务失败，不静默截断 |
-| 导出分页参数 | page/pageSize 不限制导出范围；使用业务筛选条件缩小数据 |
-| 有效期 | 提交起 24 小时，到期拒绝下载，由 worker 清理文件和结果 |
-| 存储 | PostgreSQL 持久化，API 与 worker 不需要共享磁盘 |
-| 暂未提供 | XLSX、对象存储、断点续传、逐行实时进度、超大文件流式导入 |
+| queued / processing / retrying | 显示进度与可继续查询的任务标识 |
+| completed | 查看摘要，提供报告或文件下载 |
+| failed | 展示稳定错误码和可处理原因 |
+| expired | 说明结果已过期，按当前需求重新提交 |
 
-任务一直 queued 先查 worker；failed 看 errorCode/导入报告；数据库故障耗尽重试时查原有死信链路。先修复根因再重放，别创建直接写业务表的“快速导入”接口。
+useTransfer 处理中每两秒刷新，终态停止。完成后使用 client.transferDownloadUrl(id) 下载。导入报告提供行号、成功/失败、code/domainCode 和字段名，不含原始单元格敏感值。
+
+任务和结果默认保留 24 小时。读取、执行和下载重新核对身份与权限；授权变化可能使原导出文件不再可下载。
+
+## 协议与部署
+
+| 接口 | 用途 |
+| --- | --- |
+| POST /api/note/export | 为 Note 创建导出，其他对象由注册表生成路径 |
+| POST /api/sys/transfers/import | 创建命令导入 |
+| GET /api/sys/transfers | 本人可见任务 |
+| GET /api/sys/transfers/:id | 状态 |
+| GET /api/sys/transfers/:id/download | 文件或报告 |
+
+具体路径和参数以 SDK/OpenAPI 为准。接口不要求把业务用户带到系统管理，也不统一要求 Sys.ops 权限；仍需目标命令/导出授权、会话、CSRF 和 worker。
+
+结果与消费者记录共同持久化，崩溃可重投；任务接受、处理完成、报告下载是三个不同阶段。
+
+## 验证
+
+导入准备全部成功、部分失败、原子回滚及缺能力样例；观察任务终态后独立读取业务数据。导出用不同范围和敏感字段权限比对，并检查超限、过期及下载时撤权。CSV 展示与真正写入规则分别核对。
+
+[返回开发手册](../README.md)

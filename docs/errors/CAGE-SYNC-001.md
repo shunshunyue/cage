@@ -2,7 +2,7 @@
 
 [返回错误码册](README.md) · [业务排错](../development/tools/troubleshooting.md)
 
-> 本页由框架生成。正反例为局部声明或操作说明，完整写法见业务开发指南及本项目 domain。
+本页说明这一诊断的触发条件与修复方法。正反例为局部说明，完整业务输入以本项目声明为准。
 
 ## 何时出现
 
@@ -30,13 +30,14 @@ sync --check 发现框架规则需更新，或 begin/end 标记缺失一边、�
 
 运行 cage sync 后再 sync --check，确认标记外业务约定保持不变。
 
-## 框架内的检查位置
+<details>
+<summary>框架实现依据（维护者）</summary>
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
-- `packages/cli/src/sync.ts:73`
-- `packages/cli/src/sync.ts:80`
-- `packages/cli/src/sync.ts:91`
+- `packages/cli/src/sync.ts:68`
+- `packages/cli/src/sync.ts:75`
+- `packages/cli/src/sync.ts:86`
 
 实现片段（位置随框架版本更新）：
 
@@ -47,3 +48,5 @@ sync --check 发现框架规则需更新，或 begin/end 标记缺失一边、�
   return current.slice(0, starts[0].index) + latest + current.slice(ends[0].index! + ends[0][0].length);
 }
 ```
+
+</details>

@@ -23,9 +23,8 @@ export function agentSkillEntries(application: string): Record<string, string> {
 
 <!-- 由 scripts/sync-agent-skill.ts 生成；教学正文只在 docs/development 维护。 -->
 
-加载本技能后，先阅读[完整框架开发方法](../../../${skillDocument})，再根据其中的任务选择表读取相关专题。
-正文规定先理解需求、提出疑问与建议、查证框架，再说明实现映射、编码和验收；不要只凭本入口的摘要开始编写业务。
-当前项目的业务要求与 AGENTS.md 仍适用，框架维护任务遵守仓库的包边界。
+读取[开发 Skill 正文](../../../${skillDocument})，按本次任务选择所需教材。
+正文说明业务协作、能力查证、实施和验收；项目规则以 AGENTS.md 为准，框架维护遵守仓库包边界。
 `,
     'CLAUDE.md': `<!-- 由 scripts/sync-agent-skill.ts 生成；共享同一套框架教材。 -->
 # Cage 开发入口

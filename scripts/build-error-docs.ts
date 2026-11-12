@@ -319,7 +319,7 @@ for (const [code, sources] of [...codes].sort()) {
 
 [返回错误码册](README.md) · [业务排错](../development/tools/troubleshooting.md)
 
-> 本页由框架生成。正反例为局部声明或操作说明，完整写法见业务开发指南及本项目 domain。
+本页说明这一诊断的触发条件与修复方法。正反例为局部说明，完整业务输入以本项目声明为准。
 
 ## 何时出现
 
@@ -347,7 +347,8 @@ ${guide.negative}
 
 ${family.verify}
 
-## 框架内的检查位置
+<details>
+<summary>框架实现依据（维护者）</summary>
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
@@ -358,6 +359,8 @@ ${locations.map((location) => `- \`${location}\``).join('\n')}
 \`\`\`ts
 ${primary.context}
 \`\`\`
+
+</details>
 `,
   );
 }
@@ -365,13 +368,15 @@ ${primary.context}
 const index = [
   '# 错误码册',
   '',
-  '这是本业务项目自带的离线诊断手册。先使用错误码、声明位置、reason/fix 定位；不需要克隆框架仓库。',
+  '先区分收到的是工具诊断、接口错误还是业务拒绝，再进入对应说明。本手册随项目本地分发。',
   '',
-  '- [HTTP 运行时错误与业务码](runtime.md)：401/403/404、状态冲突、约束拒绝、DOMAIN_ERROR 等。',
-  '- [业务排错顺序](../development/tools/troubleshooting.md)：启动、权限、审批人、worker、死信与导入导出。',
-  '- CAGE-* 是声明、工具链或内部运行诊断；HTTP code 与业务 domainCode 是另一层，不要混为一谈。',
+  '| 手头的证据 | 从哪里查 |',
+  '| --- | --- |',
+  '| CAGE-* 诊断及 at/reason/fix | 用完整错误码打开下方对应页面 |',
+  '| HTTP code 或 domainCode | [运行时错误](runtime.md) |',
+  '| 只有失败现象或没有预期后续 | [排错顺序](../development/tools/troubleshooting.md) |',
   '',
-  '每页包含触发阶段、具体原因、修复步骤、正反例、验证方法与当前版实现位置。例子为局部说明，不能替代完整业务输入。',
+  '先执行具体修复，再复验原操作及相关失败路径。框架实现位置折叠在各页末尾，供维护者继续定位；普通业务不需要另克隆仓库。',
   '',
 ];
 for (const [prefix, family] of Object.entries(families)) {

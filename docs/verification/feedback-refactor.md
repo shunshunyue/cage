@@ -17,7 +17,7 @@
 | F07 | 监听异常禁用缓存；重连清空；代次检查阻止旧请求回填 | 断线、撤权、重连、旧 resolve 回填的真实数据库故障注入 |
 | F08 | 连接器外呼移出事务，租约领取并可靠保存回执，短事务回写；连接、事务、网络均有界 | poolSize=1、回写失败复用回执、未知结果停止盲目重试；导出指纹和审计复用持有事务，无第二连接等待 |
 | F09 | 必要引擎缺失拒绝启动；事件/消费者清单校验；运行版本、指纹和心跳 | 缺消费者、未知事件不会静默 done；纯记录事件允许归档；首阶段要求同版本部署 |
-| F10 | 可靠敏感读取、自定义 query 用途审计、导出生成/下载审计；登录失败审计故障可观测 | 各入口注入审计故障；完整保证与尽力记录差异见[审计矩阵](../development/getting-started/architecture.md#审计保证) |
+| F10 | 可靠敏感读取、自定义 query 用途审计、导出生成/下载审计；登录失败审计故障可观测 | 各入口注入审计故障；完整保证与尽力记录差异见[审计矩阵](../development/reference/execution.md#审计交付矩阵) |
 | F11 | 生产 Cookie 密钥校验；显式 bootstrap 及新受限凭据文件；提交前交付凭据，失败整体回滚；healthz/readyz 分离 | 不隐式初始化、不向服务日志输出初始密码；readyz 检查数据库及授权监听，worker 另有心跳 |
 | F12 | 异步 scrypt；认证并发和等待队列有界；输入长度提前拒绝 | 队列、异常释放及可控非阻塞回归；没有据此报告生产吞吐或 P95 |
 | F13 | 页码/偏移安全整数，有限数值、严格布尔、合法 ISO 日期，字段级错误；UUID SQL 前校验与排序白名单 | 非法与合法参数真实数据库回归；保留 pageSize 上限规范化，当前仍为 offset + 精确计数 |
@@ -28,7 +28,7 @@
 | --- | --- | --- |
 | DX01 | 当前安装版本公开能力、真实签名、声明位置和本地指南索引 | `cage capabilities 关键词 --format json` |
 | DX02 | 注册、生成、编译产物、迁移、授权、API/worker 实际加载证据的状态总览 | `cage doctor`；每项 pass / fail / unknown，未知不视为通过 |
-| DX03 | reactionEach 声明上限、目标命令、稳定排序及映射；order 表达跨步骤依赖；图谱保留集合信息 | [有界集合](../development/reference/primitives.md#有界集合与步骤顺序)；20 资源/10 明细、预算竞争、整单回滚回归 |
+| DX03 | reactionEach 声明上限、目标命令、稳定排序及映射；order 表达跨步骤依赖；图谱保留集合信息 | [有界集合](../development/reference/primitives.md#事件与反应)；20 资源/10 明细、预算竞争、整单回滚回归 |
 | DX04 | 定义、导出别名、domain 入口、注册节点与路由关联报告 | doctor.registration，遗漏声明由静态诊断定位 |
 | DX05 | 不可覆盖的命名本体快照；查询不写当前图；impact 可读取快照 | `cage snapshot save/list`、`cage impact --snapshot 名称` |
 | DX06 | 按 requestId / outboxId / 聚合及对象关联 outbox、消费者、连接器执行、死信、审计的实际时间线 | `cage timeline`；受运维及对象 read/范围约束，不交付载荷或远端响应 |

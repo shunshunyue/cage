@@ -2,7 +2,7 @@
 
 [返回错误码册](README.md) · [业务排错](../development/tools/troubleshooting.md)
 
-> 本页由框架生成。正反例为局部声明或操作说明，完整写法见业务开发指南及本项目 domain。
+本页说明这一诊断的触发条件与修复方法。正反例为局部说明，完整业务输入以本项目声明为准。
 
 ## 何时出现
 
@@ -30,7 +30,8 @@ fields: { version: text() }
 
 重跑 cage check/gen，审查契约与迁移；敏感字段还要验证普通用户读结果。
 
-## 框架内的检查位置
+<details>
+<summary>框架实现依据（维护者）</summary>
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
@@ -45,3 +46,5 @@ fields: { version: text() }
     if (!/^[a-z][A-Za-z0-9]*$/.test(k)) throw declError('CAGE-NAME-002', `字段名 ${name}.${k} 必须是小驼峰`);
     fields[k] = v;
 ```
+
+</details>

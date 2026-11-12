@@ -2,7 +2,7 @@
 
 [返回错误码册](README.md) · [业务排错](../development/tools/troubleshooting.md)
 
-> 本页由框架生成。正反例为局部声明或操作说明，完整写法见业务开发指南及本项目 domain。
+本页说明这一诊断的触发条件与修复方法。正反例为局部说明，完整业务输入以本项目声明为准。
 
 ## 何时出现
 
@@ -30,7 +30,8 @@ export function build() { return aggregate('Order', definition); }
 
 重跑 cage check/analyze，确认声明出现在本体图，再运行 gen。
 
-## 框架内的检查位置
+<details>
+<summary>框架实现依据（维护者）</summary>
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
@@ -46,3 +47,5 @@ export function build() { return aggregate('Order', definition); }
               reason: `原语 ${name}() 写在函数、条件或循环里，抽取器看不到它`,
               fix: '原语必须在模块顶层用 export const 声明',
 ```
+
+</details>

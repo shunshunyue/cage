@@ -1,5 +1,8 @@
-// 数据范围：聚合声明「哪个字段是部门、哪个字段是创建人」，授权数据决定用哪个组合子。
-// 每个组合子都有 SQL 翻译（compileScope）和内存判定（scopeMatches），两者语义一致。
+/**
+ * 提供聚合的范围字段元数据，以及读写执行层共用的 SQL/内存范围判定。
+ * 聚合声明负责定位部门和所有者，角色 grants 决定实际组合子；本模块不加载授权或连接数据库。
+ * 各种匹配始终结合租户与真实主体，字段或所需上下文缺失时不能推断为全部可见。
+ */
 import { sql, type RawBuilder } from 'kysely';
 import type { Combinator, Ctx, ScopeGrant } from '../types.js';
 import { snake } from '../util/names.js';
@@ -22,7 +25,8 @@ function spec(hint: Combinator | undefined, deptField?: string, ownerField?: str
  *   scope.deptSubtree('deptId')            部门字段是 deptId，创建人字段自动识别 createdBy
  *   scope.self('createdBy')                只有创建人字段
  *   scope.of({ dept: 'deptId', owner: 'ownerId' })
- *   scope.none()                           没有部门和创建人字段（只能授予 all）
+ *   scope.none()                           不提供范围字段；aggregate 仍会自动识别已有 createdBy
+ * none/all 的声明都不授予能力或全部范围；没有可用归属字段时，self/dept 无法匹配，需要实际 all 授权。
  */
 export const scope = {
   self: (ownerField = 'createdBy') => spec('self', undefined, ownerField),

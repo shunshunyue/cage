@@ -2,7 +2,7 @@
 
 [返回错误码册](README.md) · [业务排错](../development/tools/troubleshooting.md)
 
-> 本页由框架生成。正反例为局部声明或操作说明，完整写法见业务开发指南及本项目 domain。
+本页说明这一诊断的触发条件与修复方法。正反例为局部说明，完整业务输入以本项目声明为准。
 
 ## 何时出现
 
@@ -31,7 +31,8 @@
 
 确认当前运行退出码与 JSON 报告，分别报告通过、失败和跳过。
 
-## 框架内的检查位置
+<details>
+<summary>框架实现依据（维护者）</summary>
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
@@ -50,3 +51,5 @@
   if (!persistent && !fresh) throw new Error('[CAGE-TEST-003] 不允许将已有 PostgreSQL 目录作为自动删除的临时实例；使用 persistent: true');
   if (persistent) mkdirSync(dir, { recursive: true });
 ```
+
+</details>

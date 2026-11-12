@@ -1,99 +1,60 @@
-# Cage 框架维护指南（给 AI 与开发者）
+# Cage 框架维护约定
 
-本仓库实现 Cage 框架本身，使用 TypeScript、pnpm workspace、Node.js 24 和 PostgreSQL。先区分任务是在维护框架还是编写业务：业务范例位于 `examples/purchase-admin`，采购模板位于 `templates/app`，空白模板位于 `templates/blank`。进入子目录后还要遵守该目录的 AGENTS.md。
+本仓库实现框架本身，使用 TypeScript、pnpm workspace、Node.js 24 和 PostgreSQL。业务范例为 examples/purchase-admin，采购分发模板为 templates/app，空白模板为 templates/blank。进入应用目录还要读其 AGENTS.md。
 
-## 先读什么
+## 按任务进入
 
-1. [框架开发 Skill](docs/development/skills/cage-development/SKILL.md)与[框架学习入口](docs/development/README.md)：理解运行模型、业务澄清、能力选择、实施与验收；描述或文档不清楚时，按[业务澄清与共同设计](docs/development/guides/business-collaboration.md)主动提出疑问、选项和建议，由用户选择业务规则。[完整入门课](docs/development/getting-started/first-feature.md)连接声明、契约与页面。框架内部维护仍先遵守本文件的包边界和验证要求。
-2. [架构与执行模型](docs/development/getting-started/architecture.md)：理解聚合、流水线、权限、数据库与 worker。
-3. [原语与最小业务](docs/development/reference/primitives.md)：按实际 API 编写字段、命令、事件与查询。
-4. [标准采购范例导读](docs/development/examples/purchase-example.md)：审批、资源配对、ERP、前端的完整链路。
-5. [开发步骤](docs/development/getting-started/workflow.md)与[错误码册](docs/errors/README.md)：修改、验证、排错。
-6. [对象关系](docs/development/guides/relations.md)：fields 中的一对多、多对多，自动中间表与关联分页。
-7. [工程目录与代码组织](docs/development/reference/project-structure.md)：脚手架的模块归属、公开入口、命名与依赖门禁。
-8. [本体查询与 AI 上下文](docs/development/tools/ontology-context.md)：开发前按中文需求查节点、关系与源码，判断候选证据和覆盖边界。
-9. [业务前端路由与浏览器验收](docs/development/guides/routing.md)：多页面 URL、登录回跳、系统管理共存、SPA 部署与实际浏览器验收。
-10. [能力发现与状态诊断](docs/development/tools/diagnostics.md)：公开签名、注册与构建状态、进程证据、执行时间线、授权解释与命名基线。
-11. [原生智能助理与 AI 审批](docs/development/guides/intelligence.md)：智能审批三态、领域助理、Admin 模型与性格配置、随页上下文、流式 SDK 和上下文预算。遇到相关需求先核对现有框架能力及应用启用状态。
-12. [详细中文注释规范](docs/development/reference/commenting.md)：所有源码必须遵守的文件说明、API 文档、关键流程与业务边界注释；新增、修改和交付时均检查。
+| 任务 | 先读 |
+| --- | --- |
+| 维护框架、CLI、范例分发 | [框架维护](docs/maintainers/framework-development.md)，按其包边界修改 |
+| 编写或修改业务 | [开发 Skill](docs/development/skills/cage-development/SKILL.md)，按本次任务加载教材 |
+| 第一次了解运行机制 | [执行模型](docs/development/getting-started/architecture.md)与[便笺课程](docs/development/getting-started/first-feature.md) |
+| 不清楚业务含义 | [业务协作](docs/development/guides/business-collaboration.md)；技术事实由 agent 查证，业务取舍由用户决定 |
+| 查参数、实现或故障 | [原语](docs/development/reference/primitives.md)、[本体工具](docs/development/tools/ontology-context.md)、[诊断](docs/development/tools/diagnostics.md)、[错误码册](docs/errors/README.md) |
 
-这些文档描述当前实现；技术方案中的规划不能直接当作已存在的 API。API 有疑问时核对相应包的 `src/index.ts` 和声明实现，不发明配置项、命令或导出。
+已明确的规则与授权直接沿用。写业务代码前简述规则、已查证的能力、修改位置与验收；普通技术方案无需额外批准。规划不能当作现有 API，有疑问核对包 src/index.ts、声明实现和生成契约。
 
-## 框架如何工作
+## 必须保持的边界
 
-业务先声明 `aggregate → command → event → reaction / approval / connector`。声明是模块顶层的 `export const`，由业务入口统一导出。框架从同一份声明构建注册表、能力目录、HTTP 路由、本体图、前端契约和迁移草稿。
+- 智能体并发最多 2：主智能体之外最多 1 个；需要更多分工时顺序执行。
+- 所有手写源码遵守[详细中文注释](docs/development/reference/commenting.md)。文件头、导出 API/类型字段、关键流程与复杂分支解释做什么、为什么、如何完成及实际边界；新建同步写，修改同步核对上下游。仅注释任务保持逻辑、接口、配置值和运行文案不变。
+- 注释按实际单位、空值、状态、权限、事务、并发、幂等、重试、缓存和清理说明保证；不以机械逐行翻译、模板或字数代替解释。生成物注释从生成器维护，已发布迁移不改写。
+- 内核保持业务无关。修改内核说明必要性，以有意义回归证明行为，发布前由架构负责人评审。普通业务写入走命令，读取走安全视图，外呼走连接器。
+- handler 的读依赖写入 reads，job 的读与命令写入 reads/calls；声明沿模块入口导出到 domain。前端只依赖契约、client 和协议，不导入 domain、数据库或内核运行时。
+- domain 按 modules/workflows/integrations/shared、Web 按 app/modules/shared 组织，遵守[目录规范](docs/development/reference/project-structure.md)。contracts 由生成器按聚合维护根公共入口；两模板保持 structure: modular。
+- 多页面使用 React Router，列表/详情有 URL，筛选和分页进入查询参数；app 组合模块入口。导航变更实际验收深链接、刷新、前进后退、登录回跳、无权限和 404，见[路由指南](docs/development/guides/routing.md)。
+- 新能力不自动授给普通生产角色。前端 can() 只控制显示，审批选人不授予权限；服务端判断实际能力、范围和约束。
+- 领域含义变化前保存本体基线；改声明后检查与生成，审查契约和迁移草稿。范例执行 pnpm --filter @app/purchase-admin gen；生成物不手改，已执行/发布迁移保留，新结构用新迁移。
+- .env、Cookie 密钥、数据库密码与初始凭据不进入源码/文档。诊断连接只输出主机、端口、库名和错误码。项目已有 PostgreSQL，普通业务不新建连接池或管理 Docker。
+- 维护脚本使用 .ts，不新增 .mjs。不增加没有业务价值的防御分支或静默兜底。
 
-- **聚合**把同一个业务对象的字段、状态、范围字段和不变量放在一起。它通常对应一张主表，也负责定义可执行的命令，不能只按“表”理解。
-- **命令**是唯一业务写入口。handler 描述业务变化；权限、状态、版本、事务、审计、outbox 由内核执行。
-- **读侧**通过 `safe.*` 安全视图和只读账号查询，落实数据范围与敏感字段掩码。
-- **事件与反应**连接业务行为。`tx: 'same'` 与主命令共同提交；默认 outbox 由 worker 异步执行。标签 `acquires/releases` 仅用于静态资源配对，实际动作仍由命令完成。
-- **审批与第三方**最终回到领域命令。流程选人不等于授予能力，连接器不允许绕过命令直接写表。
-- **原生 AI**由 `ai()` 导出启用，AI 审批使用现有 `step` 的 `kind: 'ai'` 类型。框架负责执行循环、工具、会话与偏好记忆、流式接口和 SDK；应用负责策略、授权、页面快照与界面。给业务项目提供能力入口时修改 CLI 的 `sync.ts` 托管区、`capabilities.ts` 检索提示和 `docs/development`，再同步模板；框架支持、应用启用、实际验证要分别说明。
+## 框架可选能力
 
-## 到哪里修改
+原生 AI 由 domain 导出 ai() 启用，AI 审批使用 step 的 kind: 'ai'。运行时提供工具、会话、记忆与流式协议，应用提供策略、授权、上下文和界面；具体见[原生 AI](docs/development/guides/intelligence.md)。
 
-| 任务 | 位置 | 责任边界 |
-| --- | --- | --- |
-| 原语、写流水线、读侧、DDL、迁移、worker、通用数据传输 | `packages/kernel/src` | 业务无关；不能出现采购、库存等业务分支 |
-| HTTP、认证、CSRF、OpenAPI | `packages/http/src` | 根据注册表生成接口，调用内核 |
-| 文件上传、分片续传、私有存储 | `packages/files/src` | 字节 IO、会话和清理；字段原语及事务内绑定仍在 kernel |
-| 用户、部门、角色、系统管理页面 | `packages/admin/src` | 组织模型、防提权、运营管理 |
-| 审批路由、适配器、待办 | `packages/approval/src` | 决定步骤与执行人，结论通过命令落实 |
-| 连接器声明、验签、出站与 fake | `packages/connectors/src` | 管理外部 IO 边界 |
-| 客户端与 hooks | `packages/client/src` | 网络协议、类型化结果、界面能力判断 |
-| 原生 AI 运行时与本体 | `packages/ai/src`、`packages/ontology/src`、`packages/ai-protocol/src` | 持久循环、工具、记忆、审查执行；协议可供前端使用，运行时不得进入浏览器 |
-| 抽取、图规则、生成器、门禁、脚手架 | `packages/cli/src` | 静态分析与开发工具，不复制运行时业务逻辑 |
-| 测试环境、lint 规则 | `packages/testkit`、`packages/lint` | 真实 PostgreSQL 验证及依赖边界 |
-| 标准业务实现 | `examples/purchase-admin` | 演示如何消费框架，遵守其应用 AGENTS.md |
-| 采购分发模板 | `templates/app` | 从范例同步；不要在这里独立实现第二套采购功能 |
-| 空白分发模板 | `templates/blank` | 单独维护空白领域与页面；共享基础配置、教材及参考源码由同步脚本更新 |
-| 框架开发指南、错误码源资料 | `docs/development`、`scripts/error-catalog.ts` | 指南手写；逐码页面由脚本生成 |
+增加框架能力时，同时更新 CLI sync.ts 托管指引、capabilities.ts 检索提示、当前教材及模板，分别核对框架支持、应用启用与实际执行。
 
-## 修改约定
+## 修改与验证
 
-- 智能体并发总数最多为 2：主智能体之外最多启用 1 个子智能体。需要更多分工时顺序执行，不能同时启动多个子智能体。
-- 所有手写代码必须有详细中文注释，具体遵守 [详细中文注释规范](docs/development/reference/commenting.md)。文件头写明职责、调用关系和边界；导出函数、类、组件、hooks、类型和业务声明用 JSDoc 说明用途、输入输出、流程、失败及副作用；复杂内部函数、关键分支和类型字段补充就地说明。
-- 注释必须同时解释“做什么、为什么、如何完成、有哪些边界”，不能只写一句标题、只说为什么，或以“代码自解释”为由省略。金额/数量的单位、空值语义、状态条件、权限与范围、事务/并发/幂等/重试、缓存与异步清理等按实际实现写清；没有实现的保证不能写成已经支持。
-- 新增代码同步写注释，修改代码同步核对并更新相关注释；交付前逐文件检查，补足本次触及职责的上下文。仅补注释的任务保持逻辑、接口、配置值和运行文案不变；生成物的注释从生成器维护，已发布迁移不改写。不得用机械逐行翻译、凑字数或重复模板替代具体解释。
-- 避免没有业务价值的防御分支和静默兜底。
-- 新增和维护脚本使用 TypeScript（`.ts`），不新增 `.mjs`。Node.js 24 可直接运行本仓库使用的可擦除类型语法。
-- 内核保持业务无关。需要修改内核时说明必要性，用有意义的回归用例证明行为，发布前由架构负责人评审。
-- 业务写入走命令，读侧走安全视图，外呼走连接器。前端只依赖契约与客户端，不导入 domain、数据库或内核。
-- handler 的读依赖写进 `reads`；job 的读和命令调用写进 `reads/calls`；所有声明从 domain 入口导出。
-- 范例及模板按业务模块组织：Web 使用 app/modules/shared，domain 使用 modules/workflows/integrations/shared；src 根入口只负责组合。contracts 目录由生成器按聚合生成，保留根公共 API。两模板启用 structure: modular，不关闭目录门禁来适应平铺代码。
-- 多页面业务使用 React Router，列表、详情等页面有独立 URL，筛选/分页进入查询参数，组件状态用于页面内临时交互。路由由 app 组合，页面通过模块入口进入 Outlet；变更导航后实际检查深链接、刷新、前进后退、登录回跳、无权限和 404。静态门禁不能代替浏览器验收。
-- 新增能力不自动授给生产角色。前端 `can()` 只控制显示，服务端负责真正授权。
-- 不手改契约等生成物；修改 domain 后运行 `pnpm --filter @app/purchase-admin gen`，审查生成差异。
-- 已执行或已发布的迁移不可改写。新结构通过新迁移表达，生成的迁移先作为草稿审查。
-- `.env`、Cookie 密钥、数据库密码、初始化凭证不得进入源码或文档；诊断连接时只输出主机、端口、库名和错误码。
-- 不为普通业务新建连接池或管理 Docker。项目 `.env` 配置已有 PostgreSQL；`init` 准备账号，`migrate` 更新表，`dev` 启动进程。
+修改前说明本次确定的规则、实现依据、最小位置与可观察结果。文档或可逆小改动按影响验证，不重复全量数据库回归。
 
-## 工作顺序与验证
+| 根目录命令 | 范围 |
+| --- | --- |
+| pnpm install / pnpm build | 依赖与框架、范例 API/Web 构建 |
+| pnpm test | CLI、lint、PostgreSQL 内核与 HTTP 回归 |
+| pnpm example:verify | 范例类型、依赖、lint、图、生成与数据库 |
+| node packages/cli/bin/cage.js budget | 内核体积、词汇和 unsafe |
+| pnpm docs:check / pnpm docs:examples | 资料链接/分发与教学源码 |
+| pnpm typecheck:scripts | 维护脚本类型 |
 
-按[框架开发 Skill](docs/development/skills/cage-development/SKILL.md)先理解需求、提出业务疑点并查证当前能力；写代码前简述已确定规则、框架实现依据、最小修改位置和验收结果。明确的技术方案直接推进，待用户决定的业务规则不擅自补齐。框架内部修改仍遵守上面的包边界。
+范例目录使用 pnpm exec cage check、pnpm gen；业务图谱用 cage graph。交付分别报告通过、跳过和未执行，保持完整诊断 code/at/reason/fix。修复根因，不以放宽权限、删约束、禁用 lint 或改写历史消除错误。
 
-涉及领域含义变化时，修改前保存本体图基线。再改声明与实现，生成契约和迁移草稿，最后对照已明确规则运行相关检查。文档或可逆的小改动不需要反复跑全套数据库回归。
+## 文档、模板和发布
 
-| 执行目录 | 命令 | 用途 |
-| --- | --- | --- |
-| 仓库根目录 | `pnpm install`、`pnpm build` | 安装并构建框架、范例 API 和 Web |
-| 仓库根目录 | `pnpm test` | CLI、ESLint、PostgreSQL 内核和 HTTP 回归 |
-| 仓库根目录 | `pnpm example:verify` | 范例类型、依赖、lint、图规则、生成一致性和数据库测试 |
-| 仓库根目录 | `node packages/cli/bin/cage.js budget` | 内核体积、公共词汇和 unsafe 预算 |
-| 范例目录 | `pnpm exec cage check`、`pnpm gen` | 检查声明、重新生成 |
-| 范例目录 | `pnpm exec cage graph` | 在浏览器检查业务图谱与中文说明 |
-| 仓库根目录 | `pnpm docs:check` | 检查学习资料链接和脚手架分发内容 |
-| 仓库根目录 | `pnpm typecheck:scripts` | 检查维护脚本的 TypeScript 类型 |
+docs/development 是当前教材唯一手写来源；Skill 唯一正文位于其 skills/cage-development/SKILL.md。scripts/sync-agent-skill.ts 生成发现入口，scripts/error-catalog.ts 经 docs:errors 生成错误册，scripts/sync-template.ts 分发教材和两套模板共享配置。
 
-交付时分别报告**通过、跳过、未执行**，不能把跳过当作通过。出现错误先看完整诊断中的 `code / at / reason / fix`，再查对应错误码；不要用删除约束、放宽权限、禁用 lint 或改写历史来消除报错。
+采购模板从范例同步；空白领域、页面及初始迁移独立维护，采购参考源码仅阅读。AGENTS 框架区由 CLI sync 托管，客户约定放标记外。模板 _gitignore 创建后恢复 .gitignore，分发阶段保留占位名。
 
-## 文档、模板与发布
+指南或错误码变化运行文档检查，课程变化运行 docs:examples；托管区变化先同步范例，再同步模板并构建 CLI。客户应只靠分发的本地教材学习，不要求另克隆框架。
 
-- `docs/development` 是 框架开发指南唯一手写来源。`scripts/error-catalog.ts` 维护逐码解释和例子，`pnpm docs:errors` 生成 `docs/errors`；不要只改生成页面。
-- `scripts/sync-template.ts` 同步采购模板和两套模板的共享配置、学习资料。空白模板的领域、页面和初始迁移独立维护；采购参考源码在 docs 下，不参与运行。应用 AGENTS.md 的框架部分由 CLI `sync` 托管，业务约定写在标记外。
-- CLI 构建时将模板、框架开发指南与错误码册打包；`create-cage-app` 仅调用 CLI。新项目应能仅靠本地文件完成学习，不能要求用户另行克隆框架。
-- 框架 Skill 的唯一正文位于 `docs/development/skills/cage-development/SKILL.md`；`scripts/sync-agent-skill.ts` 生成 agent 发现入口，模板同步时一起分发。课程代码也属于教材，修改后执行 `pnpm docs:examples` 验证当前声明与生成契约能编译；跨 agent 行为评估见 `docs/maintainers/agent-evaluation.md`。
-- 模板中的 `_gitignore` 在创建后恢复为 `.gitignore`；npm 会排除原名，不能把占位文件直接改回原名分发。
-- 更改指南或错误码后执行文档检查；更改托管区后同步范例，再同步模板并构建 CLI，避免发布旧资料。
-- 本仓库远端为 `https://github.com/shunshunyue/cage.git`；没有可用提交基线时使用 `cage impact --base-file`。不要擅自创建或推送远端。
-- npm 包位于 `@yss123`，统一版本和发布步骤见 [npm 发布说明](docs/maintainers/npm发布说明.md)。公开发布不能覆盖同版本，只在用户授权范围内执行。
+远端为 https://github.com/shunshunyue/cage.git，没有 Git 基线用 cage impact --base-file；不擅自创建或推送远端。公开包在 @yss123，统一版本与发布按[npm 发布说明](docs/maintainers/npm发布说明.md)，只在用户授权范围内执行且不覆盖已发版本。

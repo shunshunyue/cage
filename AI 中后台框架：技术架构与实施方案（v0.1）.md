@@ -1,5 +1,7 @@
 # AI 中后台框架：技术架构与实施方案（v0.1）
 
+> 历史方案：2026-10-29 的设计基线。本文的规划、包名和协议不作为当前 API；使用框架从[开发手册](docs/development/README.md)进入，查版本交付用[发布档案](docs/releases/README.md)。
+
 Oct 29, 2026 · @Nora Bell
 
 ## 1. 方案概览

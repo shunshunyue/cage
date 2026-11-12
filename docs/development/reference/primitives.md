@@ -1,230 +1,118 @@
-# 原语与最小业务
+# 声明原语参考
 
-[返回学习入口](../README.md) · [开发步骤](../getting-started/workflow.md)
+本页用于查字段、命令、事件和查询的声明规则。完整操作过程见[便笺课程](../getting-started/first-feature.md)。公开入口来自 @yss123/cage-kernel；参数有疑问时用 cage capabilities 查当前安装包的真实签名。
 
-本页代码使用当前公开导出。完整文件示例可直接放入应用；标为“片段”的代码需要结合采购范例已有符号使用。不要把片段中的变量名当成新的框架 API。
+## 聚合与状态
 
-文件字段使用 `file({ maxBytes, accept }).optional()` 或 `files({ maxBytes, accept, maxCount })`。字段保存文件 ID，上传/续传先获得临时文件，最终通过业务命令绑定；完整流程、限制和存储配置见[文件指南](../guides/files.md)。
+aggregate(name, definition) 定义一个对象。name 使用大驼峰，字段使用小驼峰。fields 放业务字段，states 放生命周期，scope 描述归属，invariants 校验最终快照，description 解释业务含义。
 
-## 最小的增、查、改、归档业务
+系统维护 id、version、status、createdAt、updatedAt 和数据库租户列，业务不能重复声明。未指定 states 时为 active/deleted，这不会自动生成 CRUD 命令。状态也可声明在 fields.status，两种位置只能选一处。
 
-完整教学代码统一维护在[便笺声明](../examples/note/note.ts)。[第一条完整业务链](../getting-started/first-feature.md)带你依次完成领域导出、契约生成、权限配置与真实页面接入，包含可编译的列表、新建、详情、修改和归档组件。
+states 的 terminal 标记供检查和展示使用；哪些操作实际允许仍由命令 from/to 决定。每个状态用 labels 提供业务名称，名称不改变存储值。
 
-原语参考从下文查字段与选项；无需重复复制一份入门代码。便笺的删除选择“归档”命令，保留历史；系统默认状态不会自动提供完整 CRUD 命令。
+## 字段
 
-## 字段速查
+| 写法 | 值与存储含义 |
+| --- | --- |
+| text(max)，默认 500 | 有最大长度的字符串 |
+| int() / number() | 整数 / 普通数值 |
+| money() | 十进制金额字符串，数据库 numeric；金额单位由业务约定 |
+| id() / ref('User') | UUID / 指向已导出聚合的 UUID 引用 |
+| date() / datetime() | YYYY-MM-DD / 带时区的 ISO 时间字符串 |
+| bool() / enumOf(...) | 布尔 / 枚举值 |
+| list({ sku: text(), qty: int() }) | JSON 明细数组，非独立子表 |
+| list(id()) | UUID 值数组，非持久关系声明 |
+| json() | 键值 JSON 对象，业务仍需明确输入规则 |
+| hasMany / manyToMany | 集合关系，见[关系指南](../guides/relations.md) |
+| file / files | 受控文件 ID，见[文件指南](../guides/files.md) |
 
-| 字段工厂 | TypeScript 值/用途 | 注意 |
-| --- | --- | --- |
-| `text(max?)` | 字符串 | 最大长度；非空、格式等业务输入规则用 Zod 明确表达 |
-| `int()`、`number()` | 整数、普通数值 | 金额不要用普通浮点运算代替业务金额规则 |
-| `money()` | 十进制字符串 | 输入如 `'1200.00'`，PG numeric 读出仍是字符串 |
-| `id()` | UUID 字符串 | 业务引用没有声明关系时的 UUID 字段 |
-| `ref('Dept')` | 引用聚合的 UUID | 用字符串名可避免循环导入；目标聚合需从入口导出 |
-| `ref('User').unique()` | 租户内至多一对一 | 外键加租户复合唯一索引；不要求目标一定被引用 |
-| `hasMany('NoteComment', { mappedBy: 'noteId' })` | 一对多反查 | 只读集合，外键在目标上；不占主表列 |
-| `manyToMany('User', { description: '协作成员' })` | 多对多关联 | 命令草稿为 ID 数组；中间表由框架生成，读取独立分页 |
-| `date()`、`datetime()` | 日期/时间字符串 | 遵守字段 schema，计算时明确时区 |
-| `bool()`、`enumOf(...)` | 布尔、枚举 | 有状态迁移语义时用 `states` 而非普通枚举代替 |
-| `list({ sku: text(), qty: int() })` | 对象列表 | 可以表达单据明细；不是自动生成独立子表 |
-| `json()` | 结构不固定的 JSON 对象 | 用于结构化扩展；输入规则用命令 Zod 表达，不要把全部领域结构藏进任意 JSON |
+普通字段默认必填。.optional() 允许缺省和 null，公开值的缺省通常归一为 null；业务输入是否可以省略仍由命令 schema 决定。.unique() 生成租户内唯一约束，ref().unique() 表达至多一对一。.describe() 提供业务名称。
 
-字段可链式使用 `.optional()`、`.unique()`、`.sensitive('phone')`、`.hidden()` 等。可用敏感种类以包导出的 `SENSITIVE_KINDS` 为准；hidden 字段不会作为普通公开读字段，sensitive 字段按权限掩码。不要通过前端隐藏来替代它们。
+.sensitive('phone') 等按类型掩码；当前种类为 phone、idCard、bankCard、email、name、address，以 SENSITIVE_KINDS 导出为准。.hidden() 从普通公开读取排除。前端隐藏控件不产生这些服务端效果。
 
-业务含义同步写在框架能抽取的位置：字段 `.describe('所属部门')`、对象和操作的 `description`、每个状态的 `labels`。普通注释与前端文案不替代这些名称；完整填写位置、对象关系与检查方式见[本体建模指南](../guides/ontology-modeling.md)。
+集合关系不使用 optional/unique/hidden/sensitive；文件也有自己的修饰限制。关系、文件不能嵌入 list，事件传递关联或文件时使用普通 ID 值。
 
-集合关系也放在 `fields` 中，但不是普通 SQL 列，不支持上述四种修饰。完整声明、成员命令、分页接口、权限与迁移见[对象关系指南](../guides/relations.md)。纯关联不手写 NoteMember 聚合，具有职位、状态等业务属性的关联仍应建业务聚合。
+## 命令
 
-不要定义 `id/version/status/createdAt/updatedAt/tenantId` 同名业务字段。聚合名和事件名用大驼峰，字段、命令、查询和任务名用小驼峰，状态名用小写下划线。
+command(aggregate, options) 保存一次写入的规格，由 domain 导出后注册能力。显式 name 优先，否则使用顶层导出名；最终为 Aggregate.commandName。
 
-## 命令的几个关键选项
+| 选项 | 含义与默认行为 |
+| --- | --- |
+| from | new 表示创建；已有记录指定一个或多个允许状态 |
+| to | 目标状态；已有记录允许 null 保持状态，新建必须有真实目标 |
+| input | Zod schema；省略时新建为空对象，已有记录为 UUID id |
+| reads | 别名到聚合的只读依赖，默认空 |
+| constraints | handler 前的硬约束列表，默认空 |
+| emits | 事件或 emit 映射，默认空；成功事务中持久化 |
+| invokedBy | 默认 user，可声明 process/job/external 或数组 |
+| public | 默认 false；true 允许显式匿名主体并跳过该命令能力检查，其他守卫继续执行 |
+| description | 命令意图和边界，供图谱与能力目录使用 |
+| handler | 业务计算，不自行提交持久化或执行外部 IO |
 
-| 选项 | 当前用法 | AI 常见错误 |
-| --- | --- | --- |
-| `from` | `'new'` 或已有状态/状态数组 | 直接在 handler 改状态，绕过生命周期 |
-| `to` | 声明的状态；已有记录可用 `null` 保留状态 | 新建用 `null`，或误认为 null 不检查状态 |
-| `input` | Zod schema；已有记录必须包含 id | 用聚合字段 schema 当成任意命令输入 |
-| `name` | 能力和接口中的命令名覆盖 | 混淆导出变量名与最终 `Aggregate.command` |
-| `invokedBy` | 默认 user；可声明 process/job/external 或数组 | 为了从前端审批而给内部结论加 user |
-| `reads` | `{ 别名: 聚合 }` | 不声明依赖，直接读仓库或连接数据库 |
-| `constraints` | 执行前的硬约束 | 在页面上判断一次就认为后端安全 |
-| `emits` | 事件或 `emit(事件, 映射)` | 已提交后另写消息，失去事务一致性 |
+已有记录的显式 input 必须包含 id。expectedVersion 是传输元数据，由内核在 schema 校验前剥离；缺省不做显式版本比较。前端方法形状见[客户端](client.md)。
 
-handler 参数依次是 `draft, input, deps, { now, actorUserId }`。可返回草稿、部分业务字段或 void；`return fail('STOCK_SHORT', detail)` 表示业务拒绝，整个事务回滚。
+handler(draft, input, deps, { now, actorUserId }) 可以修改草稿，或返回字段补丁、草稿、void、fail(业务码, detail)。返回补丁与草稿合并，最终状态、创建人和版本由内核维护；fail 表示 DOMAIN_ERROR 并回滚事务。
 
-片段：采购审批读取已声明的库存依赖。
+deps 只包含 reads 声明的别名：
 
-```ts
-reads: { stock: Inventory },
-handler: async (order, _input, { stock }) => {
-  for (const item of order.items) {
-    const row = await stock.findOne({ sku: item.sku });
-    if (!row || row.available < item.qty) return fail('STOCK_SHORT', [item.sku]);
-  }
-  return order;
-},
-```
+| 方法 | 边界 |
+| --- | --- |
+| get(id) | 范围内对象或 null，无更新行锁 |
+| find(where?, options?) | 等值条件；默认最多 1000，最多 5000，非完整集合保证 |
+| findOne(where) | 默认顺序第一条或 null，不证明条件唯一 |
+| count(where?) | 同租户、同范围内符合等值条件的数量 |
 
-使用 `deps.stock.get/findOne/find` 读取声明的依赖；不要将其扩展为写仓库。这个片段只是单次库存检查，不保证多订单并发扣减安全；生产扣减需要专门设计库存命令和并发控制。
+这些内部快照供服务端计算使用，不能作为绕过公开读侧掩码的响应。跨对象读取本身不保证后续并发写安全。
 
 ## 约束与不变量
 
-```ts
-// 片段：放在采购 approve 的配置中。
-invokedBy: 'process',
-constraints: [sod.notSameAs('createdBy')],
-```
+constraints 判断“这次操作是否允许”，例如 sod.notSameAs('createdBy') 或 stepUp。invariants 判断“最终对象是否合法”，在结果合并和目标状态确定后检查。任一失败都回滚命令事务。
 
-`sod` 防止提单人审批自己。审批流程的业务条件按需声明：采购示例按金额决定是否进入财务节点；其他流程也可以按类型、部门等字段分流，或不使用金额。
+自定义 Constraint 使用公开类型与真实签名。输入校验、操作约束和最终不变量分别覆盖不同阶段，页面校验只能提供即时反馈。
 
-不变量写在 `aggregate(..., { invariants: { 名称: 对象 => boolean } })`，在最终结果合并和目标状态确定后检查。例如 `Number(o.amount) > 0`。约束回答“这次操作允许吗”，不变量回答“结果对象合法吗”。可用 `Constraint` 类型定义自定义约束对象；先核对公开导出，不假设所有内部 helper 都是公共 API。
+## 事件与反应
 
-## 事件与资源反应
+event(name, fields, { description }) 定义大驼峰事实名称和载荷；命令通过 emits 发布。emit(event, (snapshot, input, previous) => payload) 显式生成载荷，previous 在创建时为 null。
 
-片段来自采购范例，完整版本见 `modules/purchase/purchase-order.ts`、`workflows/purchase-inventory.ts`（相对 domain src）。
+裸事件的默认映射依次取快照同名字段、缺失的 *Id 字段取主对象 id、其余取输入同名值。具有多个对象 ID 或旧状态含义时，显式 emit 更清楚。载荷校验失败会回滚主命令。
 
-```ts
-// 事件中只放下游真正需要的信息；不要拷贝整个对象。
-export const OrderCancelled = event('OrderCancelled', {
-  orderId: id(),
-  previousStatus: text(),
-});
+reaction(event, { command, map, tx, acquires, releases, order }) 把事实连接到命令。map 是纯映射，返回 null 跳过；tx 默认 outbox，same 共同提交。资源标签只描述配对，实际资源操作由目标命令完成。
 
-// 命令中通过 emit 显式提供旧状态，用它判断此前是否持有资源。
-emits: [emit(OrderCancelled, (order, _input, previous) => ({
-  orderId: order.id,
-  previousStatus: previous.status,
-}))],
-```
+reactionEach 再声明 items、maxItems、orderBy，按唯一、非空、同类型字符串或有限数值键升序串行调用。原始集合先检查上限，map 可跳过项。诊断的 originalIndex、sortedIndex、itemIndex 各指原位置、排序位置、实际执行位置，均从 0 开始。
 
-```ts
-export const lockOnApprove = reaction(OrderApproved, {
-  command: acquireLock,
-  tx: 'same',
-  acquires: 'inventory.lock',
-  map: (e) => ({ id: e.orderId, orderId: e.orderId, items: e.items }),
-});
+同事件同 tx 分组一旦使用 order，全部步骤必须声明不同的非负整数。详细事务与失败语义见[执行边界](execution.md)，业务接法见[自动化](../guides/automation.md)。
 
-export const releaseOnCancel = reaction(OrderCancelled, {
-  command: releaseLock,
-  releases: 'inventory.lock',
-  // 草稿取消时从未建锁，不应对不存在的锁调用释放命令。
-  map: (e) => e.previousStatus === 'approved' ? { id: e.orderId } : null,
-});
-```
+## 查询
 
-`map` 是纯映射，可返回 null 表示此次不执行；不能在映射中调用 HTTP。每条离开持有状态的迁移都应释放资源，或进入同样持有资源的状态。新增“撤回”时别只复制状态迁移，还要检查释放路径。
-
-事件默认载荷映射的具体命名规则见真实 `event.ts` 与范例；映射不明确时使用 `emit` 显式声明。已部署事件只做兼容扩展，新增字段设 optional；不兼容含义用新事件并考虑旧 outbox 消费，不能只改消费者。
-
-### 有界集合与步骤顺序
-
-同一事件需要对 20 台设备调用相同命令时，用 `reactionEach` 声明一次。下面为局部片段，`EquipmentAllocated` 事件含 `assets: [{ assetId }]`，`acquireAsset` 为已导出的目标命令：
-
-```ts
-import { reactionEach } from '@yss123/cage-kernel';
-
-export const acquireAllocatedAssets = reactionEach(EquipmentAllocated, {
-  command: acquireAsset,
-  items: event => event.assets,
-  maxItems: 20,
-  orderBy: 'assetId',
-  order: 20,
-  tx: 'same',
-  acquires: 'asset.use',
-  map: (item, _event, _index) => ({ id: item.assetId }),
-});
-```
-
-`maxItems` 是执行上限，输入 schema 也应表达业务上限。`orderBy` 必须是各项真实存在、非空、同类型且唯一的字符串或有限数值键；按键升序串行执行，以稳定资源锁顺序。`map` 收到排序后的索引，可返回 null 跳过；映射和选择器都是纯函数。
-
-失败诊断中的 `itemIndex` 是跳过 null 后的实际执行输入索引；`sortedIndex` 是排序后原项位置，`originalIndex` 是事件数组原位置，`itemKey` 是稳定排序键，均使用零基索引。诊断不附完整项载荷。
-
-多个跨对象步骤用 `order` 表达预算 → 设备 → 占用明细等依赖。同事件同 `tx` 分组一旦使用 order，所有步骤必须提供互不重复的非负整数。普通 `reaction` 也支持 order；不要靠导出变量的编号表达流程顺序。
-
-`tx: 'same'` 的集合仍走每一条目标命令的授权、约束、审计与版本流水线，任一失败使主命令及整个同事务链回滚。默认 outbox 集合由 worker 串行调用并随该消费者事务提交；重试与死信仍按事件处理。图谱和 context 展示目标、上限、排序键、顺序和事务。框架不替业务决定整单或分批：配发整单可用一个命令及其同事务集合，分批归还则每次提交的一批共同回滚。
-
-## 两种查询写法
-
-下面两段均为完整声明，可选择需要的写法。它们都走只读连接与安全视图；调用人需要 `PurchaseOrder.read`，并受其范围与掩码限制。
+普通 list/get 使用生成读取接口。复杂读取声明 query，reads 列出全部涉及聚合，input 校验查询参数，sql/build 二选一：
 
 ```ts
 import { query } from '@yss123/cage-kernel';
 import { z } from 'zod';
-import { PurchaseOrder } from './purchase-order.js';
+import { Note } from './note.js';
 
-export const poByStatus = query('poByStatus', {
-  reads: [PurchaseOrder],
-  input: z.object({ status: z.string() }),
-  sql: `select dept_id, count(*)::int as n
-        from safe.purchase_order where status = :status group by dept_id`,
+/** 按状态统计可见便笺，仅使用 Note 的安全视图；返回计数而非全库数量。 */
+export const countNotes = query('countNotes', {
+  description: '按状态统计便笺',
+  reads: [Note],
+  input: z.object({ status: z.enum(['active', 'archived']) }),
+  sql: 'select count(*)::int as total from safe.note where status = :status',
 });
 ```
 
-```ts
-import { query } from '@yss123/cage-kernel';
-import { z } from 'zod';
-import { PurchaseOrder } from './purchase-order.js';
+sql 使用数据库 snake_case 列名和 :name 参数；build 使用只读 Kysely。两者均受 reads 的 read 能力、范围与掩码约束。联表需列齐依赖，页面调用生成的 queries 方法。
 
-export const recentOrders = query('recentOrders', {
-  reads: [PurchaseOrder],
-  input: z.object({ status: z.string() }),
-  build: (db, input) => db.selectFrom('safe.purchase_order')
-    .select(['id', 'amount', 'status'])
-    .where('status', '=', input.status)
-    .orderBy('created_at', 'desc')
-    .limit(20),
-});
-```
+可声明 audit: { purpose: '固定业务用途' }，可靠用途审计失败时拒绝交付数据。任意 SQL 的投影不会自动精确推断敏感对象，读审计按 reads 保守处理。
 
-`sql` 与 `build` 必须二选一。SQL 用数据库的 snake_case 列名和 `:参数名`；不要拼接输入，也不要查询 `core.*`/`sys.*` 基表。`reads` 列出所有涉及的聚合，不能漏掉 join 的对象。业务前端调用生成的 `queries.*`，不复制查询 SQL。
+## 其他声明
 
-有目的级审计要求时，在 query 中声明 `audit: { purpose: '月度结算核对' }`。目的应为固定说明，不包含敏感输入。查询会先可靠写入用途审计再交付结果；潜在敏感明文还按 `reads` 保守审计，不假定任意 SQL 投影能精确推导字段和对象。审计故障返回 `CAGE-AUDIT-001`，不交付查询数据。完整保证见[审计矩阵](../getting-started/architecture.md#审计保证)。
-
-通用列表参数要求正安全整数 page/pageSize；数值筛选必须有限并满足字段 schema，布尔只接受 true/false，日期必须合法，排序字段必须来自公开字段。非法值返回字段级 `INVALID_INPUT`，不会把任意非 true 字符串转成 false。当前仍采用 offset 分页及精确计数，大规模分页成本需按实际数据测量。
-
-## 审批绑定与选人
-
-下面是完整的采购路由文件形状，使用同目录现有的采购符号：
-
-```ts
-import { approval } from '@yss123/cage-kernel';
-import { approver, gt, route, step, when } from '@yss123/cage-approval';
-import { PurchaseOrder, OrderSubmitted, OrderCancelled, approve, reject } from './purchase-order.js';
-
-export const poApproval = approval(PurchaseOrder, {
-  process: 'po-approval',
-  start: OrderSubmitted,
-  cancelOn: [OrderCancelled],
-  routable: ['amount', 'deptId'],
-  onApproved: approve,
-  onRejected: reject,
-});
-
-export const poRoute = route('po-approval', [
-  step('部门经理审批', approver.deptLeader('deptId')),
-  when(gt('amount', 50000), step('财务审批', approver.role('finance'), { mode: 'any' })),
-]);
-```
-
-`approval` 绑定事件与结论命令；`route` 决定步骤与人；`routable` 限制交给路由的数据字段。`onApproved/onRejected` 必须属于同一聚合，且允许 process 调用。
-
-内置选人器是 `approver.deptLeader(字段名)`、`approver.role(角色code)`、`approver.user(用户id)`。条件使用 `gt/gte/lt/lte/eq/ne/isIn` 等封闭表达式。`mode: 'any'/'all'` 描述一步内的人如何完成，不表示任意并行分支。人工节点可通过 `actions: { transfer: true, delegate: true, addSign: true }` 显式开放转办、委派归还和当前节点并行必签，默认关闭；任务版本、权限、SDK 与边界见[审批任务流转](../guides/approvals.md)。任意函数选人、前后加签和并行流程分支仍需扩展。
-
-被选中的审批人还要具备结论命令所需能力和范围。部门负责人为空会产生 `CAGE-APPR-007`，详见[排错](../tools/troubleshooting.md)。
-
-## 连接器、定时任务和逃生口
-
-| 能力 | 声明结构 | 标准范例 |
+| 机制 | 公开入口 | 用法与边界 |
 | --- | --- | --- |
-| 连接器 | `connector(name, { hosts, secret: 密钥名, operations: { 操作: op(...) } })` | `integrations/erp.ts` |
-| 出站 | `outbound(事件, 操作, { map, idempotencyKey, onSuccess })` | ERP 推单，成功用 external 命令回写 |
-| 入站 | `inbound(连接器, 事件名, { verify, payload, command, map })` | HMAC 验签的收货回调 |
-| 定时任务 | `job(name, { cron, reads, calls, run })` | `jobs.ts` 过期草稿取消 |
-| 逃生口 | `unsafe({ reason, owner }, () => ...)` | 仅用于声明无法表达且评审过的特殊情况 |
+| 审批绑定 | kernel 的 approval | [审批](../guides/approvals.md)；路由来自 cage-approval |
+| 定时任务 | job(name, { cron, reads, calls, run }) | run 只读已声明依赖、调用 calls 命令 |
+| 第三方 | cage-connectors 的 connector/op/outbound/inbound | [外部系统](../guides/automation.md#与第三方系统交换) |
+| 原生 AI | cage-ai 的 ai；approval 的 step AI 重载 | [原生 AI](../guides/intelligence.md) |
+| 业务阅读流程 | businessProcess | 引用真实声明供图谱解释，不调度命令，见[本体建模](../guides/ontology-modeling.md) |
+| 特殊实现标记 | unsafe({ reason, owner }, callback) | 记录原因和负责人并进入预算，不授予额外权限，也不关闭 lint |
 
-连接器 host 写主机名而非完整 URL，操作 path 从 `/` 开始，request/response 均用 schema 白名单，密钥只写环境变量名。`effect: 'retryableWrite'` 仍需要第三方幂等协议，不是承诺远端恰好一次。
-
-job 的 `run({ query, call, now })` 只能读 `reads` 和调用 `calls` 中的命令。用户命令可以被显式声明了它的系统任务调用；仅允许内部身份的命令还需包含 job 身份。最终仍走写流水线。不要通过新增脚本直接扫表改业务状态。
-
-`unsafe` 只记录原因和负责人并进入预算，不自动授予数据库、网络或用户权限，也不让 lint 边界失效。能用声明表达的普通业务不应使用它。
+[返回开发手册](../README.md)

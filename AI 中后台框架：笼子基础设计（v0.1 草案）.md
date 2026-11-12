@@ -1,5 +1,7 @@
 # AI 中后台框架：笼子基础设计（v0.1 草案）
 
+> 历史草案：保留最初目标与设计假设。现有实现和用法见[执行模型](docs/development/getting-started/architecture.md)与[开发手册](docs/development/README.md)，不能从本草案推断能力已启用或验证。
+
 Oct 29, 2026 · @Nora Bell
 
 ## 0. 一页看懂（大白话版）

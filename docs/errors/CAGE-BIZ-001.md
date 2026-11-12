@@ -2,7 +2,7 @@
 
 [返回错误码册](README.md) · [业务排错](../development/tools/troubleshooting.md)
 
-> 本页由框架生成。正反例为局部声明或操作说明，完整写法见业务开发指南及本项目 domain。
+本页说明这一诊断的触发条件与修复方法。正反例为局部说明，完整业务输入以本项目声明为准。
 
 ## 何时出现
 
@@ -31,7 +31,8 @@ transitions: [{ from: 'draft', to: 'missing', mode: 'automatic', label: '继续'
 
 重跑 cage check，再在 cage graph 中检查主线、分支、关联和实现代码；运行行为仍需相应业务回归。
 
-## 框架内的检查位置
+<details>
+<summary>框架实现依据（维护者）</summary>
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
@@ -49,3 +50,5 @@ transitions: [{ from: 'draft', to: 'missing', mode: 'automatic', label: '继续'
   const text = (value: string) => typeof value === 'string' && value.trim().length > 0;
   if (!identifier(name) || !identifier(def.area.id)) invalid('流程与板块标识须使用小写短横线格式');
 ```
+
+</details>

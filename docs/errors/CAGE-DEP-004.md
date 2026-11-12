@@ -2,7 +2,7 @@
 
 [返回错误码册](README.md) · [业务排错](../development/tools/troubleshooting.md)
 
-> 本页由框架生成。正反例为局部声明或操作说明，完整写法见业务开发指南及本项目 domain。
+本页说明这一诊断的触发条件与修复方法。正反例为局部说明，完整业务输入以本项目声明为准。
 
 ## 何时出现
 
@@ -30,7 +30,8 @@ handler 里 await fetch(...) 或动态 import 数据库模块
 
 重跑 cage check 和 verify，确认边界修复而不是禁用规则。
 
-## 框架内的检查位置
+<details>
+<summary>框架实现依据（维护者）</summary>
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
@@ -45,3 +46,5 @@ handler 里 await fetch(...) 或动态 import 数据库模块
             reason: name === 'fetch' ? 'handler 里直接发网络请求' : '声明文件里使用了动态 import',
             fix: '第三方调用改为连接器声明 + outbound 出站映射',
 ```
+
+</details>

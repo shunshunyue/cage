@@ -108,7 +108,7 @@ for (const application of [target, blank]) {
   // 独立项目只带开发教材和错误码，文档目录入口不引用框架维护者的设计/发布/验收资料。
   writeFileSync(
     join(application, 'docs/README.md'),
-    '# 本地框架文档\n\n编程 agent 先读项目 [AGENTS.md](../AGENTS.md)，按 [Cage 开发 Skill](development/skills/cage-development/SKILL.md) 理解需求、澄清、查证能力、说明实现映射，再编码与验收。\n\n[任务导航](development/README.md) 说明各类文档的分工，按本次需要选择资料：\n\n- `development/getting-started`：运行模型、完整业务链和操作命令。\n- `development/guides`：[业务澄清](development/guides/business-collaboration.md)、[能力选择与实现映射](development/guides/recipes.md)、各专题接入。\n- `development/reference`：原语与工程规范。\n- `development/tools`：诊断、本体查询和排错。\n- `development/examples`：教学源码与采购导读。\n- `development/skills`：唯一的 agent 工作流程。\n- [错误码册](errors/README.md)：按实际错误定位原因。\n',
+    "# 本地框架文档\n\n[开发手册](development/README.md)是人与 AI 共用的当前教材。\n\n- 初次使用：[启动](development/getting-started/start.md) → [执行模型](development/getting-started/architecture.md) → [第一个业务](development/getting-started/first-feature.md)。\n- 直接开发：从手册选择审批、关系、文件、自动化或 AI 等任务。\n- 查 API 和规则：进入 development/reference；故障查[排错](development/tools/troubleshooting.md)与[错误码](errors/README.md)。\n- 编程 AI：先读项目 [AGENTS.md](../AGENTS.md)和[开发 Skill](development/skills/cage-development/SKILL.md)，按任务加载。\n\n本地教材随框架分发，采购参考源码不代表应用已启用该业务。客户规则保留在项目文档或 AGENTS 托管区外。\n",
   );
   syncAgentSkill(application);
 }

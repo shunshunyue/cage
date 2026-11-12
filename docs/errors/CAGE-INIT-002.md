@@ -2,7 +2,7 @@
 
 [返回错误码册](README.md) · [业务排错](../development/tools/troubleshooting.md)
 
-> 本页由框架生成。正反例为局部声明或操作说明，完整写法见业务开发指南及本项目 domain。
+本页说明这一诊断的触发条件与修复方法。正反例为局部说明，完整业务输入以本项目声明为准。
 
 ## 何时出现
 
@@ -32,7 +32,8 @@ ALTER ROLE 重置共享账号密码，导致已有应用断连
 
 恢复/核对配置后运行 cage init 验证，随后按流程 gen、审查迁移并 migrate；不输出凭证。
 
-## 框架内的检查位置
+<details>
+<summary>框架实现依据（维护者）</summary>
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
@@ -47,3 +48,5 @@ ALTER ROLE 重置共享账号密码，导致已有应用断连
       if (new URL(saved.APP).host !== target.host || new URL(saved.APP).pathname !== target.pathname) {
         throw new Error('[CAGE-INIT-003] 已有账号连接与管理员连接必须指向同一个数据库；请检查 .env');
 ```
+
+</details>

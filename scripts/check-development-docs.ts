@@ -1,6 +1,6 @@
 /**
  * 检查规范教材是否完整进入待分发模板或显式指定的独立应用目录，同时检查整个框架文档目录。
- * 比较全部教材与课程源码的分发快照，检查同源 Skill 入口和 AGENTS，并验证 Markdown 本地链接。
+ * 比较全部教材与课程源码的分发快照，检查同源 Skill 入口和 AGENTS，并验证 Markdown 文件及章节链接。
  * 代码块剥离后才扫描链接，避免把语法反例当导航；本脚本不编译文档示例或运行浏览器验收。
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -96,6 +96,28 @@ for (const application of [root, ...applications]) {
 }
 
 const brokenLinks: string[] = [];
+/**
+ * 提取 Markdown 的可导航章节标识，忽略代码块并保留显式 HTML 锚点。
+ * 中文标题保留文字，格式标记和标点不进入标识；同名标题依次追加 -1、-2，便于检查重写后的跨页引用。
+ * 这里只检查本地章节存在，不判断远端网页、业务含义或浏览器交互。
+ */
+function anchors(content: string): Set<string> {
+  const body = content.replace(/```[^\n]*\n[\s\S]*?```/g, '');
+  const found = new Set<string>();
+  const repeats = new Map<string, number>();
+  for (const match of body.matchAll(/^#{1,6}\s+(.+?)\s*#*\s*$/gm)) {
+    const title = match[1].replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').replace(/<[^>]*>/g, '');
+    const base = title.toLowerCase().replace(/[^\p{L}\p{N}\p{M}_\-\s]/gu, '').trim().replace(/\s/g, '-');
+    const count = repeats.get(base) ?? 0;
+    repeats.set(base, count + 1);
+    found.add(count ? `${base}-${count}` : base);
+  }
+  for (const match of body.matchAll(/<a\b[^>]*(?:id|name)=["']([^"']+)["']/gi)) found.add(match[1]);
+  return found;
+}
+
+// 一个章节可能被多个页面链接；按目标文件缓存锚点，避免模板快照验证重复解析。
+const anchorCache = new Map<string, Set<string>>();
 for (const path of checked) {
   // 代码块中的链接可能是语法反例，不能当作真实文档导航。
   const content = readFileSync(path, 'utf8').replace(/```[^\n]*\n[\s\S]*?```/g, '');
@@ -105,17 +127,25 @@ for (const path of checked) {
     const repositoryLink = link.match(
       /^https:\/\/github\.com\/shunshunyue\/cage\/(?:blob|tree)\/main\/(.+)$/,
     );
-    if (repositoryLink)
-      link = relative(dirname(path), join(root, decodeURIComponent(repositoryLink[1].split('#')[0])));
-    if (/^(?:[a-z]+:|#)/i.test(link)) continue;
-    const local = decodeURIComponent(link.replace(/^<|>$/g, '').split('#')[0]);
-    if (local && !existsSync(resolve(dirname(path), local))) {
+    if (repositoryLink) {
+      const [file, fragment] = repositoryLink[1].split('#');
+      link = relative(dirname(path), join(root, decodeURIComponent(file))) + (fragment ? `#${fragment}` : '');
+    }
+    if (/^[a-z]+:/i.test(link)) continue;
+    const [file, fragment] = link.replace(/^<|>$/g, '').split('#');
+    const local = decodeURIComponent(file);
+    const target = local ? resolve(dirname(path), local) : path;
+    if (!existsSync(target)) {
       brokenLinks.push(`${relative(root, path)} 链接不存在：${match[1]}`);
+    } else if (fragment && target.endsWith('.md')) {
+      if (!anchorCache.has(target)) anchorCache.set(target, anchors(readFileSync(target, 'utf8')));
+      if (!anchorCache.get(target)!.has(decodeURIComponent(fragment)))
+        brokenLinks.push(`${relative(root, path)} 章节不存在：${match[1]}`);
     }
   }
 }
 if (brokenLinks.length) throw new Error(brokenLinks.join('\n'));
 
 console.log(
-  `学习资料检查通过：${applications.length} 个应用、${checked.size} 个文件，模板快照与本地链接完整。`,
+  `学习资料检查通过：${applications.length} 个应用、${checked.size} 个文件，模板快照、文件和章节链接完整。`,
 );

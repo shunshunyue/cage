@@ -2,7 +2,7 @@
 
 [返回错误码册](README.md) · [业务排错](../development/tools/troubleshooting.md)
 
-> 本页由框架生成。正反例为局部声明或操作说明，完整写法见业务开发指南及本项目 domain。
+本页说明这一诊断的触发条件与修复方法。正反例为局部说明，完整业务输入以本项目声明为准。
 
 ## 何时出现
 
@@ -31,7 +31,8 @@ cage doctor --runtime-url http://127.0.0.1:3000 --cookie-file .cage/diagnostic-c
 
 核对诊断输入、受控会话和目标服务，再重新获取实际运行证据；未知不当作通过。
 
-## 框架内的检查位置
+<details>
+<summary>框架实现依据（维护者）</summary>
 
 以下路径相对框架源码仓库，不是要求业务项目创建这些文件。当前项目先修业务声明、配置或授权；明确属于框架缺口时反馈错误码和脱敏上下文。
 
@@ -51,3 +52,5 @@ cage doctor --runtime-url http://127.0.0.1:3000 --cookie-file .cage/diagnostic-c
     const result = await (await import('./runtime-diagnostics.js')).runtimeDiagnostic(cfg, { runtimeUrl: o['runtime-url'], cookieFile: o['cookie-file'] }, `/api/sys/diagnostics/${command === 'timeline' ? 'timeline' : 'authorization'}`, {
       query: command === 'timeline' ? { requestId: o['request-id'], outboxId: o['outbox-id'], aggregate: o.aggregate, aggregateId: o['aggregate-id'] } : undefined, body,
 ```
+
+</details>

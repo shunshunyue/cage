@@ -1,47 +1,31 @@
-# 数据库配置与本机连接记录
+# 开发与测试数据库
 
-当前源码只连接使用者提供的 PostgreSQL 数据库。数据库可以来自本机安装、现有容器或远程服务；CLI 不创建数据库、不管理 Docker。以下本机地址是之前已经配置过的环境记录，不是脚手架固定值。
+本页说明框架维护环境，业务用户的首次启动见[应用启动](../development/getting-started/start.md)。数据库可以来自本机、容器或远程服务，应用只消费已配置的连接。
 
-## 在哪里配置
+## 连接属于哪个项目
 
-业务项目根目录的 `.env`，与 `package.json`、`cage.config.json` 同级。采购范例为 `F:/cage/examples/purchase-admin/.env`；新建项目则配置它自己的 `.env`。首次复制 [配置示例](../../examples/purchase-admin/.env.example)，只填写 `CAGE_ADMIN_DATABASE_URL`，再执行 `pnpm exec cage init`。
+在应用根目录维护 .env，配置说明来自 .env.example。框架范例使用 examples/purchase-admin/.env；独立项目使用自己的配置。CLI 自动加载本项目 .env，部署环境中的同名变量优先。
 
-| 配置 | 账号和职责 |
-| --- | --- |
-| `CAGE_APP_DATABASE_URL` | `cage_app`：业务写入与后台任务 |
-| `CAGE_READ_DATABASE_URL` | `cage_read`：仅通过安全视图读取 |
-| `CAGE_MIGRATE_DATABASE_URL` | `cage_migrate`：表结构迁移 |
+APP 用于业务和 worker，READ 用于安全视图，MIGRATE 用于显式迁移，三者连接同一库。cage_view_owner 不登录，不需要配置密码。普通业务无需自行创建连接池。
 
-三个业务连接由 `init` 自动填写，主机、端口、数据库名一致，使用独立权限和随机密码。连接池、事务和安全读侧由内核实现，项目不用编写连接代码。CLI 自动加载 `.env`，已存在的环境变量优先，修改后重启应用。
+## 账号和结构分两步准备
 
-## 首次接入与日常更新
+已有数据库首次用 CAGE_ADMIN_DATABASE_URL 执行 init，生成独立随机账号密码和 Cookie 密钥，成功后移除管理员连接。重复执行验证并复用已有配置；集群角色已存在时使用原凭据，不能为另一个项目重置密码。
 
-首次在 `.env` 填写管理员连接，例如 `CAGE_ADMIN_DATABASE_URL=postgresql://postgres:管理员密码@主机:端口/已有数据库名`，执行 `pnpm exec cage init`。命令自动创建角色和授权、生成密码及 Cookie 密钥、填写 `.env`，成功后移除文件中的管理员连接。重复执行验证并复用原凭证，已有 Cage 账号但本项目没有凭证时会提示补充，不会重置其他项目密码。
+生成并审查业务迁移后显式 migrate；新租户再 bootstrap 交付受限凭据。日常 dev 不建库、不自动迁移、不重新初始化组织。现有历史表需要专门映射和迁移审查。
 
-审查 `db/migrations` 后执行 `pnpm migrate` 更新表、视图与索引；新组织再显式 `pnpm exec cage bootstrap --credentials-file .cage/admin-credentials.json` 初始化，通过新受限文件交付凭据。日常直接运行 `pnpm dev`；有表结构变更再手动迁移。已有库中的任意历史表不会被自动识别为框架模型。
+## 测试使用独立集群
 
-## 本机已有连接记录
+CAGE_TEST_DATABASE_URL 指向可丢弃的独立测试集群，testkit 会准备角色和临时库，不能指向开发业务或生产集群。无外部地址时 testkit 可使用内嵌真实 PostgreSQL，仍需核对实际测试报告。
 
-| 用途 | 地址/名称 |
-| --- | --- |
-| 开发数据库 | `127.0.0.1:54329/cage_dev` |
-| 开发容器 | `purchase-admin-postgres-1` |
-| 开发持久卷 | `purchase-admin_postgres-data` |
-| 测试集群 | `127.0.0.1:54330/postgres` |
-| 采购界面 | <http://localhost:15173> |
-| API 与管理页 | <http://localhost:3000/admin/> |
+维护者的 pnpm test:docker 使用仓库 Compose 测试环境；它不随模板分发，也不成为普通业务的启动步骤。开发持久卷与测试环境分别管理。
 
-用户名和密码从本机项目 `.env` 读取，不提交 Git。使用 DBeaver、DataGrip 或 pgAdmin 时选择对应账号，`cage_read` 只能按上下文访问安全视图。数据库服务由自己的工具管理，退出 `dev` 只关闭应用。
+## 排查连接
 
-## 实际验收
+先确认使用的项目、主机、端口、库名和账号职责，再看错误码。检查服务可达、账号存在、权限、迁移历史与 API/worker 是否同库。只报告脱敏连接信息，不打印整个 .env。
 
-- 从容器内查询到 PostgreSQL 18.6，系统、审批扩展及业务迁移均已记录。
-- 通过真实 HTTP 登录、创建 `DOCKER-DB-CHECK` 采购单、取消、再查询；容器内 `core.purchase_order` 存在相同 ID，状态为 `cancelled`、版本为 2。
-- 容器内审计表记录 create/cancel，worker 将 `OrderCancelled` outbox 标记为 `done`，重试次数为 0。
-- 重启开发 PostgreSQL 容器后，同一采购单、状态和版本仍在，证明数据保存在持久卷中。
-- 开发服务的数据库连接包含 `cage-kernel`、`cage-grants-listen`、`cage-worker-listen`、`cage-scheduler`，使用 `cage_app` 身份。
+使用数据库工具查看 safe 视图时，需要对应主体上下文；只读账号不能绕过范围看到全库。开发端口与本机容器名从实际配置取得，历史验收中的地址不作为默认值。
 
-测试结果见 `implementation-status.md`。运行 `pnpm test:docker` 验证框架，`pnpm example:verify` 验证示例。测试会创建独立临时数据库，且测试容器与开发持久卷隔离。
+先前真实数据库操作与持久化结果在[验收档案](../verification/README.md)，那些结果不代表本次环境已验证。
 
-
-上述为此前验收记录。维护者的 `pnpm test:docker` 使用仓库内 Compose 测试环境，它不随业务模板分发。测试会初始化集群级角色，必须使用独立可丢弃集群；正常应用启动没有自动建库行为。
+[文档目录](../README.md)
