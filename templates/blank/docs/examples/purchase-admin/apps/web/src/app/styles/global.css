@@ -19,16 +19,17 @@
 body {
   margin: 0;
 }
-button,
+button:not(.ant-btn),
 input {
   font: inherit;
 }
-button,
+button:not(.ant-btn),
 a,
 input {
   outline-offset: 4px;
 }
-button {
+/* 原生按钮规则服务于范例中现有的手写 DOM 控件，不覆盖新增的 Ant Design Button。 */
+button:not(.ant-btn) {
   border: 1px solid var(--line);
   background: #fff;
   color: var(--green);
@@ -37,10 +38,10 @@ button {
   cursor: pointer;
   transition: background 0.15s;
 }
-button:hover {
+button:not(.ant-btn):hover {
   background: #edf2e8;
 }
-button:disabled {
+button:not(.ant-btn):disabled {
   opacity: 0.45;
   cursor: default;
 }
@@ -295,7 +296,7 @@ header {
   gap: 7px;
   flex-wrap: wrap;
 }
-.filters button {
+.filters button:not(.ant-btn) {
   border: 0;
   background: none;
   font-size: 12px;
@@ -305,7 +306,7 @@ header {
   background: #edf3e6;
   color: var(--green);
 }
-.toolbar > button {
+.toolbar > button:not(.ant-btn) {
   font-size: 11px;
 }
 /**
@@ -373,7 +374,7 @@ tr:last-child td {
   display: flex;
   gap: 7px;
 }
-.actions button {
+.actions button:not(.ant-btn) {
   font-size: 11px;
   padding: 6px 9px;
 }
@@ -386,7 +387,7 @@ tr:last-child td {
   font-size: 11px;
   color: var(--muted);
 }
-.pagination button {
+.pagination button:not(.ant-btn) {
   font-size: 11px;
   margin-left: 7px;
 }
@@ -442,7 +443,7 @@ tr:last-child td {
   font-size: 12px;
   margin-bottom: 20px;
 }
-.notice button {
+.notice button:not(.ant-btn) {
   background: transparent;
   border: 0;
 }
@@ -459,7 +460,7 @@ tr:last-child td {
   align-items: end;
   padding: 22px;
 }
-.stock-form button {
+.stock-form button:not(.ant-btn) {
   margin-bottom: 18px;
 }
 label {

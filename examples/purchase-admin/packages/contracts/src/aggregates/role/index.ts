@@ -31,7 +31,7 @@ export const RoleInputs = {
 };
 
 /** Role.archive 可能返回的错误码 */
-export type RoleArchiveError = 'CONFLICT' | 'DOMAIN_ERROR' | 'FORBIDDEN' | 'INVALID_INPUT' | 'INVALID_TRANSITION' | 'NOT_FOUND';
+export type RoleArchiveError = 'CONFLICT' | 'CONSTRAINT_VIOLATED' | 'DOMAIN_ERROR' | 'FORBIDDEN' | 'INVALID_INPUT' | 'INVALID_TRANSITION' | 'NOT_FOUND';
 /** Role.create 可能返回的错误码 */
 export type RoleCreateError = 'CONFLICT' | 'CONSTRAINT_VIOLATED' | 'DOMAIN_ERROR' | 'FORBIDDEN' | 'INVALID_INPUT';
 /** Role.grantCapability 可能返回的错误码 */
@@ -39,7 +39,7 @@ export type RoleGrantCapabilityError = 'CONFLICT' | 'CONSTRAINT_VIOLATED' | 'DOM
 /** Role.rename 可能返回的错误码 */
 export type RoleRenameError = 'CONFLICT' | 'DOMAIN_ERROR' | 'FORBIDDEN' | 'INVALID_INPUT' | 'INVALID_TRANSITION' | 'NOT_FOUND';
 /** Role.revokeCapability 可能返回的错误码 */
-export type RoleRevokeCapabilityError = 'CONFLICT' | 'DOMAIN_ERROR' | 'FORBIDDEN' | 'INVALID_INPUT' | 'INVALID_TRANSITION' | 'NOT_FOUND';
+export type RoleRevokeCapabilityError = 'CONFLICT' | 'CONSTRAINT_VIOLATED' | 'DOMAIN_ERROR' | 'FORBIDDEN' | 'INVALID_INPUT' | 'INVALID_TRANSITION' | 'NOT_FOUND';
 /** Role.setScope 可能返回的错误码 */
 export type RoleSetScopeError = 'CONFLICT' | 'CONSTRAINT_VIOLATED' | 'DOMAIN_ERROR' | 'FORBIDDEN' | 'INVALID_INPUT' | 'INVALID_TRANSITION' | 'NOT_FOUND';
 

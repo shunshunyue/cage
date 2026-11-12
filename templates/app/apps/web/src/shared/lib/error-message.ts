@@ -16,7 +16,7 @@ export function errorMessage(r: Extract<CageResult<unknown, string>, { ok: false
     INVALID_INPUT: '请检查填写内容',
     CONFLICT: '数据或任务已更新，请刷新后重试',
     UNAUTHENTICATED: '登录已过期',
-    CONSTRAINT_VIOLATED: '未满足审批条件，请检查审批人或额度',
+    CONSTRAINT_VIOLATED: '未满足业务条件，请检查操作人及具体原因',
     STOCK_SHORT: '库存不足',
     REVIEWERS_REQUIRED: '请为专业会签选择 1–5 位协作人',
     REVIEWERS_NOT_REQUIRED: '取消专业会签时请清空复核人员',

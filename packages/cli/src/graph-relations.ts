@@ -237,11 +237,9 @@ export function explainEdge(
         );
       if (as.startsWith('约束 ')) {
         const rule = as.slice(3);
-        const purpose = rule.startsWith('ceiling(')
-          ? `用于校验“${b}”是否超出调用人的审批额度。`
-          : rule.startsWith('sod.notSameAs(')
-            ? `用于校验调用人与“${b}”记录的人不同，避免同一人完成需要分离的职责。`
-            : `该约束读取“${b}”执行命令前的业务检查；字段变更时应一起复核约束。`;
+        const purpose = rule.startsWith('sod.notSameAs(')
+          ? `用于校验调用人与“${b}”记录的人不同，避免同一人完成需要分离的职责。`
+          : `该约束读取“${b}”执行命令前的业务检查；字段变更时应一起复核约束。`;
         return result('执行约束检查', '命令校验依赖', `“${a}”声明的约束 ${rule} 使用“${b}”。`, purpose, [
           `${from.id}.constraints → ${rule}`,
           `约束 fields 包含 ${field}`,

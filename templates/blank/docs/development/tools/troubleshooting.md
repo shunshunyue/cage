@@ -10,7 +10,7 @@
 
 先保留完整诊断的 code、源码位置、reason/fix、requestId 或 outboxId。检查所在阶段，再修复原因；不要通过改业务状态、给全局权限、注释约束或禁用 lint 消除现象。
 
-先执行 `pnpm exec cage doctor` 查看各阶段证据；异步动作按 requestId/outboxId/业务对象用 `cage timeline` 关联实际执行记录。能力、范围、调用身份或额度不清楚时，有权诊断的管理员可使用 `cage explain`，不会执行目标命令。完整参数与权限见[诊断指南](diagnostics.md)。
+先执行 `pnpm exec cage doctor` 查看各阶段证据；异步动作按 requestId/outboxId/业务对象用 `cage timeline` 关联实际执行记录。能力、范围或调用身份不清楚时，有权诊断的管理员可使用 `cage explain`，不会执行目标命令。完整参数与权限见[诊断指南](diagnostics.md)。
 
 ## 按现象定位
 
@@ -19,7 +19,7 @@
 | dev 启不动 | `.env` 是否在项目根目录，数据库服务是否可连接 | 缺连接、密码/端口错误、没执行迁移、端口占用 |
 | init 提示账号已存在 | CAGE-INIT-002；找已有 APP/READ/MIGRATE 连接 | 角色在 PG 集群内共享；不应覆盖原密码 |
 | 新业务不出现在接口/图谱 | 顶层 export const 和 domain/index.ts | 漏导出、重名导出、放进函数/条件声明 |
-| API 403 | code/detail、角色能力、调用身份、硬约束 | 能力不足、CSRF、职责分离、额度缺失/超限 |
+| API 403 | code/detail、角色能力、调用身份、硬约束 | 能力不足、CSRF、职责分离或其他业务约束不满足 |
 | 详情 404 | 记录 id、租户和数据范围 | 不存在或在范围外；不能仅凭 404 断言被删除 |
 | 列表为空 | read 能力、范围与相应字段 | 默认本人范围、无 owner 字段或部门不匹配 |
 | 电话看不到明文 | sensitive 标注、unmask 能力 | 默认掩码是正常安全行为 |
@@ -42,7 +42,7 @@
 | `approver.role('finance')` | 创建 code 为 finance 的角色，并给实际用户分配 | 选人看角色 code，不是中文显示名称 |
 | `approver.user(id)` | 使用存在的用户 UUID，核对业务可用性 | 把用户名或角色名当成 UUID |
 
-选人成功后，再检查此人所需能力、数据范围、额度。示例中提单人不能审批自己，经理的 `PurchaseOrder.approve` 必须有 ceiling 参数。
+选人成功后，再检查此人所需能力、数据范围及结论命令的业务约束。示例中提单人不能审批自己；采购金额决定是否进入财务节点，不需要配置角色额度。
 
 若事件已进入死信，在 `/admin` 查看对应 outboxId 的错误并修正配置，再点击重放。原 submit 通常已提交，单据处于 pending_approval；不要重复提交，更不要直接 SQL 改回 draft。重放后确认待办及后续事件，不把“点击重放成功”当成整条链路已经完成。
 

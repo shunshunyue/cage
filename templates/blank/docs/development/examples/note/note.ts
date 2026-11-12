@@ -15,13 +15,17 @@ export const Note = aggregate('Note', {
   description: '部门便笺',
   fields: {
     /** 标题最多 120 字符；命令先去除两端空白，不变量拒绝空白标题。 */
-    title: text(120),
+    title: text(120).describe('便笺标题'),
     /** 内核新建时按当前主体填充的部门，用于服务端范围过滤。 */
-    deptId: ref('Dept'),
+    deptId: ref('Dept').describe('所属部门'),
     /** 内核新建时记录的创建人，可用于本人范围；不接受客户端指定。 */
-    createdBy: ref('User'),
+    createdBy: ref('User').describe('创建人'),
   },
-  states: states('active', 'archived', { terminal: ['archived'] }),
+  // 机器状态用于命令和存储，业务名供图谱与上下文读取；普通注释不会替代 labels。
+  states: states('active', 'archived', {
+    terminal: ['archived'],
+    labels: { active: '使用中', archived: '已归档' },
+  }),
   scope: scope.deptSubtree('deptId'),
   invariants: { titleNotBlank: (record) => record.title.trim().length > 0 },
 });

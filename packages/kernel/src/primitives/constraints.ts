@@ -1,5 +1,5 @@
 /**
- * 提供命令 handler 之前执行的硬约束协议与职责分离、额度、二次认证组合子。
+ * 提供命令 handler 之前执行的硬约束协议与职责分离、二次认证组合子。
  * 流水线在读取当前对象后传入可信 ctx 和受限元数据，约束只判断是否允许继续；最终字段与不变量校验仍在 handler 后进行，约束通过不等于命令必然提交。
  */
 // 硬约束组合子：在加载之后、handler 之前执行（第 6 关）。代码定边界，阈值可以来自授权数据。
@@ -25,7 +25,7 @@ export const violation = (message: string): ConstraintResult => ({ ok: false, me
 export interface ConstraintMeta {
   /** 正在执行的命令的能力点，例如 PurchaseOrder.approve */
   capability: string;
-  /** 取某人的能力（额度类约束用） */
+  /** 读取指定用户的当前能力，供自定义约束核验。 */
   capabilitiesOf(userId: string): Promise<Map<string, CapabilityParams>>;
   /** 按当前主体的范围读取一条记录（框架内置约束用，例如防提权检查要看被分配的角色） */
   load(aggregate: string, id: string): Promise<Record<string, any> | null>;
@@ -63,24 +63,6 @@ export const sod = {
     });
   },
 };
-
-/** 额度：字段值不得超过操作人在该能力点上的 ceiling 参数；多角色取最大值 */
-/**
- * 审批等系统身份优先读取 onBehalfOf 真人当前能力参数，避免流程本身的能力集合绕过额度。
- * 未配置参数即拒绝；金额字符串在此转成 Number 比较，业务仍需在字段/handler 中保证值合法。
- */
-export function ceiling(field: string, param = 'ceiling'): Constraint {
-  return Object.freeze({
-    name: `ceiling(${field})`,
-    fields: [field],
-    check: async (cur: any, ctx: Ctx, _input: any, meta: ConstraintMeta) => {
-      const caps = ctx.onBehalfOf ? await meta.capabilitiesOf(ctx.onBehalfOf) : ctx.capabilities;
-      const limit = caps.get(meta.capability)?.[param];
-      if (limit === undefined || limit === null) return violation(`没有为 ${meta.capability} 设置额度 ${param}`);
-      return Number(cur[field]) <= Number(limit) ? ok() : violation(`${field}=${cur[field]} 超过额度 ${limit}`);
-    },
-  });
-}
 
 /** 二次认证：最近 maxAgeSec 秒内完成过二次认证 */
 /** maxAgeSec 单位为秒，ctx.stepUpAt 单位为毫秒；缺失认证证据时返回拒绝而非跳过。 */

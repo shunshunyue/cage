@@ -1,14 +1,14 @@
 /**
  * 在独立真实 PostgreSQL 中验证人工任务流转、并行必签、实时授权和不可覆盖的操作历史。
  * 夹具通过领域命令提交单据，再由真实 outbox 创建审批；只用测试管理员查询数据库结果，不绕开生产操作入口。
- * any/all/旧节点共用同一绑定，最终批准仍检查职责分离与额度；待办摘要还验证实时读取范围和敏感变量脱敏。
+ * any/all/旧节点共用同一绑定，最终批准仍检查职责分离；待办摘要还验证实时读取范围和敏感变量脱敏。
  * 每例创建新单据，组织用户可复用；旧库升级另建隔离库，所有连接与数据库均在结束后回收。
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import * as org from '@yss123/cage-admin/domain';
-import { aggregate, approval, buildRegistry, ceiling, command, enumOf, event, id, MIGRATIONS, money, ref, scope, sod, states, text } from '@yss123/cage-kernel';
+import { aggregate, approval, buildRegistry, command, enumOf, event, id, MIGRATIONS, money, ok, ref, scope, sod, states, text, violation, type Constraint } from '@yss123/cage-kernel';
 import { createTableSql, runMigrations, schemaModel } from '@yss123/cage-kernel/db';
 import { approver, eq, InCodeEngine, route, step, when, type TaskView } from '@yss123/cage-approval';
 import { createServer, type CageServer } from '@yss123/cage-http';
@@ -33,9 +33,21 @@ const create = command(ActionDocument, { name: 'create', from: 'new', to: 'draft
   input: z.object({ amount: z.string(), strategy: z.enum(['any', 'all', 'legacy']), phone: z.string().optional() }), handler: row => row });
 /** 用户提交后等待 outbox 建立真实审批实例，提交成功本身不代表待办已经产生。 */
 const submit = command(ActionDocument, { name: 'submit', from: 'draft', to: 'reviewing', emits: [Submitted], handler: row => row });
-/** 最终批准依据最后实际签署人的额度和职责分离，故意保留可能失败的业务边界以验证共同回滚。 */
+/**
+ * 测试约束读取最终签署人的实时能力，验证命令事务中的能力查询不会再次借用连接池。
+ * 缺少真人身份或能力时明确拒绝；此规则只属于测试夹具，不引入金额或改变审批引擎策略。
+ */
+const requireLiveApprover: Constraint = {
+  name: 'requireLiveApprover',
+  check: async (_row, ctx, _input, meta) => {
+    const userId = ctx.onBehalfOf ?? ctx.userId;
+    if (!userId) return violation('缺少可核验的审批人');
+    return (await meta.capabilitiesOf(userId)).has(meta.capability) ? ok() : violation('审批人已失去结论能力');
+  },
+};
+/** 最终批准验证职责分离与实时能力查询，保留失败边界以验证共同回滚和并发连接复用。 */
 const accept = command(ActionDocument, { name: 'accept', from: 'reviewing', to: 'accepted', invokedBy: 'process',
-  constraints: [sod.notSameAs('createdBy'), ceiling('amount')], handler: row => row });
+  constraints: [sod.notSameAs('createdBy'), requireLiveApprover], handler: row => row });
 /** 拒绝是流程结论，不能从普通 user 命令入口直接修改业务状态。 */
 const reject = command(ActionDocument, { name: 'reject', from: 'reviewing', to: 'rejected', invokedBy: 'process', handler: row => row });
 /** 退回把单据恢复草稿；与委派 resolve 的“归还任务”是不同操作。 */
@@ -63,7 +75,7 @@ let env: TestEnv, engine: InCodeEngine, server: CageServer, applicant: TestUser,
 beforeAll(async () => {
   env = await createTestEnv({ domain });
   engine = reviewRoute.engine(env.kernel);
-  applicant = await env.user({ caps: ['ActionDocument.read', 'ActionDocument.create', 'ActionDocument.submit', 'ActionDocument.cancel'] });
+  applicant = await env.user({ caps: ['ActionDocument.read', 'ActionDocument.create', 'ActionDocument.submit', 'ActionDocument.cancel', 'ActionDocument.accept'] });
   first = await reviewer(); second = await reviewer(); extra = await reviewer(); another = await reviewer();
   const originalRole = await env.kernel.execute('Role.create', { code: 'task_reviewers', name: '原始审批人' }, env.system());
   for (const user of [first, second]) await env.kernel.execute('User.assignRoles', { id: user.id, roleIds: [user.roleId, originalRole.id] }, env.system());
@@ -73,10 +85,9 @@ beforeAll(async () => {
 /** 由测试环境回收连接池和临时数据库；不修改应用数据库或外部服务。 */
 afterAll(async () => { await server?.close(); await env?.close(); });
 
-/** 创建默认可读全部单据且额度 1000 元的独立审批人；覆盖参数仅改变当前安全边界用例。 */
-async function reviewer(options: { caps?: string[]; scope?: string; ceiling?: number } = {}) {
-  return env.user({ caps: options.caps ?? reviewerCaps, scopes: { ActionDocument: options.scope ?? 'all' },
-    params: { 'ActionDocument.accept': { ceiling: options.ceiling ?? 1000 } } });
+/** 创建默认可读全部单据的独立审批人；可针对授权边界覆盖能力及范围。 */
+async function reviewer(options: { caps?: string[]; scope?: string } = {}) {
+  return env.user({ caps: options.caps ?? reviewerCaps, scopes: { ActionDocument: options.scope ?? 'all' } });
 }
 
 /** 经用户创建、提交和真实 worker 消费获得当前轮次，返回两位 original 的公开待办快照。 */
@@ -213,7 +224,7 @@ describe('人工任务转办、委派与授权边界', () => {
     await env.kernel.execute('Role.revokeCapability', { id: target.roleId, capability: 'ActionDocument.accept' }, env.system());
     await expect(engine.act(item.a.id, target.id, env.tenantId, { action: 'delegate', targetUserId: extra.id, expectedRevision: 1, reason: '已撤权不能委派' })).rejects.toMatchObject({ code: 'FORBIDDEN' });
     await expect(engine.decide(item.a.id, target.id, env.tenantId, 'approved', undefined, 1)).rejects.toMatchObject({ code: 'FORBIDDEN' });
-    await env.kernel.execute('Role.grantCapability', { id: target.roleId, capability: 'ActionDocument.accept', params: { ceiling: 1000 } }, env.system());
+    await env.kernel.execute('Role.grantCapability', { id: target.roleId, capability: 'ActionDocument.accept' }, env.system());
     await engine.act(item.a.id, target.id, env.tenantId, { action: 'delegate', targetUserId: extra.id, expectedRevision: 1, reason: '恢复资格后委派' });
     await env.kernel.execute('User.disable', { id: target.id }, env.system());
     await expect(engine.act(item.a.id, extra.id, env.tenantId, { action: 'resolve', expectedRevision: 2, reason: '不能归还给停用用户' })).rejects.toMatchObject({ code: 'FORBIDDEN' });
@@ -272,9 +283,9 @@ describe('并行必签、共同回滚与竞争', () => {
     expect((skipped[0].details.taskIds as string[]).sort()).toEqual([item.a.id, item.b.id, d.id].sort());
   });
 
-  it('最后加签人的额度不足时回滚决定、版本和历史，之前已提交的审批保持不变', async () => {
-    const item = await launch(), limited = await reviewer({ ceiling: 50 });
-    await engine.act(item.a.id, first.id, env.tenantId, { action: 'addSign', userIds: [limited.id], expectedRevision: 0, reason: '低额度用户参与专业核查' });
+  it('最后加签人为申请人时职责分离拒绝，决定、版本和历史回滚', async () => {
+    const item = await launch(), limited = applicant;
+    await engine.act(item.a.id, first.id, env.tenantId, { action: 'addSign', userIds: [limited.id], expectedRevision: 0, reason: '申请人参与核查' });
     await engine.decide(item.a.id, first.id, env.tenantId, 'approved', undefined, 1);
     const last = await pending(limited, item.id), initialHistory = await history(item.id);
     await expect(engine.decide(last.id, limited.id, env.tenantId, 'approved', '专业确认', 0)).rejects.toMatchObject({ code: 'CONSTRAINT_VIOLATED' });
@@ -311,12 +322,12 @@ describe('并行必签、共同回滚与竞争', () => {
     expect((await history(item.id)).filter(entry => entry.action === 'addSign')).toHaveLength(1);
   });
 
-  it('八个最终批准竞争时额度约束复用事务连接，业务结论仅提交一次', async () => {
+  it('八个最终批准竞争时约束复用事务连接，业务结论仅提交一次', async () => {
     const item = await launch();
-    // 最终批准还会执行领域命令中的 ceiling；若它在持锁事务内另取 app 连接，五连接池会饥饿死锁。
+    // 最终批准的测试约束会查询真人实时能力；若持锁后再次借用池连接，并发等待者会耗尽五个连接。
     // 胜者结束实例后其余请求应明确得到状态拒绝，不能产生重复业务写入或重复批准历史。
     const results = await Promise.allSettled(Array.from({ length: 8 }, () =>
-      engine.decide(item.a.id, first.id, env.tenantId, 'approved', '并发确认额度', 0)));
+      engine.decide(item.a.id, first.id, env.tenantId, 'approved', '并发确认', 0)));
     expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1);
     const rejected = results.filter(result => result.status === 'rejected') as PromiseRejectedResult[];
     expect(rejected).toHaveLength(7);
@@ -374,7 +385,7 @@ describe('真实旧审批数据库的前向升级', () => {
     const prior = await createTestEnv({ domain: { ...domain, reviewRoute: priorRoute } });
     try {
       const submitter = await prior.user({ caps: ['ActionDocument.read', 'ActionDocument.create', 'ActionDocument.submit'] });
-      const reviewer = await prior.user({ caps: reviewerCaps, scopes: { ActionDocument: 'all' }, params: { 'ActionDocument.accept': { ceiling: 1000 } } });
+      const reviewer = await prior.user({ caps: reviewerCaps, scopes: { ActionDocument: 'all' } });
       const role = await prior.kernel.execute('Role.create', { code: 'task_reviewers', name: '旧版审批角色' }, prior.system());
       await prior.kernel.execute('User.assignRoles', { id: reviewer.id, roleIds: [reviewer.roleId, role.id] }, prior.system());
       const subject = await prior.kernel.execute('ActionDocument.create', { amount: '100.00', strategy: 'any' }, await submitter.ctx());

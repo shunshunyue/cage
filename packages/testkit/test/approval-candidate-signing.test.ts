@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import * as org from '@yss123/cage-admin/domain';
-import { aggregate, approval, ceiling, command, enumOf, event, id, list, money, ref, scope, sod, states, systemCtx, text } from '@yss123/cage-kernel';
+import { aggregate, approval, command, enumOf, event, id, list, money, ref, scope, sod, states, systemCtx, text } from '@yss123/cage-kernel';
 import { approver, eq, InCodeEngine, route, step, when, type TaskView } from '@yss123/cage-approval';
 import { createServer, type CageServer } from '@yss123/cage-http';
 import { createTestEnv, type TestEnv, type TestUser } from '../src/index.js';
@@ -33,9 +33,9 @@ const create = command(StagedDocument, { name: 'create', from: 'new', to: 'draft
     reviewers: z.array(z.string()), reviewerId: z.string().optional(), phone: z.string() }), handler: row => row });
 /** 普通用户提交；业务状态改变与提交事件在领域事务中提交。 */
 const submit = command(StagedDocument, { name: 'submit', from: 'draft', to: 'reviewing', emits: [Submitted], handler: row => row });
-/** 最后签署人仍必须满足职责分离和额度，不能沿用更早批准人的身份绕过约束。 */
+/** 最后签署人仍必须满足职责分离，不能沿用更早批准人的身份绕过约束。 */
 const accept = command(StagedDocument, { name: 'accept', from: 'reviewing', to: 'accepted', invokedBy: 'process',
-  constraints: [sod.notSameAs('createdBy'), ceiling('amount')], handler: row => row });
+  constraints: [sod.notSameAs('createdBy')], handler: row => row });
 /** 驳回作为流程结论回到领域命令，不从任务管理入口直接修改业务表。 */
 const reject = command(StagedDocument, { name: 'reject', from: 'reviewing', to: 'rejected', invokedBy: 'process', handler: row => row });
 /** 退回恢复草稿，后续重提应生成新轮次；不同于释放候选任务。 */
@@ -69,7 +69,7 @@ let candidateRoleId: string;
 /** 共用隔离库、两位原始审批人和两位额外签署人；角色只有选人作用，业务能力来自独立用户角色。 */
 beforeAll(async () => {
   env = await createTestEnv({ domain }); engine = reviewRoute.engine(env.kernel);
-  applicant = await env.user({ caps: ['StagedDocument.read', 'StagedDocument.create', 'StagedDocument.submit', 'StagedDocument.cancel'] });
+  applicant = await env.user({ caps: ['StagedDocument.read', 'StagedDocument.create', 'StagedDocument.submit', 'StagedDocument.cancel', 'StagedDocument.accept'] });
   first = await reviewer(); second = await reviewer(); extra = await reviewer(); another = await reviewer();
   const candidates = await env.kernel.execute('Role.create', { code: 'stage_candidates', name: '共享任务候选人' }, env.system());
   const direct = await env.kernel.execute('Role.create', { code: 'stage_direct', name: '原始直派审批人' }, env.system());
@@ -80,10 +80,9 @@ beforeAll(async () => {
 /** 连接先关闭再回收测试库，失败用例也不遗留对应用数据库的连接。 */
 afterAll(async () => { await server?.close(); await env?.close(); });
 
-/** 新建独立权限角色，默认可读全部单据且批准额度为 1000 元；需要时加入候选角色。 */
-async function reviewer(options: { caps?: string[]; scope?: string; ceiling?: number; candidate?: boolean } = {}) {
-  const user = await env.user({ caps: options.caps ?? reviewerCaps, scopes: { StagedDocument: options.scope ?? 'all' },
-    params: { 'StagedDocument.accept': { ceiling: options.ceiling ?? 1000 } } });
+/** 新建独立权限角色，默认可读全部单据；需要时加入候选角色。 */
+async function reviewer(options: { caps?: string[]; scope?: string; candidate?: boolean } = {}) {
+  const user = await env.user({ caps: options.caps ?? reviewerCaps, scopes: { StagedDocument: options.scope ?? 'all' } });
   if (options.candidate) await env.kernel.execute('User.assignRoles', { id: user.id, roleIds: [user.roleId, candidateRoleId] }, env.system());
   return user;
 }
@@ -399,11 +398,11 @@ describe('前后加签的等待、激活与结论原子性', () => {
     expect(await status(item.id)).toBe('accepted');
   });
 
-  it('最后后签人的额度不足时决定、版本和历史回滚，已经通过的父票保留', async () => {
-    const limited = await reviewer({ ceiling: 50 }), item = await launch('any'), parent = await owned(first, item.id);
+  it('最后后签人为申请人时职责分离拒绝，决定、版本和历史回滚', async () => {
+    const limited = applicant, item = await launch('any'), parent = await owned(first, item.id);
     await sign(parent, first, [limited], 'after'); await engine.decide(parent.id, first.id, env.tenantId, 'approved', undefined, 1);
     const last = await owned(limited, item.id), before = await history(item.id);
-    await expect(engine.decide(last.id, limited.id, env.tenantId, 'approved', '额度不足不能完成', last.revision)).rejects.toMatchObject({ code: 'CONSTRAINT_VIOLATED' });
+    await expect(engine.decide(last.id, limited.id, env.tenantId, 'approved', '申请人不能审批', last.revision)).rejects.toMatchObject({ code: 'CONSTRAINT_VIOLATED' });
     expect(await owned(limited, item.id)).toMatchObject({ status: 'pending', revision: last.revision });
     expect(await history(item.id)).toEqual(before); expect(await status(item.id)).toBe('reviewing');
     expect(await env.query('select status from flow.approval_task where id=$1', [parent.id])).toMatchObject([{ status: 'approved' }]);

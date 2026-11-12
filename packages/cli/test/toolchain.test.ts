@@ -70,6 +70,7 @@ it.each(['blank', 'purchase'] as const)('%s 模板交付完整本地教材，且
     'docs/development/reference/primitives.md',
     'docs/development/getting-started/workflow.md',
     'docs/development/tools/ontology-context.md',
+    'docs/development/guides/ontology-modeling.md',
     'docs/development/guides/intelligence.md',
     'docs/development/tools/diagnostics.md',
     'docs/development/guides/recipes.md',
@@ -80,6 +81,7 @@ it.each(['blank', 'purchase'] as const)('%s 模板交付完整本地教材，且
     'docs/errors/runtime.md',
     'docs/errors/CAGE-APPR-007.md',
     'docs/errors/CAGE-PAIR-002.md',
+    'docs/errors/CAGE-ONTOLOGY-001.md',
   ])
     expect(existsSync(join(root, file)), file).toBe(true);
   const reference = template === 'blank' ? 'docs/examples/purchase-admin' : '';
@@ -106,7 +108,9 @@ it.each(['blank', 'purchase'] as const)('%s 模板交付完整本地教材，且
     expect(migration).toContain('purchase_order');
     expect(contracts).toContain('PurchaseOrder.read');
   }
-  expect(JSON.parse(readFileSync(join(root, 'cage.config.json'), 'utf8')).structure).toBe('modular');
+  const config = JSON.parse(readFileSync(join(root, 'cage.config.json'), 'utf8'));
+  expect(config.structure).toBe('modular');
+  expect(config.graph.naming).toBe('required');
   for (const path of [
     'apps/web/src/app/app.tsx',
     'apps/web/src/modules/auth/pages/login-page.tsx',
@@ -237,14 +241,14 @@ describe('图规则与影响分析', () => {
       ]),
     );
   });
-  it('金额口径变化能追到额度约束与审批路由', () => {
+  it('金额口径变化能追到审批路由和相关事件', () => {
     const changed = structuredClone(graph);
     const field = changed.nodes.find((n) => n.kind === 'field' && n.id === 'PurchaseOrder.amount')!;
     field.hash = 'new-meaning';
     field.attrs.description = '不含税金额';
     const result = impact(graph, changed, []);
     expect(result.affected).toEqual(
-      expect.arrayContaining(['PurchaseOrder.approve', 'poApproval', 'route:po-approval', 'OrderSubmitted']),
+      expect.arrayContaining(['poApproval', 'route:po-approval', 'OrderSubmitted']),
     );
   });
   it('删除事件字段会阻断兼容性门禁', () => {

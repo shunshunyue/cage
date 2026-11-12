@@ -5,6 +5,7 @@
   "typecheck": ["packages/domain", "packages/contracts", "apps/api", "apps/web"],
   "graph": {
     "title": "业务应用图谱",
+    "naming": "required",
     "labels": {
       "aggregate:Dept": "部门",
       "aggregate:User": "用户",

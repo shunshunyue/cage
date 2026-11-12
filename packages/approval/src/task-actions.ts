@@ -73,7 +73,7 @@ export async function authorizedTaskActor(k: Kernel, tx: Transaction<any>, inst:
   const binding = k.registry.approvalByProcess(inst.process)!.a;
   const command = outcome === 'approved' ? binding.onApproved : outcome === 'rejected' ? binding.onRejected : binding.onReturned;
   // 复用持有实例锁的连接加载授权；若另从 app 池取连接，排队操作占满池时会阻塞锁持有者。
-  const grants = await loadUserGrants(tx, userId, inst.tenant_id);
+  const grants = await loadUserGrants(tx, userId, inst.tenant_id, k.catalogCaps());
   const actor = grants ? userCtx(grants) : null;
   if (!actor || !command || !actor.capabilities.has(k.registry.capabilityOf(command)) || !actor.capabilities.has(`${binding.agg.name}.read`)) throw cageError('FORBIDDEN');
   // 只查安全视图中的存在性，不读取明文字段或制造不必要的明文读取审计；范围仍由读账号落实。

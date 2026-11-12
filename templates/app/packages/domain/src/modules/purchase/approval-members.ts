@@ -1,7 +1,7 @@
 /**
  * 采购协作名录：由业务管理员登记可参与采购复核的账号、公开业务姓名和专业领域，供草稿选人及任务操作使用。
  * 聚合通过标准命令维护，浏览器读取 safe.approval_member；名录与 sys.user 的私密资料、角色授权分离。
- * 名录在同租户内向具 ApprovalMember.read 且显式获 all 范围的采购参与者公开；加入名录不授予审批权限、范围或额度。
+ * 名录在同租户内向具 ApprovalMember.read 且显式获 all 范围的采购参与者公开；加入名录不授予审批权限或范围。
  */
 import { aggregate, command, ref, scope, states, text } from '@yss123/cage-kernel';
 import { z } from 'zod';

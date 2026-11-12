@@ -23,40 +23,57 @@
 下面可作为 `packages/domain/src/modules/note/note.ts`。它是[最小便笺](../reference/primitives.md)的关系版本，按需要替换原文件，避免重复声明 Note。
 
 ```ts
+/**
+ * 便笺关系示例，由 domain 入口导出后参与注册、契约和图谱生成。
+ * Note 维护协作人集合，NoteComment 通过 noteId 归属便笺；命令只返回变化，持久化由内核完成。
+ * 名称使用 description/describe/labels 写入本体，中文注释不代替这些结构化信息。
+ */
 import {
   aggregate, command, fail, hasMany, manyToMany, ref, scope, states, text,
 } from '@yss123/cage-kernel';
 import { z } from 'zod';
 
+/** 部门便笺独立维护状态和协作人；评论有自己的聚合，本例没有提供便笺归档命令。 */
 export const Note = aggregate('Note', {
   description: '部门便笺',
   fields: {
-    title: text(120),
-    deptId: ref('Dept'),
-    createdBy: ref('User'),
+    title: text(120).describe('便笺标题'),
+    deptId: ref('Dept').describe('所属部门'),
+    createdBy: ref('User').describe('创建人'),
     // 这是 ID 集合。框架负责物理中间表、约束、关联写入和事务。
     members: manyToMany('User', { description: '协作成员' }),
     // 从评论上的 noteId 反查；这不是一份可写的评论 ID 数组。
     comments: hasMany('NoteComment', { mappedBy: 'noteId', description: '便笺评论' }),
   },
-  states: states('active', 'archived', { terminal: ['archived'] }),
+  states: states('active', 'archived', {
+    terminal: ['archived'],
+    labels: { active: '使用中', archived: '已归档' },
+  }),
   scope: scope.deptSubtree('deptId'),
   invariants: { titleNotBlank: (note) => note.title.trim().length > 0 },
 });
 
+/** 评论以 noteId 归属便笺；创建命令读取便笺并复制部门，不依赖 ref 自动继承范围。 */
 export const NoteComment = aggregate('NoteComment', {
   description: '便笺评论',
   fields: {
-    noteId: ref('Note'),
-    body: text(2000),
-    deptId: ref('Dept'),
-    createdBy: ref('User'),
+    noteId: ref('Note').describe('所属便笺'),
+    body: text(2000).describe('评论内容'),
+    deptId: ref('Dept').describe('所属部门'),
+    createdBy: ref('User').describe('评论人'),
   },
+  // 与框架默认的 active/deleted 生命周期相同，仅显式补齐图谱名称，不新增删除操作。
+  states: states('active', 'deleted', {
+    terminal: ['deleted'],
+    labels: { active: '有效评论', deleted: '已删除' },
+  }),
   scope: scope.deptSubtree('deptId'),
 });
 
+/** 创建使用中的便笺，可选初始协作人；部门与创建人由内核按当前主体填入。 */
 export const createNote = command(Note, {
   name: 'create', from: 'new', to: 'active',
+  description: '创建部门便笺',
   input: z.object({
     title: z.string().trim().min(1).max(120),
     members: z.array(z.string().uuid()).optional(),
@@ -65,23 +82,29 @@ export const createNote = command(Note, {
   handler: (draft) => draft,
 });
 
+/** 完整替换使用中便笺的协作人，空数组表示全部解绑；调用方负责提供完整目标集合。 */
 export const setNoteMembers = command(Note, {
   name: 'setMembers', from: 'active', to: null,
+  description: '替换便笺协作人',
   input: z.object({ id: z.string().uuid(), members: z.array(z.string().uuid()) }),
   // 完整替换集合；[] 表示全部解绑。只改关系也会递增便笺版本并写审计。
   handler: (_draft, input) => ({ members: input.members }),
 });
 
+/** 向完整草稿追加协作人，保留既有关联；内核在事务中校验新增目标并规范化集合。 */
 export const addNoteMembers = command(Note, {
   name: 'addMembers', from: 'active', to: null,
+  description: '追加便笺协作人',
   input: z.object({ id: z.string().uuid(), memberIds: z.array(z.string().uuid()) }),
   // 草稿包含完整的既有关联。增量追加可以保留当前操作者看不到的旧成员。
   // 数组去重与排序由框架统一处理，业务不再维护第二套集合规范化。
   handler: (draft, input) => ({ members: [...draft.members, ...input.memberIds] }),
 });
 
+/** 读取当前可见便笺后创建评论；便笺不可见或已归档时拒绝，成功时沿用其部门。 */
 export const createNoteComment = command(NoteComment, {
   name: 'create', from: 'new', to: 'active', reads: { notes: Note },
+  description: '评论便笺',
   input: z.object({ noteId: z.string().uuid(), body: z.string().trim().min(1).max(2000) }),
   handler: async (_draft, input, { notes }) => {
     const note = await notes.get(input.noteId);

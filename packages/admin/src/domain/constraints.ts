@@ -23,10 +23,56 @@ function ownWidth(ctx: Ctx, aggregate: string): number {
 export const knownCapability = (): Constraint => ({
   name: 'knownCapability',
   check: (_role, _ctx, input, meta) =>
-    meta.catalog().includes(input.capability) ? ok() : violation(`[CAGE-GRANT-003] 能力点 ${input.capability} 不在能力目录里`),
+    (input.capability === '*' ? _ctx.actor?.kind === 'system' && _ctx.actor.id === 'system:bootstrap' : meta.catalog().includes(input.capability))
+      ? ok() : violation(`[CAGE-GRANT-003] 能力点 ${input.capability} 不在能力目录里`),
 });
 
-/** 防提权：不能授出自己没有的能力点；数值参数（额度）不能超过自己的 */
+/**
+ * 保护带全部能力标记的角色。普通角色管理员不能维护它；超级管理员不能移除通配标记或停用该角色，
+ * 避免初始角色失效后无法通过普通授权恢复。受信任系统身份仍可执行维护；角色名称不决定特权。
+ */
+export const protectSuperadminRole = (): Constraint => ({
+  name: 'protectSuperadminRole',
+  check: (role, ctx, input, meta) => {
+    if (!role.capabilities?.some((entry: { capability: string }) => entry.capability === '*') || ctx.actor?.kind === 'system') return ok();
+    if (!ctx.capabilities.has('*')) return violation('[CAGE-GRANT-001] 只有超级管理员可以维护超级管理员角色');
+    if (meta.capability === 'Role.archive' || (meta.capability === 'Role.revokeCapability' && input.capability === '*'))
+      return violation('[CAGE-GRANT-001] 不能停用超级管理员角色或移除全部能力标记');
+    return ok();
+  },
+});
+
+/**
+ * 保护已分配全部能力角色的用户，防止普通用户管理员通过重置密码或更换角色接管管理员。
+ * 在当前事务、当前租户及操作者可见范围中读取用户已有的角色；停用角色仍受保护。
+ * 超级管理员不能停用自己，也不能移除自己最后一个有效的全部能力角色，避免误操作后无法继续授权。
+ * 角色不可见或不存在时无法确认目标用户是否受保护，拒绝操作；系统身份可执行维护。
+ */
+export const protectSuperadminUser = (): Constraint => ({
+  name: 'protectSuperadminUser',
+  check: async (user, ctx, input, meta) => {
+    if (ctx.actor?.kind === 'user' && ctx.userId === user.id && ctx.capabilities.has('*')) {
+      if (meta.capability === 'User.disable') return violation('[CAGE-GRANT-001] 超级管理员不能停用自己的账号');
+      if (meta.capability === 'User.assignRoles') {
+        for (const id of input.roleIds as string[]) {
+          const role = await meta.load('Role', id);
+          if (role?.status === 'active' && role.capabilities?.some((entry: { capability: string }) => entry.capability === '*')) return ok();
+        }
+        return violation('[CAGE-GRANT-001] 超级管理员不能移除自己的全部能力角色');
+      }
+    }
+    if (ctx.capabilities.has('*') || ctx.actor?.kind === 'system') return ok();
+    for (const id of user.roleIds ?? []) {
+      const role = await meta.load('Role', id);
+      if (!role) return violation('[CAGE-GRANT-001] 无法确认用户角色，不能维护该账号');
+      if (role?.capabilities?.some((entry: { capability: string }) => entry.capability === '*'))
+        return violation('[CAGE-GRANT-001] 只有超级管理员可以维护超级管理员账号');
+    }
+    return ok();
+  },
+});
+
+/** 防提权：不能授出自己没有的能力点；数值参数不能超过自己的。 */
 /**
  * 构造直接授权的防提权约束：操作者必须已有目标能力。
  * 输入与操作者参数在同一键上都为 number 时，新值不能更大；其他参数类型不在这里比较。

@@ -23,11 +23,11 @@ body {
   margin: 0;
   min-width: 1024px;
 }
-button,
+button:not(.ant-btn),
 input {
   font: inherit;
 }
-button,
+button:not(.ant-btn),
 a {
   -webkit-tap-highlight-color: transparent;
 }
@@ -39,16 +39,17 @@ button,
 .primary {
   cursor: pointer;
 }
-button:disabled {
+button:not(.ant-btn):disabled {
   cursor: wait;
   opacity: 0.65;
 }
-button:focus-visible,
+button:not(.ant-btn):focus-visible,
 a:focus-visible {
   outline: 3px solid #91bca2;
   outline-offset: 4px;
 }
-button {
+/* 原生按钮规则服务于模板现有的 DOM 控件，不覆盖新增的 Ant Design Button。 */
+button:not(.ant-btn) {
   transition:
     background 0.18s ease,
     border-color 0.18s ease;

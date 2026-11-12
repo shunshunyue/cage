@@ -22,7 +22,7 @@
 | `packages/contracts/src/aggregates/purchase-order/index.ts` | 生成的前端协议与类型 | 只读它，不手改；process/external 命令不生成浏览器写方法 |
 | `apps/web/src/main.tsx`、`app` | 挂载、全局 Provider、会话与导航组合 | 入口保持简洁，从模块公开入口组装页面 |
 | `apps/web/src/modules/purchase`、`inventory`、`approval` | 各业务页面与交互 | 调契约、处理错误、刷新列表、展示导出任务；不互相穿透 |
-| `packages/domain/src/modules/purchase/purchase-order.test.ts` | 有业务数据的成功/拒绝用例 | 越权、自审批、额度、库存锁、晚到 ERP 回执 |
+| `packages/domain/src/modules/purchase/purchase-order.test.ts` | 有业务数据的成功/拒绝用例 | 越权、自审批、库存锁、晚到 ERP 回执 |
 
 ## 一次正常采购发生了什么
 
@@ -37,7 +37,7 @@
   → 申请启用专业复核时：所选专业人员全部会签
   → 金额 > 50000 时：财务共享候选任务，由 finance 成员领取后处理
   → 流程完成 → 调用 approve
-      → 职责分离、额度、库存检查
+      → 职责分离、库存检查
       → approved + OrderApproved
       → 同事务 lockOnApprove → InventoryLock.held
   → worker 消费 OrderApproved → fake/真实 ERP 推单
@@ -80,11 +80,11 @@ submit 返回成功只表示单据和事件已提交，不表示待办、ERP 或
 | 模型管理者 | `Sys.ai.models.manage`；在 `/admin/#/models` 配置并启用 `main`，部署主密钥见[智能能力指南](../guides/intelligence.md) |
 | 助理性格管理者 | `Sys.ai.personalities.manage`；在 `/admin/#/personalities` 编辑预设、自定义性格、设置默认并试聊 |
 | AI 预审角色 | 创建 code 为 `purchase_ai_reviewer` 的角色，授予 `PurchaseOrder.read/returnForChanges` 及覆盖申请范围的数据权限；本例 AI 仅预审，不执行最终 approve |
-| 经理 | `PurchaseOrder.read/approve/reject/returnForChanges`，适当数据范围，`approve` 的 `ceiling` 额度参数 |
-| 专业协作人 | 真实账号及同样的审批能力、范围、额度；由名录管理员通过 `ApprovalMember.create` 登记公开业务姓名、专业说明；需要在任务中选人时授予 `ApprovalMember.read` |
+| 经理 | `PurchaseOrder.read/approve/reject/returnForChanges` 和适当数据范围 |
+| 专业协作人 | 真实账号及所需审批能力和范围；由名录管理员通过 `ApprovalMember.create` 登记公开业务姓名、专业说明；需要在任务中选人时授予 `ApprovalMember.read` |
 | 名录管理员 | 显式授予 `ApprovalMember.create/update/retire/read`；登记、更新资料或退役不修改用户角色，不自动给采购参与者授予 `User.read` |
 | 部门 | 将采购员所属部门的负责人设为经理；不能为空 |
-| 财务 | 角色 **code** 为 `finance`，给至少两位实际用户分配以体验共享候选池；配置审批所需权限、范围及足够额度；领取后才能处理 |
+| 财务 | 角色 **code** 为 `finance`，给至少两位实际用户分配以体验共享候选池；配置审批所需权限和范围；领取后才能处理 |
 | 库存台账 | 预先登记与采购明细相同的 sku，数量满足演示检查 |
 | 连接器环境 | fake 阶段使用 worker 注册的 fake；真实环境另配 host 对应密钥及回调签名密钥 |
 

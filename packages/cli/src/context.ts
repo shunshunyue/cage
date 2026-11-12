@@ -203,9 +203,9 @@ export function buildContext(
     .map(reader.relationInfo);
   const review: string[] = [];
   if (nodes.some((n) => n.kind === 'command' || n.kind === 'capability'))
-    review.push('涉及命令能力、数据范围或额度时复核管理员授权；新增能力不自动授予生产角色。');
+    review.push('涉及命令能力或数据范围时复核管理员授权；新增能力不自动授予普通生产角色。');
   if (nodes.some((n) => n.kind === 'approval'))
-    review.push('复核 start/cancelOn、审批分支、选人、结论命令和额度约束；取消审批与释放资源分别检查。');
+    review.push('复核 start/cancelOn、审批分支、选人和结论命令的业务约束；取消审批与释放资源分别检查。');
   if (nodes.some((n) => n.kind === 'reaction' && (n.attrs.acquires || n.attrs.releases)))
     review.push('资源获取/释放标签只证明声明配对；阅读 map 的执行条件、null 返回以及同事务/异步方式。');
   if (nodes.some((n) => n.kind === 'event')) review.push('已部署事件保持兼容；核对载荷字段和所有订阅方。');

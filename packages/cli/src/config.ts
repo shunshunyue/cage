@@ -41,7 +41,14 @@ export interface CageConfig {
   /** 图谱的显示文案独立于业务标识；键为“节点类型:节点 ID”，板块标题可用
    * “module:模块目录名”，审批角色使用“role:角色编码”。不影响路由、数据表、能力点和影响分析。
    * 可用短标题覆盖较长的声明 description。 */
-  graph?: { title?: string; labels?: Record<string, string> };
+  graph?: {
+    /** 图谱的项目标题，缺省使用 name。 */
+    title?: string;
+    /** 节点完整 key 到展示名的覆盖，不修改领域声明或权限能力点。 */
+    labels?: Record<string, string>;
+    /** 本地业务节点缺名时默认警告；required 将命名完整性纳入 check/gen/verify 门禁，不判断业务正确性。 */
+    naming?: 'warn' | 'required';
+  };
 }
 
 /**

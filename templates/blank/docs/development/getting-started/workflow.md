@@ -27,7 +27,7 @@ pnpm dev
 
 `init` 自动创建独立账号与随机密码，填写 APP/READ/MIGRATE 连接和 Cookie 密钥，成功后删除文件中的管理员连接。三个连接使用同一数据库。已有 Cage 集群账号时复用原连接，不能重置其他应用的账号密码。生产环境可由平台直接提供账号连接，不必执行本地 init。
 
-`bootstrap` 独立初始化组织，不自动授予业务能力。管理员凭据只进入新的受限文件，不进入服务控制台；已有用户时不重置。交付后移除凭据文件。日常 API 启动不初始化组织；生产缺少合格 Cookie 密钥会拒绝启动。具体文件权限与诊断用法见[能力发现与状态诊断](../tools/diagnostics.md)。
+`bootstrap` 独立初始化组织，并给初始超级管理员当前及以后新增的全部能力和本租户全部数据范围。超级管理员可以直接为普通角色配置能力和范围；普通角色不会自动获得新增能力。管理员凭据只进入新的受限文件，不进入服务控制台；已有用户时不重置账号，也不会自动升级已有角色。交付后移除凭据文件。日常 API 启动不初始化组织；生产缺少合格 Cookie 密钥会拒绝启动。具体文件权限与诊断用法见[能力发现与状态诊断](../tools/diagnostics.md)。
 
 `.env.example` 是配置说明，`.env` 是本机私密配置，二者不混用。CLI 自动加载应用 `.env`，部署环境同名变量优先。API 和 worker 启动需重启后读取变更；不要输出整个 `.env` 排障。
 
@@ -38,8 +38,8 @@ pnpm dev
 只执行实现映射涉及的操作；文案或样式调整无需修改 domain、生成迁移或重新授权。实现过程中发现业务规则尚不清楚，回到[业务澄清](../guides/business-collaboration.md)处理相关部分。
 
 1. **保存基线。** 涉及已存在业务含义变化时，修改前运行 `pnpm exec cage snapshot save before-change`；也可使用真实 Git 提交或独立本体图文件。
-2. **修改声明与导出。** 按[目录规范](../reference/project-structure.md)在所属领域模块修改字段、状态、不变量、命令及必要的后续流程。跨模块反应放 workflows，第三方协议放 integrations；从模块 index 到 domain 总入口逐层导出，避免重名丢失。按[注释规范](../reference/commenting.md)同步解释职责、输入、权限/状态/reads、事件/事务与失败边界。
-3. **检查与生成。** `pnpm exec cage check` 检查声明和图规则；`pnpm gen` 更新契约与迁移草稿，不手改生成物。聚合和命令填写中文 `description`，需要覆盖时补 `cage.config.json` 的 `graph.labels`（如 `aggregate:Note`、`command:Note.archive`、`capability:Note.export`）。名称用于图谱和 `/admin` 授权界面，修改后重启 API；不重命名能力点来翻译。在图谱核对连接与资源生命周期。
+2. **修改声明与导出。** 按[目录规范](../reference/project-structure.md)在所属领域模块修改字段、状态、不变量、命令及必要的后续流程。按[本体建模指南](../guides/ontology-modeling.md)把对象含义、关系方向与基数、状态和操作结果写进真实声明；名称用 description、字段 .describe 和每个状态的 labels 维护，普通注释与页面翻译不能代替。跨模块反应放 workflows，第三方协议放 integrations；从模块 index 到 domain 总入口逐层导出，避免重名丢失。按[注释规范](../reference/commenting.md)同步解释职责、输入、权限/状态/reads、事件/事务与失败边界。
+3. **检查与生成。** `pnpm exec cage check` 检查声明和图规则，处理 `CAGE-ONTOLOGY-001` 指出的缺名；`pnpm gen` 更新契约与迁移草稿，不手改生成物。名称显示覆盖可写 `cage.config.json` 的 `graph.labels`（如 `aggregate:Note`、`command:Note.archive`、`capability:Note.export`），不重命名能力点来翻译。图谱中核对业务名称、关系、状态迁移与资源生命周期；名称齐全不能证明联动已经实现。
 4. **审查与迁移。** 核对非空字段、回填、删列和索引，保留已执行迁移；有结构变化且需落库时显式 `pnpm migrate`。按需要配置能力、范围和外部服务，API/worker 使用一致声明。
 5. **接入页面。** 在 `apps/web/src/modules/<业务>` 使用真实生成契约，从模块入口接入 app 路由。处理业务失败与版本冲突；多页面使用独立 URL，筛选/分页进入 URL。`useCan` 只控制按钮，服务端仍校验授权；成功后重新读取或失效查询。按[浏览器验收](../guides/routing.md)检查对应操作和导航。
 6. **核对规则与交付。** 对照编码前的规则与验收例子，补足关键反例，执行下文与改动匹配的检查。审查 diff 中的业务变化、生成物和中文注释；交付源声明、契约、审查过的迁移及配置要求，分别报告通过、跳过、未执行。
@@ -65,7 +65,7 @@ pnpm exec cage impact --base main
 | --- | --- | --- |
 | 增加字段 | 修改 aggregate；按命令更新 input/handler；重新生成 | 是否敏感、是否可选、旧数据如何回填、查询/事件/页面受影响吗 |
 | 增加状态或撤回 | 修改 states 和 command；声明事件及资源处理 | 可达性、非终态出边、审批 cancelOn、CAGE-PAIR-002 |
-| 修改审批 | 修改 route/approval；按需要增加 routable | 负责人/role code、步骤 mode、结论命令、额度和职责分离 |
+| 修改审批 | 修改 route/approval；按需要增加 routable | 负责人/role code、步骤 mode、业务分支条件、结论命令和职责分离 |
 | 增加报表 | 声明 query 的 reads、input 和 sql/build | 安全视图、参数化、调用人 read 权限、生成 queries 契约 |
 | 接入第三方 | 声明 connector/op/outbound/inbound；配置运行环境密钥 | 请求响应白名单、幂等、超时、验签、永久/可重试错误和补偿 |
 | 改后台管理配置 | 通过组织模型与系统接口修改 | 防提权、实际授权范围、角色缓存刷新、操作人权限 |
@@ -131,7 +131,7 @@ CSV 编码、限制、SDK 与完整接口见本项目自带的[业务页导入�
 
 - 文档、文案、可逆的小改动：检查链接、格式、资料分发；不需要重复运行全套数据库测试。
 - 所有源码变更：按[注释交付清单](../reference/commenting.md#交付前逐项核对)人工核对中文职责、接口与关键流程说明；静态检查不能替代注释准确性检查。仅补注释时不新增复述实现的测试、不改写已执行迁移。
-- 命令/约束/反应变化：针对成功路径及真正的风险增加用例，如越权拒绝、额度边界、资源释放、同事务回滚。不要写只复述实现的测试。
+- 命令/约束/反应变化：针对成功路径及真正的风险增加用例，如越权拒绝、业务条件边界、资源释放、同事务回滚。不要写只复述实现的测试。
 - 领域结构变化：check、gen、生成一致性、类型检查；有数据库影响时在独立测试库验证迁移和读写。
 - 页面或导航变化：构建后按[浏览器配方](../guides/routing.md)实际操作，包含深链接、新标签页、刷新、前进后退、登录回跳、无权限和 404。check/verify 不自动执行浏览器验收；未操作时明确报告未执行，不能写“页面功能完整”。
 - 发布前：按项目要求执行完整 verify/build/test，核对分发包。没有执行的项目明确写出原因。

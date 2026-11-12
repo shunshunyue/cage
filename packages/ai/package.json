@@ -1,6 +1,6 @@
 {
   "name": "@yss123/cage-ai",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "type": "module",
   "description": "Cage 自研 AI 运行时、本体助理与智能审批执行器",
   "main": "dist/index.js",

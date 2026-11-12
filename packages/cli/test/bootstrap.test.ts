@@ -1,10 +1,10 @@
 /**
  * 验证组织初始化的跨数据库与凭据文件交付边界。
- * 测试创建隔离 PostgreSQL、执行真实 CLI 和文件权限检查，覆盖只授组织能力、幂等、ACL 失败及事务回滚。
+ * 测试创建隔离 PostgreSQL、执行真实 CLI 和文件权限检查，覆盖超级管理员授权、幂等、ACL 失败及事务回滚。
  * 成功路径保留真实权限工具，失败路径仅注入明确故障；临时目录、连接与测试实例由套件清理。
  */
 // 真实 CLI、ACL 和隔离 PostgreSQL：凭据交付必须先于组织初始化提交。
-// 测试库迁移完整业务模型，以证明 bootstrap 不会顺带授予业务权限。
+// 测试库迁移完整业务模型，以验证初始化角色随当前注册表取得能力。
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -135,7 +135,7 @@ function assertRestricted(file: string) {
   expect(acl.rules[0].rights & 0x1f01ff).toBe(0x1f01ff); // FileSystemRights.FullControl
 }
 
-it('凭据仅交付新受限文件，只授组织能力，重复执行不重置账号或授权', async () => {
+it('凭据仅交付新受限文件，超级管理员取得当前目录能力，重复执行不重置账号或授权', async () => {
   expect((await successful.client.query("select to_regclass('core.purchase_order') as name")).rows[0].name).toBe('core.purchase_order');
   const file = join(temporary, 'initial-credentials.json');
   // Environment usernames are not the process security identity (common with service/sandbox accounts).
@@ -148,18 +148,32 @@ it('凭据仅交付新受限文件，只授组织能力，重复执行不重置�
   expect((first.stdout + first.stderr).includes(successful.urls.app)).toBe(false);
   assertRestricted(file);
 
-  const users = (await successful.client.query('select username, password_hash, role_ids from sys.user')).rows;
+  const users = (await successful.client.query('select id, tenant_id, username, password_hash, role_ids from sys.user')).rows;
   expect(users).toHaveLength(1);
   expect(await verifyPassword(credentials.password, users[0].password_hash)).toBe(true);
   const roles = (await successful.client.query('select id, capabilities from sys.role')).rows;
   expect(roles).toHaveLength(1);
   expect(users[0].role_ids).toEqual([roles[0].id]);
   const organizationCaps = buildRegistry(organization).capabilityCatalog().map(entry => entry.capability).sort();
-  const granted = roles[0].capabilities.map((entry: { capability: string }) => entry.capability).sort();
-  expect(granted).toEqual(organizationCaps);
+  const granted = roles[0].capabilities.map((entry: { capability: string }) => entry.capability);
+  expect(granted).toEqual(['*']);
   const businessCaps = buildRegistry(domain).capabilityCatalog().map(entry => entry.capability).filter(capability => !organizationCaps.includes(capability));
   expect(businessCaps.length).toBeGreaterThan(0);
-  expect(businessCaps.some(capability => granted.includes(capability))).toBe(false);
+  const original = createKernel({ domain: organization, urls: successful.urls, logger: silentLogger });
+  const expanded = createKernel({ domain, urls: successful.urls, logger: silentLogger });
+  try {
+    const oldContext = await original.contextFor(users[0].id, users[0].tenant_id);
+    const newContext = await expanded.contextFor(users[0].id, users[0].tenant_id);
+    expect(organizationCaps.every(capability => oldContext!.capabilities.has(capability))).toBe(true);
+    expect(businessCaps.every(capability => newContext!.capabilities.has(capability))).toBe(true);
+    expect(businessCaps.some(capability => oldContext!.capabilities.has(capability))).toBe(false);
+    expect(newContext!.scopes).toEqual({ '*': [{ combinator: 'all' }] });
+    expect(newContext!.unmask).toContain('PurchaseOrder.phone');
+    expect(await expanded.contextFor(users[0].id, '00000000-0000-0000-0000-000000000099')).toBeNull();
+  } finally {
+    await original.close();
+    await expanded.close();
+  }
 
   const before = await snapshot(successful);
   const repeatFile = join(temporary, 'repeat-result.json');
@@ -170,6 +184,60 @@ it('凭据仅交付新受限文件，只授组织能力，重复执行不重置�
   expect(JSON.parse(readFileSync(repeatFile, 'utf8')).password).toBeUndefined();
   expect((repeat.stdout + repeat.stderr).includes(credentials.password)).toBe(false);
   assertRestricted(repeatFile);
+}, 30_000);
+
+it('普通管理员不能授予或间接接管超级管理员权限', async () => {
+  const kernel = createKernel({ domain, urls: successful.urls, logger: silentLogger });
+  try {
+    const [initial] = (await successful.client.query('select id, tenant_id, dept_id, role_ids from sys.user')).rows;
+    const superadmin = (await kernel.contextFor(initial.id, initial.tenant_id))!;
+    const role = await kernel.execute('Role.create', { code: 'limited_admin', name: '普通管理员' }, superadmin);
+    for (const capability of ['Role.read', 'Role.grantCapability', 'Role.revokeCapability', 'Role.archive', 'Role.setScope',
+      'User.read', 'User.assignRoles', 'User.setPassword', 'User.disable', 'User.enable'])
+      await kernel.execute('Role.grantCapability', { id: role.id, capability }, superadmin);
+    await kernel.execute('Role.setScope', { id: role.id, aggregate: '*', combinator: 'all' }, superadmin);
+    const user = await kernel.execute('User.create', { username: 'limited_admin', name: '普通管理员', deptId: initial.dept_id }, superadmin);
+    await kernel.execute('User.assignRoles', { id: user.id, roleIds: [role.id] }, superadmin);
+    const limited = (await kernel.contextFor(user.id, initial.tenant_id))!;
+    expect(limited.capabilities.has('PurchaseOrder.read')).toBe(false);
+
+    const reject = async (capability: string, input: unknown) =>
+      expect(kernel.execute(capability, input, limited)).rejects.toMatchObject({ code: 'CONSTRAINT_VIOLATED' });
+    await reject('Role.grantCapability', { id: role.id, capability: '*' });
+    await reject('User.assignRoles', { id: user.id, roleIds: [role.id, initial.role_ids[0]] });
+    await reject('Role.revokeCapability', { id: initial.role_ids[0], capability: '*' });
+    await reject('Role.archive', { id: initial.role_ids[0] });
+    await reject('User.assignRoles', { id: initial.id, roleIds: [] });
+    await reject('User.setPassword', { id: initial.id, password: 'test-password-123' });
+    await reject('User.disable', { id: initial.id });
+
+    // 初始角色不能被撤销或停用，管理员也不能通过移除自己的角色或停用自己把租户锁死。
+    for (const [capability, input] of [
+      ['Role.revokeCapability', { id: initial.role_ids[0], capability: '*' }],
+      ['Role.archive', { id: initial.role_ids[0] }],
+      ['User.assignRoles', { id: initial.id, roleIds: [] }],
+      ['User.disable', { id: initial.id }],
+    ] as const) {
+      await expect(kernel.execute(capability, input, superadmin)).rejects.toMatchObject({ code: 'CONSTRAINT_VIOLATED' });
+    }
+
+    // 保留自己的超级角色时仍可调整普通角色，超级管理员也可为其他用户分配和收回超级角色。
+    await kernel.execute('User.assignRoles', { id: initial.id, roleIds: [initial.role_ids[0], role.id] }, superadmin);
+    await kernel.execute('User.assignRoles', { id: initial.id, roleIds: [initial.role_ids[0]] }, superadmin);
+    await kernel.execute('User.assignRoles', { id: user.id, roleIds: [role.id, initial.role_ids[0]] }, superadmin);
+    await kernel.execute('User.assignRoles', { id: user.id, roleIds: [role.id] }, superadmin);
+
+    await kernel.execute('Role.grantCapability', { id: role.id, capability: 'PurchaseOrder.read' }, superadmin);
+    expect((await kernel.contextFor(user.id, initial.tenant_id))!.capabilities.has('PurchaseOrder.read')).toBe(true);
+
+    // 角色范围不可见时不得把未知角色当成普通角色，避免通过重置密码接管。
+    await kernel.execute('Role.setScope', { id: role.id, aggregate: 'Role', combinator: 'self' }, superadmin);
+    const restricted = (await kernel.contextFor(user.id, initial.tenant_id))!;
+    await expect(kernel.execute('User.setPassword', { id: initial.id, password: 'test-password-123' }, restricted))
+      .rejects.toMatchObject({ code: 'CONSTRAINT_VIOLATED' });
+  } finally {
+    await kernel.close();
+  }
 }, 30_000);
 
 it('拒绝已有凭据文件，保留原文件且不修改数据库', async () => {

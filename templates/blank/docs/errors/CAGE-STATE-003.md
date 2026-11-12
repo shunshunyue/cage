@@ -12,7 +12,7 @@
 
 ## 修复步骤
 
-1. 状态标识使用 pending_approval 等，中文名称通过页面/graph.labels 显示。
+1. 状态标识使用 pending_approval 等，业务名称在 states 的 labels 中填写，graph.labels 可覆盖显示；页面文案和普通注释不会自动进入本体。
 
 ## 正例
 

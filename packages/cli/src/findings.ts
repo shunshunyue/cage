@@ -22,12 +22,12 @@ export interface Finding {
 }
 
 /**
- * 生成单条人类可读诊断及本地错误码册路径。
+ * 生成单条人类可读诊断、显式警告/错误级别及本地错误码册路径，避免把兼容性警告误读为失败。
  * @param f 原始诊断，缺位置或 fix 时对应行按实现省略。
  * @returns 多行文本；不读取或验证目标文档。
  */
 export function formatFinding(f: Finding): string {
-  const lines = [`  [${f.code}] ${f.at ?? ''}`.trimEnd(), `  原因：${f.reason}`];
+  const lines = [`  [${f.code}] ${f.severity === 'warning' ? '警告' : '错误'} ${f.at ?? ''}`.trimEnd(), `  原因：${f.reason}`];
   if (f.fix) lines.push(`  修复：${f.fix}`);
   lines.push(`  详见：docs/errors/${f.code}.md`);
   return lines.join('\n');

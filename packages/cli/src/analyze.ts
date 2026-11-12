@@ -12,6 +12,8 @@ import { runRules } from './rules.js';
 import { staticCheck, unexportedFindings } from './static-check.js';
 import { checkProjectStructure } from './project-structure.js';
 import { registrationEvidence } from './registration.js';
+import { graphPresentation } from './graph-presentation.js';
+import { checkOntologyNames } from './ontology-names.js';
 
 /** 静态检查先于模块求值；发现动态声明或 IO 时不执行模块。 */
 /**
@@ -34,6 +36,7 @@ export async function analyze(cfg: CageConfig, opts: { base?: Ontology; write?: 
     ...source.findings,
     ...unexportedFindings(source.sites, registration ? new Set(registration.filter(entry => entry.exportedAs.length).map(entry => entry.name)) : exportedNames),
     ...runRules(graph, opts.base),
+    ...checkOntologyNames(cfg, graph, graphPresentation(cfg, registry)),
   ];
   if (opts.write) {
     mkdirSync(abs(cfg, '.cage'), { recursive: true });

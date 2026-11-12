@@ -22,7 +22,7 @@ import { approval, businessProcess, type BusinessStage } from '../packages/kerne
 import { approvalOperations, approver, branch, eq, parallel, route, step, when, type RouteNode, type ApprovalStep } from '../packages/approval/dist/index.js';
 
 /** 场景角色标识只用于本次造数和凭据索引；真实权限始终来自组织命令授予的角色。 */
-type ActorKey = 'buyer' | 'manager' | 'backup' | 'technical' | 'quality' | 'financeA' | 'financeB' | 'noAccess' | 'lowCeiling';
+type ActorKey = 'buyer' | 'manager' | 'backup' | 'technical' | 'quality' | 'financeA' | 'financeB' | 'noAccess';
 /** 场景草稿的业务配置；金额单位为元，专业名单最多取已登记的技术和质量两位真实用户。 */
 interface Scenario {
   /** 普通运行信息中的稳定索引，方便验收记录引用。 */
@@ -104,7 +104,7 @@ async function main(): Promise<void> {
     ? { ...node, steps: timedNodesOf(node.steps) } : node.kind === 'parallel'
       ? { ...node, branches: node.branches.map(item => ({ ...item, nodes: timedNodesOf(item.nodes) })) } : timedStep(node));
   const actions = { transfer: true, delegate: true, addSign: true };
-  /** 专业与财务分支同时运行，财务自身两步；汇合后的经理终审仍走采购额度/职责分离及库存命令。 */
+  /** 专业与财务分支同时运行，财务自身两步；汇合后的经理终审仍走采购职责分离及库存命令。 */
   const parallelNodes: RouteNode[] = [
     step('部门经理审批', approver.deptLeader('deptId'), { actions }),
     parallel('采购联合会审',
@@ -141,31 +141,29 @@ async function main(): Promise<void> {
   setupStage = 'accounts';
   const scopes = { PurchaseOrder: 'all', Inventory: 'all', ApprovalMember: 'all' };
   const approvalCaps = ['PurchaseOrder.read', 'PurchaseOrder.approve', 'PurchaseOrder.reject', 'PurchaseOrder.returnForChanges', 'ApprovalMember.read', 'Inventory.read'];
-  const specs: { key: ActorKey; username: string; name: string; specialty?: string; ceiling?: number }[] = [
+  const specs: { key: ActorKey; username: string; name: string; specialty?: string }[] = [
     { key: 'buyer', username: 'oa.buyer', name: '采购申请人' },
-    { key: 'manager', username: 'oa.manager', name: '采购部门经理', specialty: '部门审核', ceiling: 100000 },
-    { key: 'backup', username: 'oa.backup', name: '备选审批人', specialty: '采购综合审核', ceiling: 100000 },
-    { key: 'technical', username: 'oa.technical', name: '技术复核人', specialty: '设备技术复核', ceiling: 100000 },
-    { key: 'quality', username: 'oa.quality', name: '质量复核人', specialty: '采购质量复核', ceiling: 100000 },
-    { key: 'financeA', username: 'oa.finance.a', name: '财务甲', specialty: '财务共享受理', ceiling: 100000 },
-    { key: 'financeB', username: 'oa.finance.b', name: '财务乙', specialty: '财务共享受理', ceiling: 100000 },
+    { key: 'manager', username: 'oa.manager', name: '采购部门经理', specialty: '部门审核' },
+    { key: 'backup', username: 'oa.backup', name: '备选审批人', specialty: '采购综合审核' },
+    { key: 'technical', username: 'oa.technical', name: '技术复核人', specialty: '设备技术复核' },
+    { key: 'quality', username: 'oa.quality', name: '质量复核人', specialty: '采购质量复核' },
+    { key: 'financeA', username: 'oa.finance.a', name: '财务甲', specialty: '财务共享受理' },
+    { key: 'financeB', username: 'oa.finance.b', name: '财务乙', specialty: '财务共享受理' },
     { key: 'noAccess', username: 'oa.no-access', name: '无业务权限用户' },
-    { key: 'lowCeiling', username: 'oa.low-ceiling', name: '低额度审批人', specialty: '小额采购审核（限1000元）', ceiling: 1000 },
   ];
   const actors = {} as Record<ActorKey, TestUser>;
-  const accounts: { key: ActorKey; username: string; password: string; name: string; id: string; ceiling?: number }[] = [];
+  const accounts: { key: ActorKey; username: string; password: string; name: string; id: string }[] = [];
   for (const spec of specs) {
     const caps = spec.key === 'buyer'
       ? ['PurchaseOrder.read', 'PurchaseOrder.create', 'PurchaseOrder.explainPurpose', 'PurchaseOrder.submit', 'PurchaseOrder.cancel', 'PurchaseOrder.setAttachments', 'PurchaseOrder.setReviewers', 'ApprovalMember.read', 'Inventory.read']
       : spec.key === 'noAccess' ? [] : approvalCaps;
-    const user = await session.user({ username: spec.username, caps, scopes,
-      params: spec.ceiling === undefined ? undefined : { 'PurchaseOrder.approve': { ceiling: spec.ceiling } } });
+    const user = await session.user({ username: spec.username, caps, scopes });
     actors[spec.key] = user;
     const password = randomBytes(18).toString('base64url');
     await session.kernel.execute('User.setPassword', { id: user.id, password }, session.system());
     await session.kernel.execute('User.update', { id: user.id, name: spec.name }, session.system());
     if (spec.specialty) await session.kernel.execute('ApprovalMember.create', { userId: user.id, displayName: spec.name, specialty: spec.specialty }, session.system());
-    accounts.push({ key: spec.key, username: spec.username, password, name: spec.name, id: user.id, ceiling: spec.ceiling });
+    accounts.push({ key: spec.key, username: spec.username, password, name: spec.name, id: user.id });
   }
   await session.kernel.execute('Dept.update', { id: session.rootDeptId, name: '采购 OA 验证组', leaderId: actors.manager.id }, session.system());
   const financeRole = await session.kernel.execute('Role.create', { code: 'finance', name: '采购财务候选受理' }, session.system());
@@ -195,7 +193,6 @@ async function main(): Promise<void> {
     { key: 'parallel', title: '并行加签', amount: '1200.00', instructions: '经理并行加签技术人员，两人均通过后才能批准。' },
     { key: 'return', title: '退回修改再提交', amount: '1200.00', instructions: '经理退回，申请人补充用途重提，历史保留旧轮次并重新审核。' },
     { key: 'cancel', title: '等待加签时取消', amount: '1200.00', instructions: '经理增加后置加签，申请人取消；当前和等待任务均应关闭。' },
-    { key: 'lowCeiling', title: '低额度结论拒绝', amount: '1200.00', instructions: '转办给低额度审批人，1200元结论超过其1000元额度，应拒绝且不建锁。' },
     { key: 'combined', title: '专业会签后财务受理', amount: '60000.00', specialists: true, instructions: '经理、技术与质量、财务共享候选依次完成，最后才批准采购。' },
   ];
   const cases = [];

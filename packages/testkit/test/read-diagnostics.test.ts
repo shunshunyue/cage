@@ -7,8 +7,8 @@
 import { randomUUID } from 'node:crypto';
 import * as adminDomain from '@yss123/cage-admin/domain';
 import {
-  aggregate, bool, ceiling, command, createKernel, date, emit, event, hasMany, id, int, list, money, silentLogger,
-  query, ref, scope, states, text, type Ctx,
+  aggregate, bool, command, createKernel, date, emit, event, hasMany, id, int, list, money, silentLogger,
+  query, ref, scope, sod, states, text, type Ctx,
 } from '@yss123/cage-kernel';
 import { createServer, type CageServer } from '@yss123/cage-http';
 import { createWorker } from '@yss123/cage-kernel/worker';
@@ -43,7 +43,7 @@ const createFolder = command(DiagnosticFolder, {
   name: 'create', from: 'new', to: 'active', input: z.object({ id: z.uuid().optional(), title: z.string() }), handler: (draft) => draft,
   emits: [emit(FolderCreated, (record) => ({ folderId: record.id }))],
 });
-const approveRecord = command(DiagnosticRecord, { name: 'approve', from: 'draft', to: 'approved', constraints: [ceiling('amount')], handler: (draft) => draft });
+const approveRecord = command(DiagnosticRecord, { name: 'approve', from: 'draft', to: 'approved', constraints: [sod.notSameAs('ownerId')], handler: (draft) => draft });
 const internalReview = command(DiagnosticRecord, { name: 'internalReview', from: 'draft', to: 'draft', invokedBy: 'process', handler: (draft) => draft });
 /**
  * 故意将敏感字段拼进约束失败原文，测试诊断响应会裁剪细节，不能把内部错误直接透传。
@@ -80,7 +80,7 @@ beforeAll(async () => {
   const business = ['DiagnosticRecord.create', 'DiagnosticRecord.createChecked', 'DiagnosticRecord.read', 'DiagnosticRecord.approve', 'DiagnosticRecord.internalReview', 'DiagnosticRecord.privateConstraint', 'DiagnosticFolder.create', 'DiagnosticFolder.read'];
   owner = await env.user({ caps: [...business, 'Sys.ops.read', 'Sys.audit.read'] });
   other = await env.user({ caps: business });
-  ops = await env.user({ caps: 'all', scopes: { '*': 'all' }, params: { 'DiagnosticRecord.approve': { ceiling: 1000 } } });
+  ops = await env.user({ caps: 'all', scopes: { '*': 'all' } });
   noOps = await env.user({ caps: ['DiagnosticRecord.read'] });
   const ownerCtx = { ...await owner.ctx(), requestId: sharedRequest };
   // 跨聚合有意复用 UUID，证明审计关联不只依赖 aggregate_id。
@@ -165,15 +165,15 @@ it('query用途级审计保存用途和行数，不记录SQL结果；审计失�
   await expect(env.kernel.read.run(auditedRows, {}, ctx)).rejects.toMatchObject({ code: 'INTERNAL', detail: { diagnostic: 'CAGE-AUDIT-001' } });
 });
 
-it('权限解释区分能力、范围、额度、身份、版本且不执行命令或写审计', async () => {
+it('权限解释区分能力、范围、职责分离、身份、版本且不执行命令或写审计', async () => {
   const before = (await env.query('select count(*)::int as n from sys.audit_log'))[0].n;
   const ownerCtx = await owner.ctx(), opsCtx = await ops.ctx();
   const missing = await env.kernel.explain('DiagnosticRecord.approve', { id: mine.id }, await noOps.ctx());
   expect(missing.checks).toContainEqual(expect.objectContaining({ stage: 'capability', status: 'fail' }));
   const scopeFailure = await env.kernel.explain('DiagnosticRecord.approve', { id: outside.id }, ownerCtx);
   expect(scopeFailure.checks).toContainEqual(expect.objectContaining({ stage: 'scope', status: 'fail', code: 'NOT_FOUND' }));
-  const ceilingFailure = await env.kernel.explain('DiagnosticRecord.approve', { id: mine.id }, ownerCtx);
-  expect(ceilingFailure.checks).toContainEqual(expect.objectContaining({ stage: 'constraint:ceiling(amount)', status: 'fail' }));
+  const sodFailure = await env.kernel.explain('DiagnosticRecord.approve', { id: mine.id }, ownerCtx);
+  expect(sodFailure.checks).toContainEqual(expect.objectContaining({ stage: 'constraint:sod.notSameAs(ownerId)', status: 'fail' }));
   const identityFailure = await env.kernel.explain('DiagnosticRecord.internalReview', { id: mine.id }, ownerCtx);
   expect(identityFailure.checks).toContainEqual(expect.objectContaining({ stage: 'invoker', status: 'fail' }));
   const good = await env.kernel.explain('DiagnosticRecord.approve', { id: mine.id, expectedVersion: String(mine.version) }, opsCtx);

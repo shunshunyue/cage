@@ -10,13 +10,13 @@ let subDept: string;
 let otherDept: string;
 let lisi: TestUser; // 采购员：仅本人
 let wangwu: TestUser; // 采购员：仅本人
-let manager: TestUser; // 部门经理：本部门及下级，额度 50000
+let manager: TestUser; // 部门经理：本部门及下级
 let finance: TestUser; // 财务：全部 + 明文手机号
 
 /** 两个采购员故意共享能力但身份不同，用来证明范围来自主体而不是按钮或角色名称。 */
 const PURCHASER = ['PurchaseOrder.create', 'PurchaseOrder.submit', 'PurchaseOrder.read', 'PurchaseOrder.cancel'];
 
-/** 建立独立真实数据库、部门树和不同额度/明文权限的用户；所有用例共享基础组织，各自新建业务单据。 */
+/** 建立独立真实数据库、部门树和不同范围/明文权限的用户；所有用例共享基础组织，各自新建业务单据。 */
 beforeAll(async () => {
   env = await createTestEnv({ domain });
   purchaseDept = await env.dept('采购部');
@@ -26,7 +26,6 @@ beforeAll(async () => {
   wangwu = await env.user({ caps: PURCHASER, deptId: subDept });
   manager = await env.user({
     caps: ['PurchaseOrder.read', 'PurchaseOrder.approve'],
-    params: { 'PurchaseOrder.approve': { ceiling: 50000 } },
     scopes: { PurchaseOrder: 'deptSubtree' },
     deptId: purchaseDept,
   });
@@ -52,7 +51,7 @@ async function newOrder(u: TestUser, overrides: Record<string, unknown> = {}) {
   return r.data;
 }
 
-/** 流程身份携带真实代理用户，借此验证 process 来源不会消除职责分离、范围或额度。 */
+/** 流程身份携带真实代理用户，借此验证 process 来源不会消除职责分离或范围。 */
 const processCtx = (onBehalfOf: string) =>
   env.kernel.processCtx({ process: 'po-approval', tenantId: env.tenantId, onBehalfOf, capabilities: ['PurchaseOrder.approve', 'PurchaseOrder.reject'] });
 
@@ -149,12 +148,11 @@ describe('审批、约束与反应', () => {
     expect(r.detail).toMatchObject({ constraint: 'sod.notSameAs(createdBy)' });
   });
 
-  it('额度：超过审批人额度被拒绝', async () => {
+  it('金额不构成通用权限限制，满足业务约束时高金额结论仍可执行', async () => {
     const po = await newOrder(lisi, { amount: '60000.00' });
     await env.callAs(await lisi.ctx(), 'PurchaseOrder.submit', { id: po.id });
     const r = await env.callAs(processCtx(manager.id), 'PurchaseOrder.approve', { id: po.id });
-    expect(r.code).toBe('CONSTRAINT_VIOLATED');
-    expect(r.detail).toMatchObject({ constraint: 'ceiling(amount)' });
+    expect(r.ok).toBe(true);
   });
 
   it('业务错误：库存不足时返回 STOCK_SHORT，整个事务回滚', async () => {

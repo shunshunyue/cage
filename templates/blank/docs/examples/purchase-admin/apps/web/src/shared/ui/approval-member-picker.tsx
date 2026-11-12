@@ -46,6 +46,6 @@ export function ApprovalMemberPicker({ value, onChange, max = 5, exclude = [], d
     {query.data && entries.length === 0 && <p className="muted">当前页没有匹配人员，请调整筛选或联系名录维护人。</p>}
     {(query.data?.total ?? 0) > 200 && <div className="actions"><button type="button" disabled={page === 1} onClick={() => setPage(page - 1)}>上一页</button>
       <span>第 {page} 页</span><button type="button" disabled={page * 200 >= query.data!.total} onClick={() => setPage(page + 1)}>下一页</button></div>}
-    <small className="muted">名录只提供选人信息，处理权限、数据范围和最终额度仍以服务端校验为准。</small>
+    <small className="muted">名录只提供选人信息，处理权限和数据范围仍以服务端校验为准。</small>
   </fieldset>;
 }

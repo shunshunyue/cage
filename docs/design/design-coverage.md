@@ -25,7 +25,7 @@
 | §8.1 SSO | 协议代码已实现，真实对接待验收 | 有 OIDC 接入和用户映射；尚无公司身份源与完整组织同步的部署验收。不能把本地账号登录验收视为 SSO 验收 | [OIDC](../../packages/http/src/oidc.ts) |
 | §9.1–9.4 异步运行时 | 已实现主要能力，有数据库回归 | worker、outbox、重试、死信、清理、同事务反应、定时任务及调度锁；生产吞吐、积压和故障恢复需验收 | [worker](../../packages/kernel/src/worker) |
 | §9.5 连接器 | 运行时及 fake 可用，真实交付未完成 | 地址/字段白名单、密钥入口、限流、超时、同步记录、验签及映射；ERP 仍为示例地址和 fake，真实沙箱/生产对接与录制回放样例未交付 | [连接器运行时](../../packages/connectors/src/runtime.ts)、[范例 ERP](../../examples/purchase-admin/packages/domain/src/integrations/erp.ts) |
-| §9.6 审批 | 代码内审批可用，外部引擎待接入 | 适配接口、桥接、步骤/分支、选人、待办、职责分离及额度；真实外部审批引擎尚未对接验收 | [approval](../../packages/approval/src) |
+| §9.6 审批 | 代码内审批可用，外部引擎待接入 | 适配接口、桥接、步骤/分支、选人、待办和职责分离；业务自行决定是否按金额等字段分支。真实外部审批引擎尚未对接验收 | [approval](../../packages/approval/src) |
 | §10.1–10.2 命令与抽取器 | 已实现 | 静态声明检查、加载注册表、本体图抽取；额外提供中文 Web 图谱、字段卡片与关系解释 | [CLI 入口](../../packages/cli/src/main.ts)、[分析流程](../../packages/cli/src/analyze.ts)、[图谱服务](../../packages/cli/src/graph.ts) |
 | §10.3–10.4 影响与图规则 | 已实现主要能力，有工具链测试 | 文件/Git 基线、影响传播、状态与资源配对等检查；真实项目中的影响召回率尚未通过对照实验衡量 | [影响分析](../../packages/cli/src/impact.ts)、[图规则](../../packages/cli/src/rules.ts) |
 | §10.5 派生测试 | 部分完成 | 能力、状态、范围、审计、幂等、掩码、不变量用例生成；目前范围生成主要覆盖 self/dept，未实现每个硬约束的通用反例生成；不变量序列使用简单随机选择，尚未按设计接入 fast-check 的命令序列及失败缩减。范例另有定向约束用例 | [生成器](../../packages/cli/src/derive.ts)、[派生测试运行时](../../packages/testkit/src/derived.ts) |

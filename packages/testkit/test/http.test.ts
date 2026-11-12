@@ -96,7 +96,7 @@ beforeAll(async () => {
     return r.id as string;
   };
   ids.purchaser = await mkRole('purchaser', [['PurchaseOrder.create'], ['PurchaseOrder.submit'], ['PurchaseOrder.read'], ['PurchaseOrder.cancel']], []);
-  ids.mgrRole = await mkRole('dept_manager', [['PurchaseOrder.read'], ['PurchaseOrder.approve', { ceiling: 50000 }]], [['PurchaseOrder', 'deptSubtree']]);
+  ids.mgrRole = await mkRole('dept_manager', [['PurchaseOrder.read'], ['PurchaseOrder.approve']], [['PurchaseOrder', 'deptSubtree']]);
   ok(await admin.post(`/api/user/${ids.lisi}/assign-roles`, { roleIds: [ids.purchaser] }));
   ok(await admin.post(`/api/user/${ids.manager}/assign-roles`, { roleIds: [ids.mgrRole] }));
   ok(await admin.post(`/api/dept/${ids.purchase}/update`, { leaderId: ids.manager }));
@@ -110,7 +110,7 @@ afterAll(async () => {
 
 /**
  * 本组按声明顺序延续同一 poId，覆盖登录→提交→待办→批准→ERP→签名收货，不应改成并发用例。
- * 每个异步边界显式 drain，防止把 HTTP 命令成功误认为消费完成；额度场景验证审批决定事务回滚。
+ * 每个异步边界显式 drain，防止把 HTTP 命令成功误认为消费完成；选人失败场景验证审批决定事务回滚。
  */
 describe('HTTP 全链路：李四提交采购单到推送 ERP', () => {
   const lisi = agent();
@@ -190,7 +190,7 @@ describe('HTTP 全链路：李四提交采购单到推送 ERP', () => {
     expect(lock.status).toBe('released');
   });
 
-  it('超过额度的单：经理审批时约束拒绝，决定不生效', async () => {
+  it('缺少财务审批人时，经理决定回滚且不生效', async () => {
     const po = ok(await lisi.post('/api/purchase-order/create', { amount: '60000.00', items: [{ sku: 'A-01', qty: 1 }] }));
     ok(await lisi.post(`/api/purchase-order/${po.id}/submit`, {}));
     await env.query("update sys.role set status = 'active' where code = 'finance'"); // 没有财务角色：第二步会找不到审批人

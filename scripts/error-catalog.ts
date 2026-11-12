@@ -25,6 +25,18 @@ export interface ErrorGuide {
  * 示例字符串不执行，不应把建议中的验证动作写成已经通过的事实。
  */
 export const errorGuides: Record<string, ErrorGuide> = {
+  'CAGE-ONTOLOGY-001': {
+    title: '本体节点缺少结构化业务名称',
+    when: '当前项目可定位的聚合、字段、状态、命令、事件、查询或任务没有非空业务名称，图谱只能回退机器标识。默认警告，graph.naming 为 required 时作为门禁错误。',
+    fix: [
+      '按 reason 的完整节点 key 定位声明。字段和状态的位置指向所属聚合，继续在其中查找成员；无本地源码位置的依赖节点不在本检查范围。',
+      '对象、命令、查询和任务填写 description；事件在第三个参数填写 description；字段用 .describe(...) 或关系选项 description；每个状态都在 states 的 labels 中命名。旧声明可用 graph.labels 的完整 key 覆盖显示。',
+      '普通注释与前端 statusLabel 不会自动进入本体。名称用用户的业务用语，不为翻译改表名、状态值或能力点；详见 docs/development/guides/ontology-modeling.md。',
+      '补齐后重跑 check 并查看 graph/context；完整性不验证语言、名称质量或任意业务关系，仍按已明确规则验证外键方向、基数、状态迁移及真实触发链。',
+    ],
+    positive: "states('active', 'archived', { terminal: ['archived'], labels: { active: '使用中', archived: '已归档' } })",
+    negative: "states('active', 'archived', { terminal: ['archived'] }) // 只在页面或注释中翻译状态，没有结构化名称",
+  },
   'CAGE-AI-001': {
     title: '智能运行时声明无效',
     when: '模型引用未配置、重复启用 AI 运行时，或上下文预算、重试、并发、超时、队列参数非法。',
@@ -252,7 +264,7 @@ export const errorGuides: Record<string, ErrorGuide> = {
       '先看本项目 approvals.ts：deptLeader 读取单据部门的负责人；role 使用角色 code；user 使用实际用户 UUID。',
       '在 /admin 设置单据所属部门的负责人，或创建对应 code 的角色并分配实际用户。给用户经理角色，并不等于设置了部门负责人。',
       'field 使用提交时保存的 routable 人员字段；检查 UUID 对应账号是否全部在当前租户且 active。不能删掉不合格人员后默认为审批通过；字段快照错误需按业务撤回/重提修正。',
-      '再核对审批人的结论能力、数据范围、ceiling 额度和职责分离。选中审批人不等于允许完成审批。',
+      '再核对审批人的结论能力、数据范围和职责分离。选中审批人不等于允许完成审批。',
       '若 OrderSubmitted 已入死信，修复后在 /admin 按 outboxId 重放，确认待办生成；原提交已成功时不重复提交或 SQL 改回草稿。',
     ],
     positive: "deptLeader('deptId')：给该部门设置负责人；role('finance')：给实际用户分配 code=finance 的角色",
@@ -557,10 +569,10 @@ export const errorGuides: Record<string, ErrorGuide> = {
     negative: '修改已执行 0001_init.sql，或把 gen 当作已更新数据库',
   },
   'CAGE-GRANT-001': {
-    title: '授予超出自己的能力或额度',
-    when: '管理员授予自己没有的能力/更高参数，或分配含越权能力的角色。',
-    fix: ['由具备足够能力和参数的管理员操作；降低授予范围到自身权限内，不禁用防提权约束。'],
-    positive: '有 approve=100000 额度的管理员授予不超过自身的额度',
+    title: '授予超出自己的能力或参数',
+    when: '管理员授予自己没有的能力/更高数值参数、分配含越权能力的角色，或尝试维护受保护的超级管理员角色与账号。',
+    fix: ['由具备足够能力和参数的管理员操作；超级管理员角色和账号由超级管理员维护。目标用户的角色不可见时需先取得角色读取能力和全部范围，不禁用防提权约束。'],
+    positive: '自己有采购审批能力时，给普通角色授予该能力',
     negative: '自己没有采购审批能力，却给别人分配该能力或包含它的角色',
   },
   'CAGE-GRANT-002': {
@@ -572,8 +584,8 @@ export const errorGuides: Record<string, ErrorGuide> = {
   },
   'CAGE-GRANT-003': {
     title: '能力不在代码目录中',
-    when: '授权请求引用了注册表没有声明的能力点。',
-    fix: ['先在 domain 声明并导出相应命令/聚合，再查看能力目录；不要在管理页面凭空发明能力名称。'],
+    when: '授权请求引用了注册表没有声明的能力点，或普通授权操作使用了初始化专用的全部能力标记。',
+    fix: ['先在 domain 声明并导出相应命令/聚合，再查看能力目录；不要在管理页面凭空发明能力名称。全部能力标记仅由首次初始化写入。'],
     positive: 'PurchaseOrder.submit // 由已导出的命令形成',
     negative: 'PurchaseOrder.anything // 没有对应声明',
   },
@@ -875,7 +887,7 @@ export const errorGuides: Record<string, ErrorGuide> = {
   'CAGE-STATE-003': {
     title: '状态名称格式错误',
     when: '状态名称不是小写字母开头的小写下划线格式。',
-    fix: ['状态标识使用 pending_approval 等，中文名称通过页面/graph.labels 显示。'],
+    fix: ['状态标识使用 pending_approval 等，业务名称在 states 的 labels 中填写，graph.labels 可覆盖显示；页面文案和普通注释不会自动进入本体。'],
     positive: "states('draft', 'pending_approval', 'done')",
     negative: "states('PendingApproval', '已完成')",
   },

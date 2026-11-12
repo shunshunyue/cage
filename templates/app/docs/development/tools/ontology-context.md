@@ -58,7 +58,7 @@ export const purchaseOverview = businessProcess('purchase-overview', {
 
 `cage check` 用 [CAGE-BIZ-001](../../errors/CAGE-BIZ-001.md) 和 [CAGE-BIZ-002](../../errors/CAGE-BIZ-002.md) 检查声明与实现关系。它不执行 handler、map 或审批，所以仍需业务回归证明运行行为。
 
-阶段直接使用 `title`、`description`、`actor` 的中文文案；操作和字段等继续用 `graph.labels`，审批角色可用 `"role:finance": "财务"`。状态也可在 `states(..., { labels: { draft: '草稿' } })` 中维护中文名；这些名称不更改原有状态标识。
+阶段直接使用 `title`、`description`、`actor` 的业务文案；对象和操作使用声明的 `description`，字段使用 `.describe(...)`，每个状态都在 `states(..., { labels: { draft: '草稿' } })` 中填写名称。`graph.labels` 用于显示覆盖及无通用描述选项的节点，例如 `"role:finance": "财务"`。普通注释与前端状态映射不会被抽取，`CAGE-ONTOLOGY-001` 会报告缺失的结构化名称；填写位置与业务验收边界见[本体建模指南](../guides/ontology-modeling.md)。这些名称不更改机器标识。
 
 ## 开发一项需求的入口
 

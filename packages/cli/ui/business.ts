@@ -356,7 +356,7 @@ export function renderBusiness(
         block.description ||
           (block.processes.length
             ? '选择完整业务流程，沿主线查看阶段、分支与关联。'
-            : '按业务对象查看完整生命周期；人工、审批与外部通知分别标明。'),
+            : '按业务对象查看完整生命周期；允许的操作及其调用身份分别标明。'),
       ),
     );
     if (journeys.length) {
@@ -471,10 +471,20 @@ export function renderBusiness(
         '绿色箭头：业务走向　·　棕色箭头：展开的其他分支　·　虚线：涉及的业务对象',
       ),
     );
-  } else if (lifecycle)
+  } else if (lifecycle) {
     host.append(
       h('p', 'business-process-legend', '根据真实状态迁移整理，展示允许的操作；具体执行条件请点击查看。'),
     );
+    // 标签缺失只影响阅读，不等于状态不存在；保留原标识，并把补充文案的原因单独说明。
+    // 按真实对象归属统计，避免把其他对象的同名状态算入当前生命周期。
+    const unnamed = model.nodes.filter(
+      (node) =>
+        node.kind === 'state' && businessOwner(model, node)?.key === flow.key &&
+        !labels[node.key] && !node.attrs.title && !node.attrs.description,
+    );
+    if (unnamed.length)
+      host.append(h('p', 'source-note', `${unnamed.length} 个状态尚未配置业务名称，当前显示原始标识。`));
+  }
   const steps = flattenBusinessSteps(root);
   const approvals = new Map(
     steps.flatMap((step) => {
@@ -648,9 +658,10 @@ export function renderBusiness(
       section('什么时候执行', `${selected.label}${selected.note ? `。${selected.note}` : ''}`);
     if (node.kind === 'command') {
       const rules = section('执行条件');
+      // process 是调用身份，不能仅凭这个值声称操作一定由审批触发。
       const actors: Record<string, string> = {
         user: '用户',
-        process: '审批流程',
+        process: '内部流程',
         external: '外部系统',
         job: '定时任务',
         reaction: '自动处理',

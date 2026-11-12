@@ -7,27 +7,27 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import * as org from '@yss123/cage-admin/domain';
-import { aggregate, approval, ceiling, command, enumOf, event, id, money, ref, scope, states } from '@yss123/cage-kernel';
+import { aggregate, approval, command, enumOf, event, id, ref, scope, sod, states } from '@yss123/cage-kernel';
 import { approver, approvalOperations, approvalOperationsService, branch, eq, InCodeEngine, parallel, route, step, when } from '@yss123/cage-approval';
 import { ai, type ModelResult } from '@yss123/cage-ai';
 import { createTestEnv, type TestEnv, type TestUser } from '../src/index.js';
 
-/** 金额采用元的十进制字符串；场景字段只选择声明分支，用户身份仍由内核填写。 */
+/** 无金额字段的审批单；场景字段只选择声明分支，用户身份仍由内核填写。 */
 const ParallelDocument = aggregate('ParallelDocument', {
-  fields: { createdBy: ref('User'), amount: money(), scenario: enumOf('normal', 'final', 'nested', 'empty', 'ai', 'legacy') },
+  fields: { createdBy: ref('User'), scenario: enumOf('normal', 'final', 'nested', 'empty', 'ai', 'legacy') },
   states: states('draft', 'reviewing', 'accepted', 'rejected', 'cancelled', { terminal: ['accepted', 'rejected', 'cancelled'] }),
   scope: scope.self('createdBy'),
 });
 /** 提交和取消均经 outbox 触发审批，测试不直接调用 start 拼造业务轮次。 */
 const Submitted = event('ParallelDocumentSubmitted', { id: id() });
 const Cancelled = event('ParallelDocumentCancelled', { id: id() });
-/** 创建/提交/取消是用户命令，结论仅允许流程身份；批准保留额度硬约束以检验回滚。 */
+/** 创建/提交/取消是用户命令，结论仅允许流程身份；批准保留职责分离以检验回滚。 */
 const create = command(ParallelDocument, { name: 'create', from: 'new', to: 'draft', input: z.object({
-  amount: z.string(), scenario: z.enum(['normal', 'final', 'nested', 'empty', 'ai', 'legacy']),
+  scenario: z.enum(['normal', 'final', 'nested', 'empty', 'ai', 'legacy']),
 }), handler: row => row });
 const submit = command(ParallelDocument, { name: 'submit', from: 'draft', to: 'reviewing', emits: [Submitted], handler: row => row });
 const cancel = command(ParallelDocument, { name: 'cancel', from: 'reviewing', to: 'cancelled', emits: [Cancelled], handler: row => row });
-const accept = command(ParallelDocument, { name: 'accept', from: 'reviewing', to: 'accepted', invokedBy: 'process', constraints: [ceiling('amount')], handler: row => row });
+const accept = command(ParallelDocument, { name: 'accept', from: 'reviewing', to: 'accepted', invokedBy: 'process', constraints: [sod.notSameAs('createdBy')], handler: row => row });
 const reject = command(ParallelDocument, { name: 'reject', from: 'reviewing', to: 'rejected', invokedBy: 'process', handler: row => row });
 const revise = command(ParallelDocument, { name: 'revise', from: 'reviewing', to: 'draft', invokedBy: 'process', handler: row => row });
 const review = approval(ParallelDocument, { process: 'parallel-document', start: Submitted, cancelOn: [Cancelled],
@@ -47,14 +47,14 @@ const reviewRoute = route('parallel-document', [
   when(eq('scenario', 'empty'), parallel('有条件会审', branch('财务', when(eq('scenario', 'never'), human('不应打开', 'parallel_finance'))),
     branch('法务', human('有效分支', 'parallel_legal'))), human('空分支汇总', 'parallel_chief')),
   when(eq('scenario', 'ai'), parallel('人机并行', branch('人工', human('人审', 'parallel_legal')), branch('智能', step('智能材料检查', {
-    kind: 'ai', model: 'main', instructions: '核对当前申请，给出结论。', context: { fields: ['amount'] }, handoff: approver.role('parallel_finance'), onFailure: 'failed',
+    kind: 'ai', model: 'main', instructions: '核对当前申请，给出结论。', context: { fields: ['scenario'] }, handoff: approver.role('parallel_finance'), onFailure: 'failed',
   }))), human('人机汇总', 'parallel_chief')),
   when(eq('scenario', 'legacy'), human('旧第一步', 'parallel_finance'), human('旧第二步', 'parallel_legal')),
 ], { reminders: { requesterField: 'createdBy', cooldownMinutes: 1 } });
 const approvalOps = approvalOperations();
 /** 模型仅作为协议驱动器；真实 AI 持久运行、授权和并行回执均由框架执行，不代表模型质量验收。 */
 let modelReply: () => Promise<ModelResult> = async () => ({ text: '', calls: [{
-  id: randomUUID(), name: 'review_decide', arguments: { decision: 'pass', reason: '材料齐全', evidence: [{ source: 'subject', detail: '当前金额有效' }], suggestions: [] },
+  id: randomUUID(), name: 'review_decide', arguments: { decision: 'pass', reason: '材料齐全', evidence: [{ source: 'subject', detail: '申请场景已核对' }], suggestions: [] },
 }] });
 const intelligence = ai({ models: { main: { spec: { kind: 'parallel-test' }, generate: () => modelReply() } } });
 const domain = { ...org, ParallelDocument, Submitted, Cancelled, create, submit, cancel, accept, reject, revise, review, reviewRoute, approvalOps, intelligence };
@@ -65,9 +65,9 @@ const caps = ['ParallelDocument.read', 'ParallelDocument.accept', 'ParallelDocum
 /** 每种职责一个独立账号，角色只用于选人，实际能力由各用户独立角色授权。 */
 beforeAll(async () => {
   env = await createTestEnv({ domain }); engine = reviewRoute.engine(env.kernel); ops = approvalOperationsService(env.kernel);
-  buyer = await env.user({ caps: ['ParallelDocument.read', 'ParallelDocument.create', 'ParallelDocument.submit', 'ParallelDocument.cancel'], scopes: { ParallelDocument: 'self' } });
-  const member = async (code?: string, limit = 1000): Promise<TestUser> => {
-    const user = await env.user({ caps, scopes: { ParallelDocument: 'all' }, params: { 'ParallelDocument.accept': { ceiling: limit } } });
+  buyer = await env.user({ caps: ['ParallelDocument.read', 'ParallelDocument.create', 'ParallelDocument.submit', 'ParallelDocument.cancel', 'ParallelDocument.accept'], scopes: { ParallelDocument: 'self' } });
+  const member = async (code?: string): Promise<TestUser> => {
+    const user = await env.user({ caps, scopes: { ParallelDocument: 'all' } });
     if (code) {
       const role = await env.kernel.execute('Role.create', { code, name: code }, env.system());
       await env.kernel.execute('User.assignRoles', { id: user.id, roleIds: [user.roleId, role.id] }, env.system());
@@ -75,7 +75,7 @@ beforeAll(async () => {
     return user;
   };
   finance = await member('parallel_finance'); legal = await member('parallel_legal'); supervisor = await member('parallel_supervisor');
-  chief = await member('parallel_chief'); extra = await member(undefined, 10);
+  chief = await member('parallel_chief'); extra = await member();
   const role = await env.kernel.execute('Role.create', { code: 'parallel_auto', name: '自动材料检查' }, env.system());
   for (const capability of caps) await env.kernel.execute('Role.grantCapability', { id: role.id, capability }, env.system());
   await env.kernel.execute('Role.setScope', { id: role.id, aggregate: 'ParallelDocument', combinator: 'all' }, env.system());
@@ -84,8 +84,8 @@ beforeAll(async () => {
 afterAll(async () => { await intelligence.service(env.kernel).close(); await env?.close(); });
 
 /** 从领域命令启动并排空 outbox；业务 id 作为所有后续断言的范围，防止跨用例待办干扰。 */
-async function launch(scenario = 'normal', amount = '100.00') {
-  const record = await env.kernel.execute('ParallelDocument.create', { scenario, amount }, await buyer.ctx());
+async function launch(scenario = 'normal') {
+  const record = await env.kernel.execute('ParallelDocument.create', { scenario }, await buyer.ctx());
   await env.kernel.execute('ParallelDocument.submit', { id: record.id }, await buyer.ctx()); await env.drain();
   return record.id as string;
 }
@@ -128,9 +128,9 @@ describe('结构化并行执行与事务边界', () => {
   it('终端汇合的最后一票领域校验失败，票、节点与业务一起回滚', async () => {
     const id = await launch('final'); await approve(finance, id);
     const task = (await pending(legal, id))[0];
-    await engine.act(task.id, legal.id, env.tenantId, { action: 'transfer', expectedRevision: task.revision, targetUserId: extra.id, reason: '测试当前额度' });
-    await expect(approve(extra, id)).rejects.toMatchObject({ code: 'CONSTRAINT_VIOLATED' });
-    expect(await state(id)).toBe('reviewing'); expect(await pending(extra, id)).toHaveLength(1);
+    await engine.act(task.id, legal.id, env.tenantId, { action: 'transfer', expectedRevision: task.revision, targetUserId: buyer.id, reason: '测试职责分离' });
+    await expect(approve(buyer, id)).rejects.toMatchObject({ code: 'CONSTRAINT_VIOLATED' });
+    expect(await state(id)).toBe('reviewing'); expect(await pending(buyer, id)).toHaveLength(1);
     expect((await history(id)).steps.map(row => row.status)).toEqual(['approved', 'running']);
   });
   it.each(['rejected', 'returned'] as const)('%s 关闭其他活跃分支及未激活加签，历史已通过节点不覆盖', async outcome => {
@@ -226,7 +226,7 @@ describe('并行提醒、授权和智能步骤', () => {
     modelReply = () => { entered(); return response; };
     try {
       // drain 本身也运行 AI tick，故先启动消费但不等待；等模型进入后再执行另一分支决定。
-      const record = await env.kernel.execute('ParallelDocument.create', { scenario: 'ai', amount: '100.00' }, await buyer.ctx());
+      const record = await env.kernel.execute('ParallelDocument.create', { scenario: 'ai' }, await buyer.ctx());
       const id = record.id as string;
       await env.kernel.execute('ParallelDocument.submit', { id }, await buyer.ctx());
       const running = env.drain();

@@ -41,7 +41,7 @@ function requireCap(ctx: Ctx, capability: string) {
 
 /** 排队、执行、下载都重读有效授权，防止任务排队期间撤权后继续沿用旧权限。 */
 async function liveContext(k: Kernel, userId: string, tenantId: string, db: Kysely<any> = k.app): Promise<Ctx> {
-  const grants = await loadUserGrants(db, userId, tenantId);
+  const grants = await loadUserGrants(db, userId, tenantId, k.catalogCaps());
   if (!grants?.active) throw cageError('FORBIDDEN', '用户已被禁用或删除');
   return userCtx(grants);
 }

@@ -33,7 +33,7 @@ process.env.CAGE_TEST_SUPER_URL = pg.superUrl;
 const env = await createTestEnv({ domain, migrations: readMigrations(join(root, 'examples/purchase-admin/db/migrations')) });
 const scopes = { PurchaseOrder: 'all', Inventory: 'all' };
 const buyer = await env.user({ username: 'demo.buyer', caps: ['Sys.ai.use', 'Sys.ai.models.manage', 'Sys.ai.personalities.manage', 'PurchaseOrder.read', 'PurchaseOrder.create', 'PurchaseOrder.explainPurpose', 'PurchaseOrder.submit', 'PurchaseOrder.cancel', 'PurchaseOrder.setAttachments', 'Inventory.read'], scopes });
-const reviewer = await env.user({ username: 'demo.reviewer', caps: ['Sys.ai.use', 'PurchaseOrder.read', 'PurchaseOrder.approve', 'PurchaseOrder.reject', 'PurchaseOrder.returnForChanges', 'Inventory.read'], scopes, params: { 'PurchaseOrder.approve': { ceiling: 50000 } } });
+const reviewer = await env.user({ username: 'demo.reviewer', caps: ['Sys.ai.use', 'PurchaseOrder.read', 'PurchaseOrder.approve', 'PurchaseOrder.reject', 'PurchaseOrder.returnForChanges', 'Inventory.read'], scopes });
 const viewer = await env.user({ username: 'demo.limited', caps: [] });
 if (savedModels) {
   if (savedModels.tenantId !== env.tenantId) throw new Error('模型快照租户与演示租户不同');

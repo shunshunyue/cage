@@ -172,7 +172,7 @@ export async function createTestEnv(opts: {
     },
     /**
      * 先创建独立角色，再逐个授能力与范围，最后创建用户并分配该角色。
-     * caps=all 取当前内核目录；params 给特定能力提供额度等参数，scopes 保留组合子语义。
+     * caps=all 取当前内核目录；params 给特定能力提供自定义参数，scopes 保留组合子语义。
      * 返回的 ctx 会重新解析身份，账号没有自动设置登录密码，HTTP 测试需单独设置。
      */
     async user(o) {

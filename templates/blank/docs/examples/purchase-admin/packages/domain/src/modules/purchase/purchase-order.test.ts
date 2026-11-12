@@ -12,7 +12,7 @@ let buyer: TestUser;
 let manager: TestUser;
 /**
  * 夹具通过真实命令建立部门负责人和库存，不绕过领域规则直接造业务行。
- * 申请人和经理能力分开，经理额度限定为 50000，确保后续断言真的经过职责分离与额度分支。
+ * 申请人和经理能力分开，以验证职责分离、业务批准和库存联动。
  */
 beforeAll(async () => {
   env = await createTestEnv({
@@ -24,19 +24,18 @@ beforeAll(async () => {
   });
   manager = await env.user({
     caps: ['PurchaseOrder.approve'],
-    params: { 'PurchaseOrder.approve': { ceiling: 50000 } },
   });
   await env.kernel.execute('Dept.update', { id: env.rootDeptId, leaderId: manager.id }, env.system());
   await env.kernel.execute('Inventory.create', { sku: 'A-01', available: 100 }, env.system());
 });
 afterAll(() => env?.close());
 
-/** 创建并提交一张 1200 元、两件 A-01 的采购单；只推进领域状态，不在此助手中消费 outbox。 */
-async function submitted() {
+/** 创建并提交两件 A-01 的采购单；金额默认 1200 元，不在此助手中消费 outbox。 */
+async function submitted(amount = '1200.00') {
   const ctx = await buyer.ctx();
   const order = await env.kernel.execute(
     'PurchaseOrder.create',
-    { amount: '1200.00', items: [{ sku: 'A-01', qty: 2 }] },
+    { amount, items: [{ sku: 'A-01', qty: 2 }] },
     ctx,
   );
   return env.kernel.execute('PurchaseOrder.submit', { id: order.id }, ctx);
@@ -126,21 +125,15 @@ it.each(['cancelled', 'received'] as const)(
   },
 );
 
-/** 低额度反例检查硬约束阻止批准，且同事务反应没有留下半成功的占用记录。 */
-it('审批额度不够时保留待审批状态，不创建库存锁', async () => {
-  const order = await submitted();
-  const lowLimit = await env.user({
-    caps: ['PurchaseOrder.approve'],
-    params: { 'PurchaseOrder.approve': { ceiling: 500 } },
-  });
+/** 领域命令不按角色金额限制批准；更大金额的额外步骤由采购流程声明负责。 */
+it('有批准能力的经理不需要额度参数即可执行大额采购结论', async () => {
+  const order = await submitted('60000.00');
   const process = env.kernel.processCtx({
     process: 'po-approval',
     tenantId: env.tenantId,
-    onBehalfOf: lowLimit.id,
+    onBehalfOf: manager.id,
     capabilities: ['PurchaseOrder.approve'],
   });
-  expect((await env.callAs(process, 'PurchaseOrder.approve', { id: order.id })).code).toBe(
-    'CONSTRAINT_VIOLATED',
-  );
-  expect(await env.query('select id from core.inventory_lock where id = $1', [order.id])).toHaveLength(0);
+  await env.kernel.execute('PurchaseOrder.approve', { id: order.id }, process);
+  expect((await env.query('select status from core.inventory_lock where id = $1', [order.id]))[0].status).toBe('held');
 });

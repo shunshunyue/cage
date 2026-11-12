@@ -16,7 +16,6 @@ export interface AuthorizationCheck { stage: string; status: 'pass' | 'fail' | '
 
 /** 固定公开文案代替任意自定义约束消息，防止消息中拼接的业务明文穿过诊断边界。 */
 function constraintReason(name: string): string {
-  if (name.startsWith('ceiling(')) return '额度未配置或不足；请检查该能力的有效参数';
   if (name.startsWith('sod.notSameAs(')) return '职责分离条件未满足';
   if (name === 'stepUp') return '需要近期二次认证';
   return '硬约束未满足；请按约束名称检查规则';
@@ -56,7 +55,7 @@ export async function explainAuthorization(k: Kernel, capability: string, raw: R
     add('state', cmd.from === 'new' || (cmd.from as readonly string[]).includes(current.status), 'INVALID_TRANSITION');
     add('version', cmd.from === 'new' || expectedVersion === undefined || expectedVersion === current.version, 'CONFLICT');
     const meta: ConstraintMeta = {
-      capability, capabilitiesOf: async (id) => (await loadUserGrants(tx, id, ctx.tenantId))?.capabilities ?? new Map(),
+      capability, capabilitiesOf: async (id) => { const grants = await loadUserGrants(tx, id, ctx.tenantId, k.catalogCaps()); return grants?.active ? grants.capabilities : new Map(); },
       load: async (name, id) => { const agg = k.registry.aggregate(name); return agg ? loadScoped(tx, agg, id, ctx, false) : null; },
       catalog: () => k.catalogCaps(),
     };

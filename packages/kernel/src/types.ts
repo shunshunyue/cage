@@ -40,7 +40,7 @@ export interface ScopeGrant {
   deptIds?: string[];
 }
 
-/** 能力点参数，例如 { ceiling: 50000 } */
+/** 能力点的可选参数，由声明和自定义约束解释，不隐含审批规则。 */
 export type CapabilityParams = Record<string, unknown>;
 
 /** 当前主体的上下文。HTTP 认证、审批桥接、调度器、反应各自构造它，交给内核。 */
@@ -66,7 +66,7 @@ export interface Ctx {
   deptId: string | null;
   /** 当前部门的祖先路径（含自己），例如 /root/purchase/ */
   deptPath: string | null;
-  /** 能力集合及参数；多角色取并集，额度取最大值 */
+  /** 能力集合及参数；多角色取并集，同名数值参数取最大值。 */
   capabilities: Map<string, CapabilityParams>;
   /** 各聚合上的范围授权，多角色取并集（OR）；具体聚合缺省时可使用 * 通配授权，仍未配置则按仅本人处理。 */
   scopes: Record<string, ScopeGrant[]>;
@@ -86,7 +86,7 @@ export interface Ctx {
    * 可选客户端来源信息，包含 IP 和 User-Agent，仅作审计上下文，不作为业务授权依据。
    */
   client?: { /** 可选来源 IP，供审计关联；不作为用户或租户身份依据。 */ ip?: string; /** 可选浏览器/客户端标识，属于不可信展示文本，不参与能力判断。 */ userAgent?: string };
-  /** onBehalfOf 那个人的能力（额度类约束按他判断）；内核会按需加载 */
+  /** onBehalfOf 那个人的能力；约束需要时由内核按需加载。 */
   onBehalfOfCapabilities?: Map<string, CapabilityParams>;
 }
 

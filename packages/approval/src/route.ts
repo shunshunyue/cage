@@ -12,7 +12,7 @@ import { APPROVAL_TASK_ACTIONS_MIGRATION, type TaskActionPolicy } from './task-a
 import { APPROVAL_TASK_STAGES_MIGRATION } from './task-stages.js';
 import { APPROVAL_DEADLINES_MIGRATION, approvalSla, approvalReminderPolicy, type ApprovalSla, type ApprovalReminderPolicy } from './deadlines.js';
 
-/** 封闭选人策略，仅决定候选执行人；被选中不代表拥有目标业务命令能力、数据范围或额度。 */
+/** 封闭选人策略，仅决定候选执行人；被选中不代表拥有目标业务命令能力或数据范围。 */
 export type Approver =
   | { kind: 'deptLeader'; field: string }
   | { kind: 'role'; code: string }

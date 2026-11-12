@@ -9,7 +9,7 @@ export interface ApprovalOutcome {
   /** 单据 id */
   businessKey: string;
   outcome: 'approved' | 'rejected' | 'returned';
-  /** 最后一位审批人：结论命令以流程身份执行，代表这个人（职责分离、额度按他判断） */
+  /** 最后一位审批人：结论命令以流程身份执行，职责分离等约束按此人的身份判断。 */
   lastApprover?: string;
   /** 审批所针对的单据提交版本；提供时命令拒绝把旧审批结论应用到已变化的对象。 */
   expectedVersion?: number;

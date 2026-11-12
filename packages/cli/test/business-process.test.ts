@@ -1,6 +1,7 @@
 /**
  * 验证显式业务流程从注册、抽取、规则检查到画布布局的完整静态链路。
  * 以申请审批和资源占用声明构造人工、等待、自动执行、分支及关联，确保展示关系有真实声明证据。
+ * 同时覆盖部分状态缺少文案的旧项目，保证原始身份、配置覆盖和命令摘要在业务阅读中保持一致。
  * 只检查元数据和几何结果，不执行 handler，也不把流程说明当成新的运行时编排器。
  */
 import { expect, it } from 'vitest';
@@ -8,7 +9,7 @@ import { aggregate, approval, buildRegistry, businessProcess, command, event, re
 import { schemaModel } from '@yss123/cage-kernel/db';
 import { extract, diffOntology } from '../src/ontology.js';
 import { projectGraph } from '../src/graph-model.js';
-import { businessBlocks, businessJourneys, flattenBusinessSteps, traceBusinessLifecycle, traceBusinessProcess, businessLabel } from '../src/graph-business.js';
+import { businessBlocks, businessJourneys, flattenBusinessSteps, traceBusinessLifecycle, traceBusinessProcess, businessLabel, businessStateSummary } from '../src/graph-business.js';
 import { checkBusinessProcesses } from '../src/process-rules.js';
 import { graphPresentation } from '../src/graph-presentation.js';
 import { layoutBusinessFlow } from '../ui/flowchart.js';
@@ -190,8 +191,32 @@ it('旧项目的状态图保持真实命令依据，状态中文名可随声明�
   const steps = flattenBusinessSteps(root);
   expect(steps.some(s => s.via[0]?.key === 'command:Request.submit')).toBe(true);
   expect(steps.every(s => s.mode === 'lifecycle')).toBe(true);
-  expect(businessLabel(view.nodes.find(n => n.key === 'command:Request.submit')!)).toBe('待命名操作');
+  expect(businessLabel(view.nodes.find(n => n.key === 'command:Request.submit')!)).toBe('Request.submit');
+  // 同一生命周期中，已命名与未命名状态都必须能区分，不能丢弃原始标识后共用占位词。
+  expect(new Set(steps.filter(s => s.node.kind === 'state').map(s => businessLabel(s.node, presentation.labels)))).toEqual(
+    new Set(['草稿', '审批中', 'Request.approved', 'Request.rejected', 'Request.closed', 'Request.cancelled']),
+  );
+  // process 只说明内部身份；无审批绑定的资源占用和真实审批结论都不能由身份推测触发来源。
+  const resource = flattenBusinessSteps(traceBusinessLifecycle(view, view.nodes.find(n => n.key === 'aggregate:Stock')!, presentation.labels));
+  expect(resource.find(s => s.via[0]?.key === 'command:Stock.acquire')!.label).toBe('内部流程 · Stock.acquire');
+  expect(steps.find(s => s.via[0]?.key === 'command:Request.approve')!.label).toBe('内部流程 · Request.approve');
   expect(() => states('active', { labels: { missing: '无效' } } as never)).toThrow(/CAGE-STATE-005/);
+});
+
+it('部分状态标签可由配置覆盖，节点与命令摘要保留未命名状态和不迁移语义', () => {
+  const before = JSON.stringify(model);
+  const { labels } = graphPresentation({ name: 'test', graph: { labels: { 'state:Request.draft': '待填写' } } } as CageConfig, registry);
+  const namedState = model.nodes.find(n => n.key === 'state:Request.draft')!;
+  expect(businessLabel(namedState, labels)).toBe('待填写');
+  const summaries = Object.fromEntries(model.nodes.filter(n => n.kind === 'command').map(n => [n.id, businessStateSummary(n, labels)]));
+  expect(summaries['Request.create']).toBe('新建 → 待填写');
+  expect(summaries['Request.submit']).toBe('待填写 → 审批中');
+  expect(summaries['Request.cancel']).toBe('待填写 / 审批中 → cancelled');
+  expect(summaries['Request.edit']).toBe('rejected → 待填写');
+  // to=null 仅更新业务字段；显示层不能把它解释为一个无名称的目标状态。
+  const submitNode = model.nodes.find(n => n.key === 'command:Request.submit')!;
+  expect(businessStateSummary({ ...submitNode, attrs: { ...submitNode.attrs, to: null } }, labels)).toBe('待填写 → 保持当前状态');
+  expect(JSON.stringify(model)).toBe(before);
 });
 
 it('实现改变会影响引用它的阶段和流程，规格修改不会扩散为业务命令被修改', () => {

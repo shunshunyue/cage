@@ -190,6 +190,17 @@ it('public discovery finds the installed owner signature instead of claiming the
   expect(report.capabilities).toContainEqual(expect.objectContaining({ name: 'scope', public: true, signatures: [expect.stringContaining('ownerField')] }));
 });
 
+/** 中文命名需求必须定位现有 states 签名和 labels 用法，不能返回一个虚构的本体命名接口。 */
+it('状态名称需求能找到真实states签名与本体建模指南', () => {
+  const cfg = loadConfig(fileURLToPath(new URL('../../../examples/purchase-admin/', import.meta.url)));
+  const report = publicCapabilities(cfg, '状态名称');
+  const capability = report.capabilities.find(item => item.key === '@yss123/cage-kernel#states');
+  expect(capability).toMatchObject({ public: true, guide: 'docs/development/guides/ontology-modeling.md' });
+  expect(capability!.signatures).toContainEqual(expect.stringContaining('StatesDef'));
+  expect(capability!.example?.code).toContain("labels: { active: '使用中', archived: '已归档' }");
+  expect(capability!.source.file).toMatch(/\.d\.ts$/);
+});
+
 /** 依据当前安装的公开声明核对 AND 能力发现，关键词不能把只有会签的旧 API 描述成并行网关。 */
 it('并行审批需求定位真实parallel与branch签名并说明结构化AND边界', () => {
   const cfg = loadConfig(fileURLToPath(new URL('../../../examples/purchase-admin/', import.meta.url)));

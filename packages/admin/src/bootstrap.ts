@@ -4,7 +4,7 @@
  * 本模块使用受信任的系统身份，调用者应明确决定何时执行，不能把它暴露为普通业务自助授权接口。
  */
 // 显式初始化组织：建根部门、超级管理员角色和初始管理员账号。
-// 超级管理员只是一个拥有全部能力、范围为 all 的角色，是数据而不是代码里的特例。
+// 初始化写入受控通配标记；有效角色会随当前能力目录取得完整授权。
 import { randomBytes } from 'node:crypto';
 import { DEFAULT_TENANT, systemCtx, type Ctx, type Kernel } from '@yss123/cage-kernel';
 import { sql } from 'kysely';
@@ -26,7 +26,7 @@ export interface BootstrapResult {
  * 此身份仅服务于受控初始化，不是前端可自行构造的管理员豁免。
  */
 function bootstrapCtx(k: Kernel, tenantId: string): Ctx {
-  return systemCtx({ kind: 'system', name: 'bootstrap', tenantId, capabilities: k.catalogCaps() });
+  return systemCtx({ kind: 'system', name: 'bootstrap', tenantId, capabilities: [...k.catalogCaps(), '*'] });
 }
 
 /**
@@ -54,9 +54,7 @@ export async function bootstrapOrg(
     const execute = (command: string, input: unknown) => k.executeIn(tx, command, input, ctx, 0);
     const root = await execute('Dept.create', { name: opts.rootDeptName ?? '总部', code: 'root' });
     const role = await execute('Role.create', { code: 'superadmin', name: '超级管理员' });
-    for (const cap of k.catalogCaps()) {
-      await execute('Role.grantCapability', { id: role.id, capability: cap, params: cap.endsWith('.approve') ? { ceiling: 1_000_000_000 } : undefined });
-    }
+    await execute('Role.grantCapability', { id: role.id, capability: '*' });
     await execute('Role.setScope', { id: role.id, aggregate: '*', combinator: 'all' });
     const username = opts.adminUsername ?? 'admin';
     const password = opts.adminPassword ?? randomBytes(9).toString('base64url');
@@ -72,7 +70,7 @@ export async function bootstrapOrg(
 /** 显式授权维护工具；普通启动和生产角色不应自动调用。 */
 /**
  * 显式补齐指定角色尚未拥有的目录能力，返回本次新增数量。
- * 已有授权参数保持不变；新授出的 approve 能力附带这里的初始化额度。
+ * 已有授权参数保持不变；新增能力不附带业务参数。
  * 每次调用通过系统身份执行领域命令，属于高权限维护操作；多次命令并非整批单一事务。
  * 调用方必须确认目标角色与租户，不应作为生产角色自动获取新增业务能力的入口。
  */
@@ -83,7 +81,7 @@ export async function grantAll(k: Kernel, roleId: string, tenantId = DEFAULT_TEN
   let n = 0;
   for (const cap of k.catalogCaps()) {
     if (have.has(cap)) continue;
-    await k.execute('Role.grantCapability', { id: roleId, capability: cap, params: cap.endsWith('.approve') ? { ceiling: 1_000_000_000 } : undefined }, ctx);
+    await k.execute('Role.grantCapability', { id: roleId, capability: cap }, ctx);
     n++;
   }
   return n;

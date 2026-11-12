@@ -11,7 +11,7 @@ import {
   aggregate, command, enumOf, fail, id, json, list, ref, scope, states, text, COMBINATORS,
 } from '@yss123/cage-kernel';
 import { z } from 'zod';
-import { noEscalation, noEscalationViaRoles, noWiderScope, knownCapability } from './constraints.js';
+import { noEscalation, noEscalationViaRoles, noWiderScope, knownCapability, protectSuperadminRole, protectSuperadminUser } from './constraints.js';
 
 // ---------------- 部门 ----------------
 
@@ -72,7 +72,7 @@ export const Role = aggregate('Role', {
   fields: {
     code: text(64).unique(),
     name: text(100),
-    /** 能力点及参数，例如 { capability: 'PurchaseOrder.approve', params: { ceiling: 50000 } } */
+    /** 能力点及可选参数；初始化写入的 * 标记代表当前目录的全部能力。 */
     capabilities: list({ capability: text(200), params: json().optional() }),
     /** 各聚合上的数据范围；aggregate 为 * 表示所有聚合 */
     scopes: list({ aggregate: text(100), combinator: enumOf(...(COMBINATORS as unknown as ['all', 'self', 'dept', 'deptSubtree', 'deptSet'])), deptIds: list(id()).optional() }),
@@ -202,7 +202,7 @@ export const assignRoles = command(User, {
   from: 'active',
   to: 'active',
   input: z.object({ id: z.string().uuid(), roleIds: z.array(z.string().uuid()).max(50) }),
-  constraints: [noEscalationViaRoles()],
+  constraints: [protectSuperadminUser(), noEscalationViaRoles()],
   reads: { roles: Role },
   handler: async (_o, input, deps) => {
     for (const rid of input.roleIds) {
@@ -216,11 +216,11 @@ export const assignRoles = command(User, {
 /**
  * 将 active 用户转为 disabled，仅声明状态变化；认证和上下文刷新据状态拒绝后续使用。
  */
-export const disableUser = command(User, { name: 'disable', description: '停用用户', from: 'active', to: 'disabled', handler: () => ({}) });
+export const disableUser = command(User, { name: 'disable', description: '停用用户', from: 'active', to: 'disabled', constraints: [protectSuperadminUser()], handler: () => ({}) });
 /**
  * 将 disabled 用户恢复为 active，不重置原有角色、资料或密码。
  */
-export const enableUser = command(User, { name: 'enable', description: '启用用户', from: 'disabled', to: 'active', handler: () => ({}) });
+export const enableUser = command(User, { name: 'enable', description: '启用用户', from: 'disabled', to: 'active', constraints: [protectSuperadminUser()], handler: () => ({}) });
 
 /** 密码哈希：scrypt$盐$哈希（纯计算，不做 IO） */
 /**
@@ -246,6 +246,7 @@ export const setPassword = command(User, {
   from: 'active',
   to: 'active',
   input: z.object({ id: z.string().uuid(), password: z.string().min(8).max(200) }),
+  constraints: [protectSuperadminUser()],
   handler: async (_o, input) => ({ passwordHash: await hashPassword(input.password) }),
 });
 
@@ -291,7 +292,7 @@ export const grantCapability = command(Role, {
   from: 'active',
   to: 'active',
   input: z.object({ id: z.string().uuid(), capability: z.string().min(1).max(200), params: z.record(z.string(), z.unknown()).optional() }),
-  constraints: [knownCapability(), noEscalation()],
+  constraints: [protectSuperadminRole(), knownCapability(), noEscalation()],
   handler: (role, input) => ({
     capabilities: [
       ...role.capabilities.filter((c) => c.capability !== input.capability),
@@ -310,6 +311,7 @@ export const revokeCapability = command(Role, {
   from: 'active',
   to: 'active',
   input: z.object({ id: z.string().uuid(), capability: z.string().min(1).max(200) }),
+  constraints: [protectSuperadminRole()],
   handler: (role, input) => ({ capabilities: role.capabilities.filter((c) => c.capability !== input.capability) }),
 });
 
@@ -329,7 +331,7 @@ export const setScope = command(Role, {
     combinator: z.enum(['all', 'self', 'dept', 'deptSubtree', 'deptSet']).nullable(),
     deptIds: z.array(z.string().uuid()).optional(),
   }),
-  constraints: [noWiderScope()],
+  constraints: [protectSuperadminRole(), noWiderScope()],
   handler: (role, input) => {
     const rest = role.scopes.filter((s) => s.aggregate !== input.aggregate);
     if (input.combinator === null) return { scopes: rest };
@@ -343,4 +345,4 @@ export const setScope = command(Role, {
 /**
  * 将 active 角色停用为 archived；保留历史授权数据，角色的后续有效性由上下文加载按状态判断。
  */
-export const archiveRole = command(Role, { name: 'archive', description: '停用角色', from: 'active', to: 'archived', handler: () => ({}) });
+export const archiveRole = command(Role, { name: 'archive', description: '停用角色', from: 'active', to: 'archived', constraints: [protectSuperadminRole()], handler: () => ({}) });

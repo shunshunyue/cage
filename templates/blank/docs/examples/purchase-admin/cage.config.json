@@ -5,6 +5,7 @@
   "typecheck": ["packages/domain", "packages/contracts", "apps/api", "apps/web"],
   "graph": {
     "title": "采购业务图谱",
+    "naming": "required",
     "labels": {
       "module:purchase": "采购管理",
       "module:inventory": "库存管理",
@@ -125,7 +126,7 @@
       "state:Role.archived": "已停用",
       "field:Role.code": "角色编码",
       "field:Role.name": "角色名称",
-      "field:Role.capabilities": "能力点与额度",
+      "field:Role.capabilities": "能力点",
       "field:Role.scopes": "数据访问范围",
       "capability:Role.read": "查看角色",
       "capability:Role.export": "导出角色",

@@ -10,7 +10,7 @@
 
 本节位于托管区之外，cage sync 会保留。下面的托管区提供框架工作方法。
 
-<!-- cage:begin v0.3.2 -->
+<!-- cage:begin v0.4.0 -->
 ## Cage 业务开发约定（框架托管）
 
 ### 学习与任务入口
@@ -33,6 +33,8 @@
 业务疑点按 `docs/development/guides/business-collaboration.md` 提出选项、影响和推荐，让用户选择；沿用已明确的规则与授权。API 和当前行为由 agent 查证，普通技术方案自行决定；等待业务答案时推进独立部分。
 
 写代码前按 Skill 简述“已确认规则 → 已查证的 Cage 能力 → 修改位置 → 验收结果”，具体设计见 `docs/development/guides/recipes.md`。能力与签名查 `cage capabilities`，现有业务查 `cage context` 并阅读源码。未知规则和能力缺口不能靠猜测、编造 API 或复制示例填补；已明确的部分直接实施，不另设技术方案批准。
+
+涉及领域建模先读 `docs/development/guides/ontology-modeling.md`：说明对象含义、关系方向/基数、状态及动作前后结果，再写真实声明。聚合/字段/命令等填写结构化描述，每个状态填写 labels；中文注释和前端文案不会自动成为本体名称。处理本次声明的 CAGE-ONTOLOGY-001，并按业务例子核对关系和触发链；名称完整不能证明业务正确。自然语言、文档、表格和原型都是输入，不能由模板或页面布局代替业务判断。
 
 遇到原生 AI、AI 审批或随页助理，先读 `docs/development/guides/intelligence.md`，核对已有能力及应用启用状态。审批、文件、关系、数据传输等专题由 Skill 按需引导，不重建框架已有运行时。
 

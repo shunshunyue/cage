@@ -60,6 +60,11 @@ function scan(directory: string): void {
 }
 
 const families: Record<string, { title: string; stage: string; verify: string }> = {
+  ONTOLOGY: {
+    title: '本体业务名称',
+    stage: 'check / gen / verify / 图谱与上下文诊断',
+    verify: '重跑 cage check，再在 graph/context 中按业务用语核对名称；对象关系与运行行为仍需独立业务用例验证。',
+  },
   AI: {
     title: '智能运行时',
     stage: '领域声明 / 模型与运行预算配置',

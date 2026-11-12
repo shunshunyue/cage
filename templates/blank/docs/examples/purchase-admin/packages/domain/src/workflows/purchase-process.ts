@@ -18,7 +18,7 @@ export const purchaseLifecycle = businessProcess('purchase-lifecycle', {
     approval: { title: '采购审批', description: 'AI 先核查材料；通过后部门经理审批，金额超过五万元时增加财务审批。疑难材料由本步骤转人工。', actor: 'AI、部门经理、财务', kind: 'decision', action: poApproval },
     returned: { title: '退回修改', description: '材料不足退回草稿，保留本轮审核理由。', actor: '审批流程', action: returnForChanges },
     revise: { title: '补充采购用途', description: '依据建议补充用途，再次提交后从 AI 预审开始。', actor: '申请人', action: explainPurpose },
-    approved: { title: '批准并锁定库存', description: '审批结论通过权限、额度和库存校验后，同事务锁定所需库存。', actor: '审批流程与系统', action: approve,
+    approved: { title: '批准并锁定库存', description: '审批结论通过权限和库存校验后，同事务锁定所需库存。', actor: '审批流程与系统', action: approve,
       related: [{ object: InventoryLock, label: '同事务锁库存', via: acquireLock }] },
     received: { title: '确认收货', description: '接收外部收货通知并更新采购单，异步释放库存锁。', actor: '外部系统与系统', kind: 'end', action: markReceived,
       related: [{ object: InventoryLock, label: '收货后释放占用', via: releaseLock }] },

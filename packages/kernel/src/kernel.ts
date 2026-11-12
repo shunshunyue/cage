@@ -312,10 +312,10 @@ export class Kernel {
     // 第 6 关：硬约束
     const meta: ConstraintMeta = {
       capability,
-      // 额度等约束复用当前写事务连接，避免同对象的并发等待者占满池后，锁持有者再借连接形成死锁。
+      // 约束复用当前写事务连接，避免同对象的并发等待者占满池后，锁持有者再借连接形成死锁。
       // 仍实时加载角色并检查账号 active；不缓存能力，也不改变约束看到的权限集合。
       capabilitiesOf: async (uid) => {
-        const grants = await loadUserGrants(tx, uid, ctx.tenantId);
+        const grants = await loadUserGrants(tx, uid, ctx.tenantId, this.catalogCaps());
         return grants?.active ? grants.capabilities : new Map();
       },
       load: async (aggName, id) => {
@@ -544,15 +544,15 @@ export class Kernel {
     return (this.catalogCache ??= this.registry.capabilityCatalog().map((c) => c.capability));
   }
 
-  /** 实时加载真人能力供额度约束使用；用户不存在或禁用时返回空集合。 */
+  /** 实时加载真人能力供约束使用；用户不存在或禁用时返回空集合。 */
   async capabilitiesOf(userId: string, tenantId: string): Promise<Map<string, CapabilityParams>> {
-    const g = await loadUserGrants(this.app, userId, tenantId);
+    const g = await loadUserGrants(this.app, userId, tenantId, this.catalogCaps());
     return g && g.active ? g.capabilities : new Map();
   }
 
   /** 把一个用户解析成上下文（HTTP 层会加缓存） */
   async contextFor(userId: string, tenantId: string, extra: Partial<Ctx> = {}): Promise<Ctx | null> {
-    const g = await loadUserGrants(this.app, userId, tenantId);
+    const g = await loadUserGrants(this.app, userId, tenantId, this.catalogCaps());
     return g ? userCtx(g, extra) : null;
   }
 

@@ -1,12 +1,11 @@
 /**
  * 采购单声明集中列出申请材料、专业复核名单、状态、范围、命令和事件，由 API、worker 和生成器统一消费。
  * 草稿可编辑专业复核名单，提交重新核对协作名录；handler 仅读取声明依赖，数据库写入、版本与审计由内核完成。
- * 审批结论仍以 process 命令执行职责分离、额度和库存检查；选入名录或路由不授予权限。
+ * 审批结论仍以 process 命令执行职责分离和库存检查；选入名录或路由不授予权限。
  */
 import {
   aggregate,
   bool,
-  ceiling,
   command,
   emit,
   event,
@@ -127,7 +126,7 @@ export const create = command(PurchaseOrder, {
 /**
  * 在 draft 中调整本单专业复核需求和名单；需要 PurchaseOrder.setReviewers，不能直接修改待审批快照。
  * 输入保存前核对 1–5 位不同且非提单人的 active 名录成员；关闭时用 false/[]，失败整次回滚。
- * 提交还会重新查询名录，以拒绝保存后退役的成员；名录不授予对单据的读取、批准能力或额度。
+ * 提交还会重新查询名录，以拒绝保存后退役的成员；名录不授予对单据的读取或批准能力。
  */
 export const setReviewers = command(PurchaseOrder, {
   name: 'setReviewers', description: '设置采购单专业复核需求和人员', from: 'draft', to: null,
@@ -179,7 +178,7 @@ export const submit = command(PurchaseOrder, {
 });
 
 /**
- * 审批终结命令必须同时满足创建人与审批人分离、当前角色额度，以及声明的库存只读检查。
+ * 审批终结命令必须同时满足创建人与审批人分离，以及声明的库存只读检查。
  * stock 是 reads 绑定的受范围约束仓储；找不到 SKU 或登记数量不足时返回 STOCK_SHORT 并回滚。
  * 该检查不扣减 available；真正占用由 OrderApproved 的同事务反应创建 InventoryLock。
  * 范例展示资源配对，不实现多订单累计扣减、仓库出入库或价格核算。
@@ -188,7 +187,7 @@ export const approve = command(PurchaseOrder, {
   from: 'pending_approval',
   to: 'approved',
   invokedBy: 'process',
-  constraints: [sod.notSameAs('createdBy'), ceiling('amount')],
+  constraints: [sod.notSameAs('createdBy')],
   reads: { stock: Inventory },
   emits: [OrderApproved],
   handler: async (o, _input, { stock }) => {

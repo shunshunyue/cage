@@ -17,7 +17,7 @@ export async function applyOutcome(k: Kernel, r: ApprovalOutcome, tx?: Transacti
   let ctx: Ctx;
   if (r.lastApprover) {
     // 待办决定已持有事务连接时复用它；同实例并发排队不能耗尽池后让锁持有者再等新连接。
-    const grants = await loadUserGrants(tx ?? k.app, r.lastApprover, r.tenantId);
+    const grants = await loadUserGrants(tx ?? k.app, r.lastApprover, r.tenantId, k.catalogCaps());
     const user = grants ? userCtx(grants) : null;
     if (!user?.capabilities.has(k.registry.capabilityOf(cmd)) || !user.capabilities.has(`${binding.a.agg.name}.read`)) throw cageError('FORBIDDEN');
     // 先核验真人对目标单据的权限；命令内声明的后台读依赖仍按已有流程身份完成业务校验。

@@ -1,7 +1,7 @@
 /**
  * 原生结构化审批执行器：实例、AND 分支、候选/直派任务及签署阶段存在 flow 模式，结论经桥接调用领域命令。
  * HTTP、worker 和 AI 运行时共用本入口；按实例锁串行决定，前后签激活与最后结论共同事务提交。
- * waiting 不是完成；任务选人不授予能力，最后命令拒绝（如超额度）会回滚本次决定及附带变化。
+ * waiting 不是完成；任务选人不授予能力，最后命令拒绝（如职责分离失败）会回滚本次决定及附带变化。
  */
 import { cageError, grantsFor, present, stableStringify, type Kernel, type Ctx } from '@yss123/cage-kernel';
 import { type ApprovalEngine } from '@yss123/cage-kernel/worker';

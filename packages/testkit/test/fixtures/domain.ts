@@ -2,7 +2,7 @@
 // 此夹具服务内核/HTTP 的稳定回归，不等同于采购范例当前全部功能；字段和状态刻意保持最小。
 // 所有 handler/map 都保持纯声明形状，真实事务、授权和事件消费由测试环境中的框架执行。
 import {
-  aggregate, ceiling, command, emit, event, fail, id, int, list, money, query, reaction, ref, scope, sod, states, text,
+  aggregate, command, emit, event, fail, id, int, list, money, query, reaction, ref, scope, sod, states, text,
 } from '@yss123/cage-kernel';
 import { approval, daysAgo, job } from '@yss123/cage-kernel';
 import { approver, gt, route, step, when } from '@yss123/cage-approval';
@@ -43,7 +43,7 @@ export const PurchaseOrder = aggregate('PurchaseOrder', {
     createdBy: ref('User'),
     /** 可为空电话，普通响应和审计掩码，明文读取需 phone 的 unmask 能力。 */
     supplierPhone: text(32).sensitive('phone').optional(),
-    /** 最多两位小数的金额字符串，与 ceiling 参数使用同一金额单位。 */
+    /** 最多两位小数的金额字符串，以元为单位，供采购流程路由使用。 */
     amount: money(),
     /** SKU 与整数件数列表；命令输入额外要求非空及正数量。 */
     items: list({ sku: text(64), qty: int() }),
@@ -84,11 +84,11 @@ export const submit = command(PurchaseOrder, {
   handler: (o) => (o.items.length === 0 ? fail('NO_ITEMS') : o),
 });
 
-/** process 专用批准：依次验证职责分离、额度与显式 stock 读依赖；库存不足返回 SKU 列表且不提交。 */
+/** process 专用批准：验证职责分离与显式 stock 读依赖；库存不足返回 SKU 列表且不提交。 */
 export const approve = command(PurchaseOrder, {
   from: 'pending_approval', to: 'approved',
   invokedBy: 'process',
-  constraints: [sod.notSameAs('createdBy'), ceiling('amount')],
+  constraints: [sod.notSameAs('createdBy')],
   reads: { stock: Inventory },
   emits: [OrderApproved],
   handler: async (o, _input, { stock }) => {

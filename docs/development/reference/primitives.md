@@ -31,6 +31,8 @@
 
 字段可链式使用 `.optional()`、`.unique()`、`.sensitive('phone')`、`.hidden()` 等。可用敏感种类以包导出的 `SENSITIVE_KINDS` 为准；hidden 字段不会作为普通公开读字段，sensitive 字段按权限掩码。不要通过前端隐藏来替代它们。
 
+业务含义同步写在框架能抽取的位置：字段 `.describe('所属部门')`、对象和操作的 `description`、每个状态的 `labels`。普通注释与前端文案不替代这些名称；完整填写位置、对象关系与检查方式见[本体建模指南](../guides/ontology-modeling.md)。
+
 集合关系也放在 `fields` 中，但不是普通 SQL 列，不支持上述四种修饰。完整声明、成员命令、分页接口、权限与迁移见[对象关系指南](../guides/relations.md)。纯关联不手写 NoteMember 聚合，具有职位、状态等业务属性的关联仍应建业务聚合。
 
 不要定义 `id/version/status/createdAt/updatedAt/tenantId` 同名业务字段。聚合名和事件名用大驼峰，字段、命令、查询和任务名用小驼峰，状态名用小写下划线。
@@ -70,10 +72,10 @@ handler: async (order, _input, { stock }) => {
 ```ts
 // 片段：放在采购 approve 的配置中。
 invokedBy: 'process',
-constraints: [sod.notSameAs('createdBy'), ceiling('amount')],
+constraints: [sod.notSameAs('createdBy')],
 ```
 
-`sod` 防止提单人审批自己；`ceiling` 读取审批人该能力上的额度参数，没有额度也拒绝。管理员在 `/admin` 给角色配置 `PurchaseOrder.approve` 的 `ceiling`，不是把额度写死进页面。
+`sod` 防止提单人审批自己。审批流程的业务条件按需声明：采购示例按金额决定是否进入财务节点；其他流程也可以按类型、部门等字段分流，或不使用金额。
 
 不变量写在 `aggregate(..., { invariants: { 名称: 对象 => boolean } })`，在最终结果合并和目标状态确定后检查。例如 `Number(o.amount) > 0`。约束回答“这次操作允许吗”，不变量回答“结果对象合法吗”。可用 `Constraint` 类型定义自定义约束对象；先核对公开导出，不假设所有内部 helper 都是公共 API。
 
@@ -209,7 +211,7 @@ export const poRoute = route('po-approval', [
 
 内置选人器是 `approver.deptLeader(字段名)`、`approver.role(角色code)`、`approver.user(用户id)`。条件使用 `gt/gte/lt/lte/eq/ne/isIn` 等封闭表达式。`mode: 'any'/'all'` 描述一步内的人如何完成，不表示任意并行分支。人工节点可通过 `actions: { transfer: true, delegate: true, addSign: true }` 显式开放转办、委派归还和当前节点并行必签，默认关闭；任务版本、权限、SDK 与边界见[审批任务流转](../guides/approvals.md)。任意函数选人、前后加签和并行流程分支仍需扩展。
 
-被选中的审批人还要具备结论命令所需能力、范围和额度。部门负责人为空会产生 `CAGE-APPR-007`，详见[排错](../tools/troubleshooting.md)。
+被选中的审批人还要具备结论命令所需能力和范围。部门负责人为空会产生 `CAGE-APPR-007`，详见[排错](../tools/troubleshooting.md)。
 
 ## 连接器、定时任务和逃生口
 

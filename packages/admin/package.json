@@ -1,6 +1,6 @@
 {
   "name": "@yss123/cage-admin",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "组织模型声明与 /admin 系统管理",
   "type": "module",
   "main": "dist/index.js",

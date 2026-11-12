@@ -57,12 +57,12 @@ pnpm dev
 前端使用 React Router：工作台 `/workspace`，采购列表 `/procurement/orders`，单据详情 `/procurement/orders/:id`，审批 `/approvals`，库存 `/inventory`，登录 `/login`。单号和审批待办可直接打开详情；刷新、前进后退和登录回跳保留页面地址。新增页面与部署按[路由和浏览器验收指南](docs/development/guides/routing.md)执行；Nginx 示例见 [deploy/nginx.conf](deploy/nginx.conf)。
 
 1. 管理员在“库存台账”登记 `A-01` 等物料。
-2. 进入 `/admin/` 创建采购员、经理，分别分配采购命令和审批能力；经理的 `PurchaseOrder.approve` 参数配置 `ceiling`。
+2. 进入 `/admin/` 创建采购员、经理，分别分配采购命令、审批能力和所需数据范围。
 3. 把经理设为采购员所在部门的负责人。提单人与审批人必须不同。
 4. 为需要选人的采购参与者授予 `ApprovalMember.read` 与该聚合 `all` 范围，通过 `ApprovalMember.create` 登记审批协作人的公开业务姓名与专业领域；名录不授予实际审批能力。
 5. 采购员新建采购单，可开启专业复核并选择 1–5 人；草稿使用 `PurchaseOrder.setReviewers` 调整名单，提交时重新校验。worker 先执行 AI 材料预审；未配置模型或模型失败时按声明转人工接管。
 6. AI 预审/人工接管之后进入经理节点；启用专业复核时，经理后由所选人员全部会签。经理、专业和财务节点开放转办、委派归还和前置/后置/并行加签。
-7. 超过 50,000 元的采购继续进入财务共享候选池，需另建 code 为 `finance` 的角色并给实际用户配置权限、范围和额度；财务必须先领取，恰好 50,000 元跳过该步骤。
+7. 超过 50,000 元的采购继续进入财务共享候选池，需另建 code 为 `finance` 的角色并给实际用户配置权限和范围；财务必须先领取，恰好 50,000 元跳过该步骤。
 8. 全部必签完成后，最终审批命令同事务生成库存锁；worker 调用 fake ERP 并回写单号。取消单据或收到 ERP 收货回调后异步释放锁；回调需要 `ERP_WEBHOOK_SECRET` 对原始 JSON 的 HMAC-SHA256 签名。
 
 `Inventory.available` 是演示台账数量。本例验证库存锁生命周期，尚未实现仓库级的并发扣减、实物库存及退货核算。

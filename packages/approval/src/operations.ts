@@ -84,9 +84,9 @@ function permissionDenied(error: unknown): boolean {
 }
 
 /** 当前实名用户重新加载角色与状态；传入的旧会话上下文不能让撤权/停用继续读取提醒。 */
-async function currentActor(tx: Transaction<any>, ctx: Ctx): Promise<Ctx> {
+async function currentActor(k: Kernel, tx: Transaction<any>, ctx: Ctx): Promise<Ctx> {
   if (ctx.actor?.kind !== 'user' || !ctx.userId) throw cageError('FORBIDDEN');
-  const grants = await loadUserGrants(tx, ctx.userId, ctx.tenantId);
+  const grants = await loadUserGrants(tx, ctx.userId, ctx.tenantId, k.catalogCaps());
   if (!grants) throw cageError('FORBIDDEN');
   return userCtx(grants);
 }
@@ -245,7 +245,7 @@ export class ApprovalOperationsService implements RuntimeService {
     const parsed = noticeOptionsSchema.safeParse(options);
     if (!parsed.success) throw cageError('INVALID_INPUT');
     return this.k.app.transaction().execute(async tx => {
-      const actor = await currentActor(tx, ctx), limit = parsed.data.limit ?? 50;
+      const actor = await currentActor(this.k, tx, ctx), limit = parsed.data.limit ?? 50;
       if (!this.processes().length) return { items: [], nextCursor: null };
       const rows = await tx.selectFrom('flow.approval_notice as n')
         .innerJoin('flow.approval_instance as i', 'i.id', 'n.instance_id')
@@ -276,7 +276,7 @@ export class ApprovalOperationsService implements RuntimeService {
   async readNotice(id: string, ctx: Ctx): Promise<{ id: string; readAt: string }> {
     if (!/^[1-9]\d{0,18}$/.test(id) || BigInt(id) > 9223372036854775807n) throw cageError('INVALID_INPUT');
     return this.k.app.transaction().execute(async tx => {
-      const actor = await currentActor(tx, ctx);
+      const actor = await currentActor(this.k, tx, ctx);
       if (!this.processes().length) throw cageError('NOT_FOUND');
       const notice = await tx.selectFrom('flow.approval_notice').selectAll().where('id', '=', id).where('tenant_id', '=', actor.tenantId)
         .where('recipient_id', '=', actor.userId!).executeTakeFirst();
@@ -293,7 +293,7 @@ export class ApprovalOperationsService implements RuntimeService {
   /** 本人当前申请清单最多返回最近 200 项；当前 read/范围和提交版本均复核，旧实例不补造催办政策。 */
   async requests(ctx: Ctx): Promise<ApprovalRequestView[]> {
     return this.k.app.transaction().execute(async tx => {
-      const actor = await currentActor(tx, ctx), processes = this.processes();
+      const actor = await currentActor(this.k, tx, ctx), processes = this.processes();
       if (!processes.length) return [];
       const rows = await tx.selectFrom('flow.approval_instance as i')
         .selectAll('i').where('i.tenant_id', '=', actor.tenantId).where('i.process', 'in', processes)
@@ -322,7 +322,7 @@ export class ApprovalOperationsService implements RuntimeService {
     const parsed = approvalUrgeSchema.safeParse(input);
     if (!z.uuid().safeParse(instanceId).success || !parsed.success) throw cageError('INVALID_INPUT');
     return this.k.app.transaction().execute(async tx => {
-      const actor = await currentActor(tx, ctx), processes = this.processes();
+      const actor = await currentActor(this.k, tx, ctx), processes = this.processes();
       if (!processes.length) throw cageError('NOT_FOUND');
       const inst = await tx.selectFrom('flow.approval_instance').selectAll().where('id', '=', instanceId).where('tenant_id', '=', actor.tenantId)
         .where('process', 'in', processes).forUpdate().executeTakeFirst();

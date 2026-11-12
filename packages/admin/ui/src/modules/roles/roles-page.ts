@@ -70,7 +70,7 @@ export async function renderRoles(main: HTMLElement) {
           h('span', { class: 'role-item-copy' }, h('strong', {}, role.name), h('small', {}, role.code)),
           role.status !== 'active'
             ? badge('停用')
-            : h('span', { class: 'role-item-count' }, role.capabilities.length),
+            : h('span', { class: 'role-item-count' }, role.capabilities.some((item) => item.capability === '*') ? state.catalog!.capabilities.length : role.capabilities.length),
         ),
       ),
     );
@@ -136,7 +136,8 @@ export async function renderRoles(main: HTMLElement) {
       roles = roles.map((item) => (item.id === updated.id ? updated : item));
       renderList();
     };
-    const countText = h('strong', {}, String(role.capabilities.length));
+    const allCapabilities = role.capabilities.some((item) => item.capability === '*');
+    const countText = h('strong', {}, String(allCapabilities ? state.catalog!.capabilities.length : role.capabilities.length));
     const summary = h(
       'div',
       { class: 'role-summary' },
@@ -243,6 +244,8 @@ export async function renderRoles(main: HTMLElement) {
        */
       function renderGroups() {
         const granted = new Map(role!.capabilities.map((item) => [item.capability, item.params]));
+        // 通配角色始终拥有当前目录中的能力，不能通过逐项开关修改。
+        if (allCapabilities) for (const item of state.catalog!.capabilities) granted.set(item.capability, {});
         const search = query.trim().toLowerCase();
         const groups = new Map<string, Capability[]>();
         const visible = state.catalog!.capabilities.filter((item) => {
@@ -261,7 +264,7 @@ export async function renderRoles(main: HTMLElement) {
         }
         grid.replaceChildren();
         filteredCount.textContent = `显示 ${visible.length} 项权限`;
-        countText.textContent = String(role!.capabilities.length);
+        countText.textContent = String(allCapabilities ? state.catalog!.capabilities.length : role!.capabilities.length);
         // 客户业务排在前面，框架自带的组织与运维权限放在后面，先回答业务人员最关心的问题。
         const builtIn = new Set(['Dept', 'User', 'Role', 'system']);
         const ordered = [...groups].sort(([a], [b]) => Number(builtIn.has(a)) - Number(builtIn.has(b)));
@@ -296,13 +299,13 @@ export async function renderRoles(main: HTMLElement) {
       }
 
       /**
-       * 构建能力开关及可选额度编辑器，按钮依据角色状态和当前操作者能力启用。
-       * 切换失败恢复旧勾选值，成功更新角色快照；额度保存保留已有参数并替换 ceiling。
+       * 构建能力开关，按钮依据角色状态和当前操作者能力启用。
+       * 切换失败恢复旧勾选值，成功更新角色快照；通配角色的能力由目录自动展开。
        */
       function permissionRow(capability: Capability, granted: Map<string, Record<string, unknown> | null>) {
         const checked = granted.has(capability.capability);
         const authorized =
-          role!.status === 'active' &&
+          !allCapabilities && role!.status === 'active' &&
           can(checked ? 'Role.revokeCapability' : 'Role.grantCapability') &&
           (checked || can(capability.capability));
         const mode = invocation(capability);
@@ -364,55 +367,6 @@ export async function renderRoles(main: HTMLElement) {
               mode,
             ),
         );
-        if (
-          checked &&
-          (capability.capability.endsWith('.approve') ||
-            granted.get(capability.capability)?.ceiling !== undefined)
-        ) {
-          const ceiling = h('input', {
-            type: 'number',
-            min: 0,
-            step: 'any',
-            placeholder: '请设置额度',
-            value: String(granted.get(capability.capability)?.ceiling ?? ''),
-            required: true,
-            disabled:
-              !can('Role.grantCapability') || !can(capability.capability) || role!.status !== 'active',
-            'aria-label': `${title}额度上限`,
-          });
-          const save = h(
-            'button',
-            { type: 'submit', class: 'small', disabled: ceiling.disabled },
-            '保存额度',
-          );
-          row.append(
-            h(
-              'form',
-              {
-                class: 'limit-form',
-                onsubmit: async (event) => {
-                  event.preventDefault();
-                  const updated = await run(
-                    () =>
-                      api<Role>('POST', `/api/role/${role!.id}/grant-capability`, {
-                        capability: capability.capability,
-                        params: { ...granted.get(capability.capability), ceiling: Number(ceiling.value) },
-                      }),
-                    '额度已保存',
-                    save,
-                  );
-                  if (updated) {
-                    updateRole(updated);
-                    renderGroups();
-                  }
-                },
-              },
-              h('span', {}, '额度上限'),
-              ceiling,
-              save,
-            ),
-          );
-        }
         return row;
       }
       renderGroups();
@@ -440,9 +394,9 @@ export async function renderRoles(main: HTMLElement) {
      * 提交 null 删除显式配置，成功后重画详情以反映真实服务端结果。
      */
     function scopeCard(aggregate: Aggregate) {
-      const current = role!.scopes.find((scope) => scope.aggregate === aggregate.name);
-      const inherited = role!.scopes.find((scope) => scope.aggregate === '*');
-      const editable = role!.status === 'active' && can('Role.setScope');
+      const current = allCapabilities ? { aggregate: aggregate.name, combinator: 'all' as const, deptIds: undefined } : role!.scopes.find((scope) => scope.aggregate === aggregate.name);
+      const inherited = allCapabilities ? { aggregate: '*', combinator: 'all' as const } : role!.scopes.find((scope) => scope.aggregate === '*');
+      const editable = !allCapabilities && role!.status === 'active' && can('Role.setScope');
       const usable = state.catalog!.combinators.filter(
         (kind) =>
           aggregate.name === '*' ||

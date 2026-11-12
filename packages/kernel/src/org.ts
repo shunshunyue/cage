@@ -10,7 +10,7 @@ export interface RoleGrantRow {
   scopes: { aggregate: string; combinator: Combinator; deptIds?: string[] }[];
 }
 
-/** 多角色能力取并集，数值参数（额度）取最大值 */
+/** 多角色能力取并集，同名数值参数取最大值。 */
 export function mergeCaps(roles: RoleGrantRow[]): Map<string, CapabilityParams> {
   const out = new Map<string, CapabilityParams>();
   for (const r of roles) {
@@ -67,9 +67,10 @@ export interface UserGrants {
 /** 从系统表读取一个用户的授权（内核账号） */
 /**
  * 按租户查用户并只合并 active 角色；用户不存在返回 null，用户禁用则返回 active:false。
+ * 初始化角色的受控通配标记按调用方传入的当前目录展开，并取得租户内全部数据范围。
  * 本函数不做缓存，HTTP 授权缓存和审批实时加载可选择不同刷新策略，但都使用同一合并语义。
  */
-export async function loadUserGrants(db: Kysely<any>, userId: string, tenantId: string): Promise<UserGrants | null> {
+export async function loadUserGrants(db: Kysely<any>, userId: string, tenantId: string, catalog: readonly string[]): Promise<UserGrants | null> {
   const user = await db
     .selectFrom('sys.user as u')
     .leftJoin('sys.dept as d', 'd.id', 'u.dept_id')
@@ -89,13 +90,15 @@ export async function loadUserGrants(db: Kysely<any>, userId: string, tenantId: 
         .execute()
     : [];
   const capabilities = mergeCaps(roles);
+  const superadmin = capabilities.has('*');
+  if (superadmin) for (const capability of catalog) if (!capabilities.has(capability)) capabilities.set(capability, {});
   return {
     userId,
     tenantId,
     deptId: user.dept_id ?? null,
     deptPath: user.ancestors ?? null,
     capabilities,
-    scopes: mergeScopes(roles),
+    scopes: superadmin ? { '*': [{ combinator: 'all' }] } : mergeScopes(roles),
     unmask: unmaskFrom(capabilities),
     active: user.status === 'active',
   };

@@ -223,16 +223,12 @@ export function impact(
   const headById = new Map(head.nodes.map((n) => [n.id, n]));
   for (const c of diff.changed) {
     if (c.after.kind === 'field') {
-      const ceilings = head.edges.filter(
-        (e) => e.kind === 'uses' && e.to === c.after.id && String(e.as).includes('ceiling'),
-      );
-      if (ceilings.length) confirm.push(`角色上的审批额度参数是否按 ${c.after.id} 的新口径调整`);
       if (c.before.attrs.description !== c.after.attrs.description)
         confirm.push(`${c.after.id} 的口径说明变了：下游报表、外部系统是否同步`);
     }
   }
   for (const n of diff.added) {
-    if (n.kind === 'command') confirm.push(`新能力点 ${n.id} 默认无人拥有，需要管理员在 /admin 授权`);
+    if (n.kind === 'command') confirm.push(`新能力点 ${n.id} 由超级管理员自动拥有，普通角色需要在 /admin 显式授权`);
   }
   for (const n of [...affected].map((id) => headById.get(id)).filter((x): x is OntNode => !!x)) {
     if (n.kind === 'outbound' && !start.has(n.id)) confirm.push(`外部同步 ${n.id} 受影响：对方系统是否兼容`);

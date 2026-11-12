@@ -13,6 +13,8 @@
 | 第一次使用 Cage | [Skill 的运行模型](skills/cage-development/SKILL.md#先建立正确的运行模型) → [第一条完整业务链](getting-started/first-feature.md) | 理解声明、导出、生成、授权、契约与持久读写如何连接 |
 | 用户描述或文档不清楚 | [业务澄清与共同设计](guides/business-collaboration.md) | 主动提出疑问、可行选项与建议，与用户选择业务规则，再落实到实现和验收 |
 | 把需求转成设计 | [业务设计与能力选择](guides/recipes.md) → [编码前的映射](skills/cage-development/SKILL.md#4-写代码前说明实现映射) | 业务规则、查证过的能力、修改位置和验收例子一一对应 |
+| 表达对象、状态和关系的业务含义 | [本体建模](guides/ontology-modeling.md) → [对象关系](guides/relations.md) | 名称写入真实声明，关系有正确方向、基数及执行依据，图谱能用业务用语阅读 |
+| AI 生成 React 页面与选择组件 | [前端组件指南](guides/frontend-ui.md) → [路由](guides/routing.md) | 生成可维护的真实 TSX 页面，使用 Ant Design 组合 UI，并按 Cage 契约读写 |
 | 实现或修改功能 | [Skill 的实施流程](skills/cage-development/SKILL.md#5-沿一条真实链路实施再扩展) → [开发步骤](getting-started/workflow.md) | 沿实际调用链完成受影响的功能，并取得验证证据 |
 | 已有功能不正常 | [排错方法](tools/troubleshooting.md) → [诊断工具](tools/diagnostics.md) / [错误码册](../errors/README.md) | 找到第一个失败边界，修复原因并复验 |
 | 查询一个能力的用法 | 下方专题表，必要时本地搜索术语 | 找到当前任务的 API、接入前提与限制 |
@@ -27,6 +29,7 @@
 | [Skill](skills/cage-development/SKILL.md) | agent 的工作顺序、判断依据及何时与用户互动 |
 | [业务澄清](guides/business-collaboration.md) | 如何发现疑点、比较方案、保留并落实用户选择 |
 | [能力选择](guides/recipes.md) | 业务规则如何映射到 Cage，包含编码前的映射示例 |
+| [本体建模](guides/ontology-modeling.md) | 业务含义、结构化名称、对象关系和触发链写在哪里，以及怎样检查和验收 |
 | [开发步骤](getting-started/workflow.md) | 已确定设计的修改、生成、迁移和验证命令 |
 | 其他专题、参考与源码 | 当前能力用法、前提与边界，按需阅读；示例业务不成为当前需求 |
 
@@ -35,7 +38,7 @@
 | 目录 | 内容与入口 |
 | --- | --- |
 | `getting-started/` 入门 | [运行模型](getting-started/architecture.md)、[完整入门课](getting-started/first-feature.md)、[开发步骤](getting-started/workflow.md) |
-| `guides/` 专题指南 | [业务澄清](guides/business-collaboration.md)、[能力选择](guides/recipes.md)、[审批](guides/approvals.md)、[文件](guides/files.md)、[关系](guides/relations.md)、[路由](guides/routing.md)、[数据传输](guides/transfers.md)、[原生 AI](guides/intelligence.md) |
+| `guides/` 专题指南 | [业务澄清](guides/business-collaboration.md)、[能力选择](guides/recipes.md)、[本体建模](guides/ontology-modeling.md)、[前端组件](guides/frontend-ui.md)、[审批](guides/approvals.md)、[文件](guides/files.md)、[关系](guides/relations.md)、[路由](guides/routing.md)、[数据传输](guides/transfers.md)、[原生 AI](guides/intelligence.md) |
 | `reference/` 参考规范 | [原语](reference/primitives.md)、[目录组织](reference/project-structure.md)、[中文注释](reference/commenting.md) |
 | `tools/` 工具与排错 | [诊断](tools/diagnostics.md)、[本体上下文](tools/ontology-context.md)、[排错方法](tools/troubleshooting.md) |
 | `examples/` 教学示例 | [便笺源码](examples/note/note.ts)、[采购导读](examples/purchase-example.md)；按入门课与导读阅读，源码不自动注册 |

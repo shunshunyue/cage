@@ -25,7 +25,7 @@ beforeAll(async () => {
   env = await createTestEnv({ domain: { ...purchase, intelligence }, migrations: readMigrations(fileURLToPath(new URL('../../../../../db/migrations/', import.meta.url))) });
   buyer = await env.user({ caps: ['PurchaseOrder.read', 'PurchaseOrder.create', 'PurchaseOrder.explainPurpose', 'PurchaseOrder.submit', 'PurchaseOrder.setReviewers', 'ApprovalMember.read'],
     scopes: { ApprovalMember: 'all' } });
-  reviewer = await env.user({ caps: ['PurchaseOrder.read', 'PurchaseOrder.approve', 'PurchaseOrder.returnForChanges'], scopes: { PurchaseOrder: 'dept' }, params: { 'PurchaseOrder.approve': { ceiling: 50000 } } });
+  reviewer = await env.user({ caps: ['PurchaseOrder.read', 'PurchaseOrder.approve', 'PurchaseOrder.returnForChanges'], scopes: { PurchaseOrder: 'dept' } });
   await env.kernel.execute('Dept.update', { id: env.rootDeptId, leaderId: reviewer.id }, env.system());
   await env.kernel.execute('Inventory.create', { sku: 'AI-01', available: 100 }, env.system());
   const role = await env.kernel.execute('Role.create', { code: 'purchase_ai_reviewer', name: '材料预审角色' }, env.system());
@@ -39,12 +39,12 @@ beforeAll(async () => {
 afterAll(() => env?.close());
 
 /**
- * 通过组织和业务命令登记同部门协作人；10 万元额度只供本隔离库验证大额流程，名录本身不授予能力。
+ * 通过组织和业务命令登记同部门协作人；名录本身不授予能力。
  * 专业和财务共享这些真实审批能力，财务候选身份由额外的 finance 角色单独赋予。
  */
 async function collaborator(specialty: string) {
   const user = await env.user({ caps: ['PurchaseOrder.read', 'PurchaseOrder.approve', 'PurchaseOrder.reject', 'PurchaseOrder.returnForChanges'],
-    scopes: { PurchaseOrder: 'dept' }, params: { 'PurchaseOrder.approve': { ceiling: 100000 } } });
+    scopes: { PurchaseOrder: 'dept' } });
   await env.kernel.execute('ApprovalMember.create', { userId: user.id, displayName: specialty, specialty }, env.system());
   return user;
 }
@@ -145,7 +145,7 @@ it('经理后开启所选专业人员 all 会签，全部通过才批准并锁�
   expect((await env.query('select status from core.inventory_lock where id=$1', [order.id]))[0].status).toBe('held');
 });
 
-/** gt 阈值必须保持严格大于；恰好 5 万元时经理的同额 ceiling 足够，不创建财务候选任务。 */
+/** gt 阈值必须保持严格大于；恰好 5 万元时不创建财务候选任务。 */
 it('恰好 50000 元经理通过后直接批准，不产生财务候选待办', async () => {
   decision = 'pass'; const order = await submit({ amount: '50000.00' });
   await approveBy(reviewer, order.id);

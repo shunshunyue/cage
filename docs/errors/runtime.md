@@ -13,7 +13,7 @@
 | NOT_FOUND | 404 | 记录不存在或超出范围 | 用当前用户检查 id/租户/范围，不泄漏范围外数据 |
 | INVALID_INPUT | 400 | Zod/协议输入错误、外键或检查约束等 | 按输入 schema 修正字段和格式，不直接扩大 schema |
 | INVALID_TRANSITION | 409 | 当前状态不允许该命令 | 刷新记录，按真实生命周期显示允许操作 |
-| CONSTRAINT_VIOLATED | 403 | 职责分离、额度、二次认证、防提权等拒绝 | 看约束原因，调整业务操作或由有权管理员配置；不删除约束 |
+| CONSTRAINT_VIOLATED | 403 | 职责分离、二次认证、防提权等拒绝 | 看约束原因，调整业务操作或由有权管理员配置；不删除约束 |
 | INVARIANT_VIOLATED | 409 | 命令结果不满足聚合不变量 | 修正输入或 handler，保持合法结果 |
 | CONFLICT | 409 | 版本、唯一性、数据库串行化/死锁等冲突 | 看 detail、重新读取再决定是否重试；不要盲目重复创建 |
 | DOMAIN_ERROR | 422 | handler 返回 fail | 读取 domainCode，展示业务文案和必要 detail |

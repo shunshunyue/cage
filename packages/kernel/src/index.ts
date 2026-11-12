@@ -25,7 +25,7 @@ export {
 export { event, emit, isEvent, defaultPayload, type Event, type AnyEvent, type PayloadOf, type EmitSpec } from './primitives/event.js';
 export { reactionEach, reactionInputs } from './primitives/collection.js';
 export {
-  sod, ceiling, stepUp, ok, violation, type Constraint, type ConstraintResult, type ConstraintMeta,
+  sod, stepUp, ok, violation, type Constraint, type ConstraintResult, type ConstraintMeta,
 } from './primitives/constraints.js';
 export {
   reaction, query, approval, job, unsafe, daysAgo,

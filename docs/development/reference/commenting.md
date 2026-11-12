@@ -79,14 +79,17 @@ export const Note = aggregate('Note', {
   description: '部门便笺',
   fields: {
     /** 便笺标题，最多 120 个字符；命令去除首尾空白后要求非空，不接受 null。 */
-    title: text(120),
+    title: text(120).describe('便笺标题'),
     /** 所属部门 UUID；创建输入不允许指定，内核从当前主体部门补入，用于范围判断。 */
-    deptId: ref('Dept'),
+    deptId: ref('Dept').describe('所属部门'),
     /** 创建人 UUID；内核在新建结果中填入操作者，已有记录更新时保留原值。 */
-    createdBy: ref('User'),
+    createdBy: ref('User').describe('创建人'),
   },
   /** active 可改标题；archived 为终态，update 的 from 会拒绝对归档记录的修改。 */
-  states: states('active', 'archived', { terminal: ['archived'] }),
+  states: states('active', 'archived', {
+    terminal: ['archived'],
+    labels: { active: '使用中', archived: '已归档' },
+  }),
   /** 声明部门范围字段和建议范围，实际授权由角色决定，并非自动授予部门可见权。 */
   scope: scope.deptSubtree('deptId'),
   invariants: {

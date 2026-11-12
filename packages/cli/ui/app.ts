@@ -1128,9 +1128,10 @@ function renderInspector() {
         : stateName(String(node.attrs.from)),
     );
     row('目标状态', node.attrs.to ? stateName(String(node.attrs.to)) : '保持当前状态');
+    // 调用身份不等于具体触发来源；只有审批绑定关系才能证明某命令承接审批结论。
     const actors: Record<string, string> = {
       user: '用户',
-      process: '审批流程',
+      process: '内部流程',
       external: '外部系统',
       job: '定时任务',
       reaction: '事件反应',
@@ -1263,7 +1264,7 @@ function detailValue(key: string, value: unknown): string {
 }
 
 /**
- * 将约束中文解释委托共享业务规则，保证技术详情和业务地图用同一字段/额度口径。
+ * 将约束中文解释委托共享业务规则，保证技术详情和业务地图使用同一字段口径。
  */
 function constraintLabel(name: string, aggregateId: string): string {
   return businessConstraintLabel(name, aggregateId, snapshot.presentation.labels);

@@ -208,17 +208,17 @@ export interface BusinessStep {
   branch?: boolean;
 }
 
-/** 业务页面缺少文案时明确提示补充，不用程序标识替代业务名称。完整本体仍保留标识。 */
 /**
- * 优先使用中文覆盖与声明文案，缺失时明确显示待命名。
+ * 按显示覆盖、声明标题、描述、原始标识的顺序选择业务阅读名称。
+ * 与完整本体共用名称规则，避免缺少文案时把不同状态或操作变成同一个“待命名”节点；
+ * 不从标识或源码注释猜测业务含义，新建入口仍使用业务阅读专用文案。
  * @param node 展示节点。
- * @param labels 中文标签映射。
- * @returns 阅读标题，不改实际标识。
+ * @param labels 声明文案与 graph.labels 合并后的显示映射。
+ * @returns 阅读标题，不修改节点、实际标识或业务规则，也不执行 IO。
  */
 export function businessLabel(node: ViewNode, labels: Record<string, string> = {}): string {
   if (node.kind === 'entry') return '新建业务';
-  if (labels[node.key] || node.attrs.title || node.attrs.description) return nodeLabel(node, labels);
-  return `待命名${({ aggregate: '业务对象', command: '操作', state: '状态', process: '流程', stage: '阶段', event: '业务结果', reaction: '自动处理', approval: '审批', inbound: '外部通知', outbound: '外部同步', query: '查询', job: '定时处理' } as Record<string, string>)[node.kind] ?? '声明'}`;
+  return nodeLabel(node, labels);
 }
 
 /**
@@ -321,8 +321,10 @@ export function traceBusinessLifecycle(
     const repeated = seen.has(node.key);
     const action = via[0];
     const actor = (action?.attrs.invokedBy ?? []) as string[];
+    // invokedBy 只声明允许的调用身份，process 本身不能证明存在审批绑定。
+    // 生命周期沿状态迁移展示操作；具体审批通过/驳回语义由触发链中的 binds 关系解释。
     const label = action
-      ? `${actor.includes('user') ? '人工' : actor.includes('external') ? '外部通知' : actor.includes('process') ? '审批结论' : '业务操作'} · ${businessLabel(action, labels)}`
+      ? `${actor.includes('user') ? '人工' : actor.includes('external') ? '外部通知' : actor.includes('process') ? '内部流程' : '业务操作'} · ${businessLabel(action, labels)}`
       : '生命周期起点';
     const step: BusinessStep = {
       id: repeated ? `${parent}>${node.key}` : node.key,
@@ -441,21 +443,23 @@ export function flattenBusinessSteps(root: BusinessStep): BusinessStep[] {
 }
 
 /**
- * 把命令 from/to 转成中文状态摘要。
+ * 把命令 from/to 转成状态迁移摘要，供操作卡片、流程节点和详情复用。
+ * 优先读取所属聚合的状态显示名，缺失时保留当前命令内可区分的状态标识；
+ * 不从状态标识推测中文含义，也不把多个无标签状态合并成同一占位词。
  * @param node 非命令返回空字符串。
- * @param labels 状态名称覆盖。
- * @returns 允许起始状态与目标，to=null 描述保持当前状态。
+ * @param labels 状态声明标签与 graph.labels 合并后的显示映射。
+ * @returns 允许起始状态与目标，to=null 描述保持当前状态；不修改节点或执行命令。
  */
 export function businessStateSummary(node: ViewNode, labels: Record<string, string>): string {
   if (node.kind !== 'command') return '';
   const owner = node.id.slice(0, node.id.lastIndexOf('.'));
-  const name = (s: string) => (s === 'new' ? '新建' : (labels[`state:${owner}.${s}`] ?? '待命名状态'));
+  const name = (s: string) => (s === 'new' ? '新建' : (labels[`state:${owner}.${s}`] || s));
   const from = (Array.isArray(node.attrs.from) ? node.attrs.from : [node.attrs.from]) as string[];
   return `${from.filter(Boolean).map(name).join(' / ')} → ${node.attrs.to == null ? '保持当前状态' : name(String(node.attrs.to))}`;
 }
 
 /**
- * 把已知约束名翻译为业务提示，并解析额度与职责分离字段。
+ * 把已知约束名翻译为业务提示，并解析职责分离字段。
  * @param name 内核约束标识。
  * @param owner 所属聚合 ID。
  * @param labels 字段中文标签。
@@ -463,8 +467,6 @@ export function businessStateSummary(node: ViewNode, labels: Record<string, stri
  */
 export function businessConstraintLabel(name: string, owner: string, labels: Record<string, string>): string {
   const field = (id: string) => labels[`field:${owner}.${id}`] ?? id;
-  const ceiling = /^ceiling\((.+)\)$/.exec(name);
-  if (ceiling) return `${field(ceiling[1])}不超过审批额度`;
   const sod = /^sod\.notSameAs\((.+)\)$/.exec(name);
   if (sod) return `审批人与${field(sod[1])}不同`;
   return (

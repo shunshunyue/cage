@@ -8,11 +8,14 @@ pnpm exec cage capabilities reactionEach --format json
 pnpm exec cage capabilities "AI审批" --format json
 pnpm exec cage capabilities "页面上下文" --format json
 pnpm exec cage capabilities "性格" --format json
+pnpm exec cage capabilities "状态名称" --format json
 pnpm exec cage context "设备归还" --format json
 pnpm exec cage doctor --format json
 ```
 
 公开能力报告包含包版本、真实签名、公开导出名、声明位置与本地学习指南。未安装的包标为未检查；未命中关键词不能证明能力不存在。完整例子见 [原语](../reference/primitives.md) 和 [任务配方](../guides/recipes.md)。
+
+“本体建模”“状态名称”“对象关系”分别召回真实的领域声明、状态 labels 和关系 API。按[本体建模指南](../guides/ontology-modeling.md)填写结构化名称；`CAGE-ONTOLOGY-001` 对本地可定位且支持命名的节点检查非空名称，默认警告，`graph.naming: 'required'` 时阻止 check/gen/verify。它不从注释或页面推断含义，也不把名称存在判为业务关系正确。
 
 原生智能化可用“AI审批”“业务助理”“随页助理”“模型管理”“性格”“Responses”“上下文预算”等关键词检索，结果指向[智能化指南](../guides/intelligence.md)。例如 AI 审批返回现有 `step` 的重载及 `AiStepOptions`，不是另造 `aiStep` 原语。公开能力可被检索，不代表本应用已经导出 `ai()`、执行迁移、配置模型或授予角色权限；接着核对项目启用状态，最后进行实际功能验证。
 
@@ -26,7 +29,7 @@ pnpm exec cage doctor --format json
 pnpm exec cage doctor --runtime-url http://127.0.0.1:3000 --cookie-file .cage/diagnostic-cookie.txt
 ```
 
-此模式只调用受 `Sys.ops.read` 保护的诊断接口。证据缺失、服务未运行、没有权限或没有 worker 心跳时标记 `unknown`；接口显示已加载版本和注册指纹，不能仅凭磁盘源码推断进程已经更新。能力已配置给某个角色也不代表任意用户具备范围、额度或调用身份。完成修改后仍需运行 `verify` 和实际业务验收。
+此模式只调用受 `Sys.ops.read` 保护的诊断接口。证据缺失、服务未运行、没有权限或没有 worker 心跳时标记 `unknown`；接口显示已加载版本和注册指纹，不能仅凭磁盘源码推断进程已经更新。能力已配置给某个角色也不代表任意用户具备范围或调用身份。完成修改后仍需运行 `verify` 和实际业务验收。
 
 运行指纹优先使用项目标准 `src→dist` 的实际编译入口，并逐文件检查源码与对应产物的修改时间。缺少构建或使用非标准输出布局时标记未知；编译后还需要重启 API 和 worker。源码经不同转换器执行时的函数文本可能不同，因此不把源码指纹直接当作生产产物指纹。
 

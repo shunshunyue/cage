@@ -14,6 +14,15 @@ import { VERSION } from './version.js';
 const modules = ['kernel', 'approval', 'connectors', 'client', 'admin', 'files', 'ai', 'ai-protocol', 'ontology'] as const;
 // 关键词负责把需求指向真实公开符号；签名仍来自当前安装包，不能用词表伪造可用 API。
 const topics: Record<string, { words: string; guide: string; limitations?: string[] }> = {
+  aggregate: { words: '本体建模 业务对象 对象含义 业务名称 图谱名称 description', guide: 'guides/ontology-modeling.md',
+    limitations: ['对象边界取决于真实业务身份和生命周期；名称完整不证明关系或运行行为正确。'] },
+  states: { words: '本体建模 状态名称 状态中文名 状态标签 labels 生命周期 初态 终态', guide: 'guides/ontology-modeling.md',
+    limitations: ['每个状态的业务名写在 labels；注释和前端映射不会自动进入本体，状态迁移仍由命令声明。'] },
+  businessProcess: { words: '本体建模 业务流程 阅读规格 业务主线 阶段 图谱', guide: 'guides/ontology-modeling.md',
+    limitations: ['阅读规格引用真实声明，不调度命令；自动连线必须有真实触发链。'] },
+  ref: { words: '对象关系 表关系 外键 引用 归属 多对一 一对一', guide: 'guides/relations.md' },
+  hasMany: { words: '对象关系 表关系 一对多 反查 mappedBy', guide: 'guides/relations.md' },
+  manyToMany: { words: '对象关系 表关系 多对多 中间表 成员', guide: 'guides/relations.md' },
   ai: { words: '智能助理 业务助理 本体助理 全能助理 AI审批 AI 审批 智能审批 运行时 执行循环 loop 工具 会话 记忆 上下文预算', guide: 'guides/intelligence.md',
     limitations: ['须从 domain 入口导出并完成迁移、模型配置、角色授权和 worker 启动；框架支持不代表应用已启用。'] },
   AiContextOptions: { words: '上下文预算 上下文窗口 大本体 按需加载 工具发现 工具搜索 历史 记忆 token', guide: 'guides/intelligence.md' },
@@ -64,6 +73,7 @@ const topics: Record<string, { words: string; guide: string; limitations?: strin
   query: { words: '查询 报表 安全读取', guide: 'reference/primitives.md' },
 };
 const examples: Record<string, string> = {
+  states: "states('active', 'archived', { terminal: ['archived'], labels: { active: '使用中', archived: '已归档' } })",
   ai: "export const intelligence = ai({ models: { main: managedModel('main') }, assistant: { model: 'main', confirmWrites: true } })",
   managedModel: "models: { main: managedModel('main') } // ai() 的配置片段；连接信息在 Admin 保存",
   '@yss123/cage-approval#step': "step('材料预审', { kind: 'ai', model: 'main', instructions: '资料不足时转人工，并说明缺失信息。', context: { fields: ['reason'] }, handoff: approver.role('reviewer') })",

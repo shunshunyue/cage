@@ -91,6 +91,13 @@ for (const path of [
   mkdirSync(dirname(destination), { recursive: true });
   cpSync(join(target, 'apps/web/src', path), destination);
 }
+// 空白领域直接复用 cage-admin 的 Dept、Role、User 声明；这些聚合的生成契约必须与刚生成的采购快照同步。
+// 只复制三个组织聚合目录，保留空白模板独立的契约根入口、queries 和其他生成内容。
+for (const aggregate of ['dept', 'role', 'user']) {
+  const contractPath = `packages/contracts/src/aggregates/${aggregate}`;
+  resetManagedSource(blank, contractPath);
+  cpSync(join(target, contractPath), join(blank, contractPath), { recursive: true });
+}
 // 指南与错误码册各保留一个人工维护来源，在这里形成模板快照。
 // 所有链接均以业务项目为上下文，不能依赖框架仓库中的 packages/kernel 等目录。
 for (const application of [target, blank]) {
